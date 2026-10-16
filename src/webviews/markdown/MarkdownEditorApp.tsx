@@ -8,11 +8,13 @@ import { syntaxTree } from '@codemirror/language';
 import { livePreview } from './extensions/livePreview';
 import { taskCheckboxes } from './extensions/taskCheckboxes';
 import { slashCommands } from './extensions/slashCommands';
+import { styledLists } from './extensions/styledLists';
 import {
   MarkdownToolbar,
   ActiveToolbarState,
   defaultActiveToolbarState,
 } from './components/MarkdownToolbar';
+import { formattingKeymap } from './lib/formatting';
 
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -211,9 +213,10 @@ export const MarkdownEditorApp: React.FC = () => {
         history(),
         drawSelection(),
         dropCursor(),
-        keymap.of([...defaultKeymap, ...historyKeymap]),
+        keymap.of([...formattingKeymap, ...defaultKeymap, ...historyKeymap]),
         markdown(),
         livePreview(),
+        styledLists(),
         taskCheckboxes(),
         slashCommands(),
         EditorView.lineWrapping,

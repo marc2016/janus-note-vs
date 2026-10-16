@@ -1,7 +1,7 @@
 import React from 'react';
 import { EditorView } from '@codemirror/view';
 import { undo, redo } from '@codemirror/commands';
-import { syntaxTree } from '@codemirror/language';
+import { toggleInlineFormatting } from '../lib/formatting';
 import { Button } from '../../components/ui/button';
 import { MdiIcon } from '../../components/ui/MdiIcon';
 import {
@@ -112,91 +112,9 @@ export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
   };
 
   const toggleInlineMark = (marker: string) => {
-    if (!editorView) return;
-    const view = editorView;
-    const sel = view.state.selection.main;
-    const mLen = marker.length;
-
-    if (sel.from === sel.to) {
-      // Check if cursor is inside an existing node of this type
-      const targetNodeName =
-        marker === '**' ? 'StrongEmphasis' :
-        marker === '*' ? 'Emphasis' :
-        marker === '~~' ? 'Strikethrough' :
-        marker === '`' ? 'InlineCode' : null;
-
-      let foundNode: any = null;
-      if (targetNodeName) {
-        const tree = syntaxTree(view.state);
-        for (let cur: any = tree.resolveInner(sel.head, 1); cur; cur = cur.parent) {
-          if (cur.name === targetNodeName) {
-            foundNode = cur;
-            break;
-          }
-        }
-        if (!foundNode && sel.head > 0) {
-          for (let cur: any = tree.resolveInner(sel.head, -1); cur; cur = cur.parent) {
-            if (cur.name === targetNodeName) {
-              foundNode = cur;
-              break;
-            }
-          }
-        }
-      }
-
-      if (foundNode) {
-        const nodeText = view.state.sliceDoc(foundNode.from, foundNode.to);
-        if (nodeText.startsWith(marker) && nodeText.endsWith(marker) && nodeText.length >= mLen * 2) {
-          const innerText = nodeText.slice(mLen, -mLen);
-          view.dispatch({
-            changes: { from: foundNode.from, to: foundNode.to, insert: innerText },
-            selection: {
-              anchor: Math.max(foundNode.from, Math.min(sel.head - mLen, foundNode.from + innerText.length)),
-            },
-          });
-          view.focus();
-          return;
-        }
-      }
-
-      // No node to strip: insert marker pair and place cursor between
-      view.dispatch({
-        changes: { from: sel.from, to: sel.to, insert: `${marker}${marker}` },
-        selection: { anchor: sel.from + mLen },
-      });
-    } else {
-      const selectedText = view.state.sliceDoc(sel.from, sel.to);
-      if (
-        selectedText.startsWith(marker) &&
-        selectedText.endsWith(marker) &&
-        selectedText.length >= mLen * 2
-      ) {
-        // Already wrapped inside selection
-        view.dispatch({
-          changes: { from: sel.from, to: sel.to, insert: selectedText.slice(mLen, -mLen) },
-        });
-      } else if (
-        sel.from >= mLen &&
-        sel.to + mLen <= view.state.doc.length &&
-        view.state.sliceDoc(sel.from - mLen, sel.from) === marker &&
-        view.state.sliceDoc(sel.to, sel.to + mLen) === marker
-      ) {
-        // Wrapped immediately outside selection
-        view.dispatch({
-          changes: [
-            { from: sel.from - mLen, to: sel.from, insert: '' },
-            { from: sel.to, to: sel.to + mLen, insert: '' },
-          ],
-        });
-      } else {
-        // Wrap selection
-        view.dispatch({
-          changes: { from: sel.from, to: sel.to, insert: `${marker}${selectedText}${marker}` },
-          selection: { anchor: sel.from + mLen, head: sel.to + mLen },
-        });
-      }
+    if (editorView) {
+      toggleInlineFormatting(editorView, marker);
     }
-    view.focus();
   };
 
   const toggleLinePrefix = (prefix: string, regex: RegExp) => {
