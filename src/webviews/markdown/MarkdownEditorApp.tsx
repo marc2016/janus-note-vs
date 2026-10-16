@@ -5,7 +5,12 @@ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { syntaxTree } from '@codemirror/language';
 
-import { livePreview } from './extensions/livePreview';
+import {
+  livePreview,
+  SyntaxVisibilityMode,
+  syntaxVisibilityCompartment,
+  syntaxVisibilityFacet,
+} from './extensions/livePreview';
 import { taskCheckboxes } from './extensions/taskCheckboxes';
 import { slashCommands } from './extensions/slashCommands';
 import { styledLists } from './extensions/styledLists';
@@ -15,14 +20,6 @@ import {
   defaultActiveToolbarState,
 } from './components/MarkdownToolbar';
 import { formattingKeymap } from './lib/formatting';
-
-import { Button } from '../components/ui/button';
-import { Badge } from '../components/ui/badge';
-import { MdiIcon } from '../components/ui/MdiIcon';
-import {
-  mdiCodeTags,
-  mdiThemeLightDark,
-} from '../../ui/icons';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: any): void;
@@ -66,7 +63,7 @@ function detectIsDark(): boolean {
   return !window.matchMedia('(prefers-color-scheme: light)').matches;
 }
 
-type ThemeMode = 'auto' | 'light' | 'dark';
+
 
 const themeCompartment = new Compartment();
 
@@ -163,17 +160,28 @@ function computeActiveToolbarState(state: EditorState): ActiveToolbarState {
   };
 }
 
+function getInitialSyntaxMode(): SyntaxVisibilityMode {
+  try {
+    const api = getVsCodeApi();
+    const state = api?.getState?.() as any;
+    if (state?.syntaxVisibilityMode && ['auto', 'visible', 'hidden'].includes(state.syntaxVisibilityMode)) {
+      return state.syntaxVisibilityMode;
+    }
+  } catch {}
+  return 'auto';
+}
+
 export const MarkdownEditorApp: React.FC = () => {
-  const [themeMode, setThemeMode] = useState<ThemeMode>('auto');
   const [isSystemDark, setIsSystemDark] = useState<boolean>(detectIsDark);
   const [editorView, setEditorView] = useState<EditorView | null>(null);
   const [activeState, setActiveState] = useState<ActiveToolbarState>(defaultActiveToolbarState);
+  const [syntaxMode, setSyntaxMode] = useState<SyntaxVisibilityMode>(getInitialSyntaxMode);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isUpdatingFromHostRef = useRef<boolean>(false);
   const debounceTimerRef = useRef<any>(null);
 
-  const effectiveIsDark = themeMode === 'auto' ? isSystemDark : themeMode === 'dark';
+  const effectiveIsDark = isSystemDark;
 
   // Monitor VS Code theme changes
   useEffect(() => {
@@ -201,6 +209,15 @@ export const MarkdownEditorApp: React.FC = () => {
     }
   }, [effectiveIsDark, editorView]);
 
+  // Update CodeMirror syntax visibility when syntaxMode changes
+  useEffect(() => {
+    if (editorView) {
+      editorView.dispatch({
+        effects: syntaxVisibilityCompartment.reconfigure(syntaxVisibilityFacet.of(syntaxMode)),
+      });
+    }
+  }, [syntaxMode, editorView]);
+
   // Initialize CodeMirror 6 Editor
   useEffect(() => {
     if (!containerRef.current) return;
@@ -215,7 +232,7 @@ export const MarkdownEditorApp: React.FC = () => {
         dropCursor(),
         keymap.of([...formattingKeymap, ...defaultKeymap, ...historyKeymap]),
         markdown(),
-        livePreview(),
+        livePreview(syntaxMode),
         styledLists(),
         taskCheckboxes(),
         slashCommands(),
@@ -293,49 +310,36 @@ export const MarkdownEditorApp: React.FC = () => {
     }
   };
 
-  const handleToggleTheme = () => {
-    setThemeMode((prev) => (prev === 'auto' ? 'light' : prev === 'light' ? 'dark' : 'auto'));
+  const handleToggleSyntaxVisibility = () => {
+    setSyntaxMode((prev) => {
+      const next: SyntaxVisibilityMode =
+        prev === 'auto' ? 'visible' : prev === 'visible' ? 'hidden' : 'auto';
+      if (editorView) {
+        editorView.dispatch({
+          effects: syntaxVisibilityCompartment.reconfigure(syntaxVisibilityFacet.of(next)),
+        });
+        editorView.focus();
+      }
+      try {
+        const api = getVsCodeApi();
+        const existing = (api?.getState?.() as any) || {};
+        api?.setState?.({ ...existing, syntaxVisibilityMode: next });
+      } catch {}
+      return next;
+    });
   };
 
   return (
     <div className="flex flex-col h-screen overflow-hidden box-border bg-[var(--vscode-editor-background,#1e1e1e)] text-[var(--vscode-editor-foreground,#d4d4d4)] font-sans">
-      {/* Top Application Header */}
-      <header className="flex items-center justify-between px-6 py-2.5 border-b border-[var(--vscode-editorWidget-border,rgba(128,128,128,0.25))] bg-card/60 backdrop-blur-sm select-none shrink-0">
-        <div className="flex items-center gap-3">
-          <Badge variant="outline" className="font-mono text-[11px] tracking-wide">
-            Live Preview
-          </Badge>
-          <span className="text-xs text-muted-foreground">Obsidian-Style Raw Sync</span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleToggleTheme}
-            title="Toggle contrast / theme (Auto, Light, Dark)"
-          >
-            <MdiIcon path={mdiThemeLightDark} size={15} />
-            <span className="capitalize">
-              {themeMode === 'auto' ? `Auto (${effectiveIsDark ? 'Dark' : 'Light'})` : themeMode}
-            </span>
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleOpenSource}
-            title="Quelltext in zweiter Spalte öffnen"
-          >
-            <MdiIcon path={mdiCodeTags} size={15} />
-            <span>Quelltext bearbeiten</span>
-          </Button>
-        </div>
-      </header>
-
-      {/* Formatting Toolbar with Active States */}
+      {/* Formatting Toolbar with Active States and Open Source Action */}
       <div className="shrink-0">
-        <MarkdownToolbar editorView={editorView} activeState={activeState} />
+        <MarkdownToolbar
+          editorView={editorView}
+          activeState={activeState}
+          onOpenSource={handleOpenSource}
+          syntaxMode={syntaxMode}
+          onToggleSyntaxVisibility={handleToggleSyntaxVisibility}
+        />
       </div>
 
       {/* CodeMirror Host Container (Single Scroll Root) */}

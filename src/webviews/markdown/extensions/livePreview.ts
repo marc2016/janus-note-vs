@@ -5,9 +5,22 @@ import {
   ViewPlugin,
   ViewUpdate,
 } from '@codemirror/view';
-import { Range, Extension } from '@codemirror/state';
-import { HighlightStyle, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
+import { Range, Extension, Compartment, Facet } from '@codemirror/state';
+import {
+  HighlightStyle,
+  syntaxHighlighting,
+  defaultHighlightStyle,
+  syntaxTree,
+  ensureSyntaxTree,
+} from '@codemirror/language';
 import { tags } from '@lezer/highlight';
+
+export type SyntaxVisibilityMode = 'auto' | 'visible' | 'hidden';
+
+export const syntaxVisibilityCompartment = new Compartment();
+export const syntaxVisibilityFacet = Facet.define<SyntaxVisibilityMode, SyntaxVisibilityMode>({
+  combine: (values) => values[0] || 'auto',
+});
 
 export const markdownHighlightStyle = HighlightStyle.define([
   { tag: tags.strong, fontWeight: '700' },
@@ -88,6 +101,9 @@ export const livePreviewTheme = EditorView.baseTheme({
   '.cm-heading-mark.cm-heading-mark-active': {
     opacity: '0.85',
   },
+  '.cm-syntax-hidden': {
+    display: 'none',
+  },
   '.cm-line.cm-blockquote': {
     borderLeft: '3px solid var(--vscode-textBlockQuote-border, rgba(128, 128, 128, 0.4))',
     paddingLeft: '0.75rem',
@@ -103,12 +119,14 @@ export const livePreviewTheme = EditorView.baseTheme({
 });
 
 function buildDecorations(view: EditorView): DecorationSet {
+  const mode = view.state.facet(syntaxVisibilityFacet);
   const builder: Range<Decoration>[] = [];
   const selection = view.state.selection.main;
   const cursorHead = selection.head;
   const cursorAnchor = selection.anchor;
 
   for (const { from, to } of view.visibleRanges) {
+    // 1. Line-level decorations (headings, blockquotes, hr)
     let pos = from;
     while (pos <= to) {
       const line = view.state.doc.lineAt(pos);
@@ -128,10 +146,15 @@ function buildDecorations(view: EditorView): DecorationSet {
           }).range(line.from)
         );
 
-        // Subtly mark the '# ' prefix without layout shift
+        const shouldHide =
+          mode === 'hidden' || (mode === 'auto' && !isCursorOnLine);
+
+        // Subtly mark the '# ' prefix or conceal it
         builder.push(
           Decoration.mark({
-            class: isCursorOnLine
+            class: shouldHide
+              ? 'cm-heading-mark cm-syntax-hidden'
+              : isCursorOnLine
               ? 'cm-heading-mark cm-heading-mark-active'
               : 'cm-heading-mark',
           }).range(line.from, line.from + markerLength)
@@ -153,6 +176,107 @@ function buildDecorations(view: EditorView): DecorationSet {
       if (line.to >= view.state.doc.length) break;
       pos = line.to + 1;
     }
+
+    // 2. Inline token decorations via syntax tree
+    const tree = ensureSyntaxTree(view.state, to, 50) || syntaxTree(view.state);
+    tree.iterate({
+      from,
+      to,
+      enter: (node) => {
+        if (node.name === 'StrongEmphasis') {
+          const isCursorInside =
+            (cursorHead >= node.from && cursorHead <= node.to) ||
+            (cursorAnchor >= node.from && cursorAnchor <= node.to);
+          const shouldHide =
+            mode === 'hidden' || (mode === 'auto' && !isCursorInside);
+
+          if (shouldHide && node.to - node.from >= 4) {
+            builder.push(
+              Decoration.mark({ class: 'cm-inline-mark cm-syntax-hidden' }).range(
+                node.from,
+                node.from + 2
+              )
+            );
+            builder.push(
+              Decoration.mark({ class: 'cm-inline-mark cm-syntax-hidden' }).range(
+                node.to - 2,
+                node.to
+              )
+            );
+          }
+        } else if (node.name === 'Emphasis') {
+          const isCursorInside =
+            (cursorHead >= node.from && cursorHead <= node.to) ||
+            (cursorAnchor >= node.from && cursorAnchor <= node.to);
+          const shouldHide =
+            mode === 'hidden' || (mode === 'auto' && !isCursorInside);
+
+          if (shouldHide && node.to - node.from >= 2) {
+            builder.push(
+              Decoration.mark({ class: 'cm-inline-mark cm-syntax-hidden' }).range(
+                node.from,
+                node.from + 1
+              )
+            );
+            builder.push(
+              Decoration.mark({ class: 'cm-inline-mark cm-syntax-hidden' }).range(
+                node.to - 1,
+                node.to
+              )
+            );
+          }
+        } else if (node.name === 'Strikethrough') {
+          const isCursorInside =
+            (cursorHead >= node.from && cursorHead <= node.to) ||
+            (cursorAnchor >= node.from && cursorAnchor <= node.to);
+          const shouldHide =
+            mode === 'hidden' || (mode === 'auto' && !isCursorInside);
+
+          if (shouldHide && node.to - node.from >= 4) {
+            builder.push(
+              Decoration.mark({ class: 'cm-inline-mark cm-syntax-hidden' }).range(
+                node.from,
+                node.from + 2
+              )
+            );
+            builder.push(
+              Decoration.mark({ class: 'cm-inline-mark cm-syntax-hidden' }).range(
+                node.to - 2,
+                node.to
+              )
+            );
+          }
+        } else if (node.name === 'InlineCode') {
+          const isCursorInside =
+            (cursorHead >= node.from && cursorHead <= node.to) ||
+            (cursorAnchor >= node.from && cursorAnchor <= node.to);
+          const shouldHide =
+            mode === 'hidden' || (mode === 'auto' && !isCursorInside);
+
+          if (shouldHide && node.to - node.from >= 2) {
+            let backticks = 1;
+            while (
+              node.from + backticks < node.to &&
+              view.state.sliceDoc(node.from + backticks, node.from + backticks + 1) === '`'
+            ) {
+              backticks++;
+            }
+            builder.push(
+              Decoration.mark({ class: 'cm-inline-mark cm-syntax-hidden' }).range(
+                node.from,
+                node.from + backticks
+              )
+            );
+            builder.push(
+              Decoration.mark({ class: 'cm-inline-mark cm-syntax-hidden' }).range(
+                node.to - backticks,
+                node.to
+              )
+            );
+          }
+        }
+      },
+    });
   }
 
   return Decoration.set(builder, true);
@@ -167,7 +291,12 @@ export const livePreviewPlugin = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate) {
-      if (update.docChanged || update.selectionSet || update.viewportChanged) {
+      if (
+        update.docChanged ||
+        update.selectionSet ||
+        update.viewportChanged ||
+        update.state.facet(syntaxVisibilityFacet) !== update.startState.facet(syntaxVisibilityFacet)
+      ) {
         this.decorations = buildDecorations(update.view);
       }
     }
@@ -177,10 +306,11 @@ export const livePreviewPlugin = ViewPlugin.fromClass(
   }
 );
 
-export function livePreview(): Extension {
+export function livePreview(initialMode: SyntaxVisibilityMode = 'auto'): Extension {
   return [
     livePreviewTheme,
     livePreviewPlugin,
+    syntaxVisibilityCompartment.of(syntaxVisibilityFacet.of(initialMode)),
     syntaxHighlighting(markdownHighlightStyle),
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
   ];

@@ -18,7 +18,7 @@ The system SHALL provide a Custom Text Editor (`janus.markdownEditor`) for `*.md
 - **THEN** the editor reveals the raw Markdown markers (`# `, `**`) allowing direct text editing
 
 ### Requirement: Fixed Formatting Toolbar
-The system SHALL provide a pinned, fixed formatting toolbar with actions for headings, inline marks, lists, blockquotes, and tables that dispatch targeted text insertions, expanding inline mark actions to surrounding word boundaries when invoked with a collapsed cursor inside an unformatted word.
+The system SHALL provide a single pinned, fixed formatting toolbar with actions for history, headings, inline marks, lists, blockquotes, tables, code blocks, and opening the underlying raw source file at the end of the toolbar, without displaying a separate top application header bar or manual theme toggle button. Inline mark actions SHALL expand to surrounding word boundaries when invoked with a collapsed cursor inside an unformatted word.
 
 #### Scenario: Applying inline formatting from toolbar
 - **WHEN** user selects text and clicks the Bold button
@@ -40,6 +40,10 @@ The system SHALL provide a pinned, fixed formatting toolbar with actions for hea
 - **WHEN** user clicks the Table or Code Block button
 - **THEN** the editor inserts the appropriate Markdown template at the cursor position without reformatting existing lines
 
+#### Scenario: Opening source file from toolbar
+- **WHEN** user clicks the Open Source File button at the end of the formatting toolbar
+- **THEN** the system triggers the action to open the source Markdown file in an adjacent editor column
+
 ### Requirement: Interactive Slash Command Autocomplete
 The system SHALL provide an interactive autocomplete popup triggered by typing `/` at line or word boundaries.
 
@@ -57,6 +61,44 @@ The system SHALL render `- [ ]` and `- [x]` as interactive visual checkboxes tha
 #### Scenario: Checking a task item
 - **WHEN** user clicks on an unchecked task checkbox in the live preview
 - **THEN** the editor replaces the single space in `- [ ]` with `x` resulting in `- [x]`, leaving all other document lines completely untouched
+
+### Requirement: Hierarchical Bullet List Styling
+The system SHALL visually style Markdown unordered lists (`- `, `* `, `+ `) with clean typographic bullet points (`•`) and render proportional visual indentation based on nesting depth in the Live Preview editor while preserving exact Markdown syntax in document storage.
+
+#### Scenario: Visual bullet point presentation
+- **WHEN** user views an unordered list item (e.g. `- Item 1`) in the Live Preview editor
+- **THEN** the marker is rendered visually as a typographic bullet point (`•`) without altering the raw `- ` text in the document
+
+#### Scenario: Nested list hierarchical indentation
+- **WHEN** user indents a list item with whitespace (e.g. `  - Child item`)
+- **THEN** the editor renders the line with visual indentation padding proportional to its nesting depth
+
+#### Scenario: Coexistence with task checkboxes
+- **WHEN** user views or edits a task item starting with `- [ ]` or `- [x]`
+- **THEN** the interactive checkbox is rendered and not obscured or duplicated by standard bullet point decorations
+
+#### Scenario: Ordered list indentation
+- **WHEN** user indents an ordered list item (e.g. `  1. Step one`)
+- **THEN** the line renders with matching hierarchical indentation padding while displaying the numbered prefix
+
+### Requirement: Configurable Markdown Syntax Visibility Modes
+The system SHALL provide a 3-way toggle control in the formatting toolbar allowing users to switch between three Markdown syntax visibility modes: `auto` (focus), `visible` (raw), and `hidden` (clean), updating Live Preview decorations dynamically and persisting the active mode across editor reloads.
+
+#### Scenario: Switching syntax visibility modes from toolbar
+- **WHEN** user clicks the syntax visibility toggle button in the toolbar
+- **THEN** the editor cycles to the next visibility mode (`auto` -> `visible` -> `hidden` -> `auto`) and updates the button icon and tooltip accordingly
+
+#### Scenario: Auto mode reveals syntax markers only when cursor is inside the line or word
+- **WHEN** syntax visibility mode is set to `auto`
+- **THEN** heading prefixes (`### `) and inline formatting markers (`**`, `*`, `~~`, `` ` ``) are hidden by default and only become visible when the cursor is positioned on that line or within that formatted range
+
+#### Scenario: Visible mode displays all syntax markers permanently
+- **WHEN** syntax visibility mode is set to `visible`
+- **THEN** all raw Markdown syntax markers remain visible throughout the document regardless of cursor position
+
+#### Scenario: Hidden mode conceals syntax markers regardless of cursor position
+- **WHEN** syntax visibility mode is set to `hidden`
+- **THEN** raw Markdown syntax markers remain concealed even when the user clicks or navigates the cursor through formatted text
 
 ### Requirement: Zero-Diff Persistence
 The system SHALL persist document edits by transmitting exact text transactions to the VS Code TextDocument.

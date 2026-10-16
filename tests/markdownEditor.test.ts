@@ -5,6 +5,12 @@ import { markdown } from '@codemirror/lang-markdown';
 import { syntaxTree } from '@codemirror/language';
 import { slashCommandSource } from '../src/webviews/markdown/extensions/slashCommands';
 import { styledLists } from '../src/webviews/markdown/extensions/styledLists';
+import {
+  livePreview,
+  syntaxVisibilityCompartment,
+  syntaxVisibilityFacet,
+  SyntaxVisibilityMode,
+} from '../src/webviews/markdown/extensions/livePreview';
 import { toggleInlineFormatting, formattingKeymap } from '../src/webviews/markdown/lib/formatting';
 
 describe('CodeMirror Markdown Editor & Zero-Diff Verification', () => {
@@ -384,4 +390,29 @@ describe('CodeMirror Markdown Editor & Zero-Diff Verification', () => {
       expect(viewE.state.doc.toString()).toBe('`codeme`');
     });
   });
+
+  describe('Syntax Visibility Modes (Live Preview)', () => {
+    it('initializes in auto mode and allows reconfiguring via compartment', () => {
+      const state = EditorState.create({
+        doc: '# Heading\n\nSome **bold** text',
+        extensions: [
+          markdown(),
+          livePreview('auto'),
+        ],
+      });
+
+      expect(state.facet(syntaxVisibilityFacet)).toBe('auto');
+
+      const tr = state.update({
+        effects: syntaxVisibilityCompartment.reconfigure(syntaxVisibilityFacet.of('visible')),
+      });
+      expect(tr.state.facet(syntaxVisibilityFacet)).toBe('visible');
+
+      const trHidden = tr.state.update({
+        effects: syntaxVisibilityCompartment.reconfigure(syntaxVisibilityFacet.of('hidden')),
+      });
+      expect(trHidden.state.facet(syntaxVisibilityFacet)).toBe('hidden');
+    });
+  });
 });
+

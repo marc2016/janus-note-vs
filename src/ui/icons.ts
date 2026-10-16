@@ -24,6 +24,10 @@ import {
   mdiUndo,
   mdiRedo,
   mdiTable,
+  mdiFileDocumentEditOutline,
+  mdiEye,
+  mdiEyeOutline,
+  mdiEyeOffOutline,
 } from '@mdi/js';
 
 export {
@@ -52,6 +56,10 @@ export {
   mdiUndo,
   mdiRedo,
   mdiTable,
+  mdiFileDocumentEditOutline,
+  mdiEye,
+  mdiEyeOutline,
+  mdiEyeOffOutline,
 };
 
 /**

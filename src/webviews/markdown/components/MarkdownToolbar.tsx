@@ -20,7 +20,12 @@ import {
   mdiUndo,
   mdiRedo,
   mdiTable,
+  mdiFileDocumentEditOutline,
+  mdiEye,
+  mdiEyeOutline,
+  mdiEyeOffOutline,
 } from '../../../ui/icons';
+import { SyntaxVisibilityMode } from '../extensions/livePreview';
 
 export interface ActiveToolbarState {
   heading: number; // 0 = normal text, 1 = H1, 2 = H2, 3 = H3
@@ -49,11 +54,17 @@ export const defaultActiveToolbarState: ActiveToolbarState = {
 interface MarkdownToolbarProps {
   editorView: EditorView | null;
   activeState?: ActiveToolbarState;
+  onOpenSource?: () => void;
+  syntaxMode?: SyntaxVisibilityMode;
+  onToggleSyntaxVisibility?: () => void;
 }
 
 export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
   editorView,
   activeState = defaultActiveToolbarState,
+  onOpenSource,
+  syntaxMode = 'auto',
+  onToggleSyntaxVisibility,
 }) => {
   const handleUndo = () => {
     if (editorView) {
@@ -333,6 +344,55 @@ export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
       >
         <MdiIcon path={mdiMinus} size={18} />
       </Button>
+
+      {(onToggleSyntaxVisibility || onOpenSource) && (
+        <div className="ml-auto flex items-center gap-1">
+          {onToggleSyntaxVisibility && (
+            <Button
+              variant={syntaxMode === 'visible' ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={onToggleSyntaxVisibility}
+              title={
+                syntaxMode === 'auto'
+                  ? 'Markdown-Syntax: Nur bei Cursor (Klick: Immer sichtbar)'
+                  : syntaxMode === 'visible'
+                  ? 'Markdown-Syntax: Immer sichtbar (Klick: Immer versteckt)'
+                  : 'Markdown-Syntax: Immer versteckt (Klick: Nur bei Cursor)'
+              }
+              aria-label="Markdown-Syntax Sichtbarkeit umschalten"
+            >
+              <MdiIcon
+                path={
+                  syntaxMode === 'auto'
+                    ? mdiEyeOutline
+                    : syntaxMode === 'visible'
+                    ? mdiEye
+                    : mdiEyeOffOutline
+                }
+                size={18}
+              />
+            </Button>
+          )}
+
+          {onOpenSource && (
+            <>
+              <div className="w-[1px] h-5 bg-border mx-1" />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                onClick={onOpenSource}
+                title="Quelltext in zweiter Spalte öffnen"
+                aria-label="Quelltext bearbeiten"
+              >
+                <MdiIcon path={mdiFileDocumentEditOutline} size={18} />
+              </Button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 };
