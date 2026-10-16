@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { isMarkdownNote, isTasksCompanion, isChartCompanion } from '../companion/companionPaths';
+import { CompanionManager } from '../companion/companionManager';
 
 export async function setNotesRootCommand(folderUri?: vscode.Uri): Promise<void> {
   let targetUri = folderUri;
@@ -99,4 +100,112 @@ export async function resetNotesRootCommand(): Promise<void> {
   const config = vscode.workspace.getConfiguration('janus', workspaceFolder.uri);
   await config.update('notesRoot', '', vscode.ConfigurationTarget.Workspace);
   vscode.window.showInformationMessage('Janus Notizen-Ordner auf Workspace-Root zurückgesetzt.');
+}
+
+export interface NotesRootStatus {
+  isInitialized: boolean;
+  hasNonNoteFiles: boolean;
+  notesRootUri?: vscode.Uri;
+}
+
+export async function checkNotesRootStatus(
+  companionManager: CompanionManager = new CompanionManager()
+): Promise<NotesRootStatus> {
+  const rootUri = companionManager.getNotesRootUri();
+  if (!rootUri) {
+    return { isInitialized: false, hasNonNoteFiles: false };
+  }
+
+  const workspaceFolder =
+    vscode.workspace.getWorkspaceFolder(rootUri) || vscode.workspace.workspaceFolders?.[0];
+  const config = workspaceFolder
+    ? vscode.workspace.getConfiguration('janus', workspaceFolder.uri)
+    : vscode.workspace.getConfiguration('janus');
+  const explicitlyInitialized = config.get<boolean>('initialized', false);
+
+  let hasInbox = false;
+  let hasOtherFiles = false;
+
+  try {
+    const entries = await vscode.workspace.fs.readDirectory(rootUri);
+    for (const [name] of entries) {
+      if (name.startsWith('.')) continue;
+      if (name.toLowerCase() === 'inbox.md') {
+        hasInbox = true;
+      } else if (!isTasksCompanion(name) && !isChartCompanion(name)) {
+        hasOtherFiles = true;
+      }
+    }
+  } catch {
+    // Directory may not exist yet
+  }
+
+  const isInitialized = explicitlyInitialized || hasInbox;
+  return {
+    isInitialized,
+    hasNonNoteFiles: hasOtherFiles,
+    notesRootUri: rootUri,
+  };
+}
+
+export async function updateNotesContextKeys(
+  companionManager: CompanionManager = new CompanionManager()
+): Promise<NotesRootStatus> {
+  const status = await checkNotesRootStatus(companionManager);
+  await vscode.commands.executeCommand('setContext', 'janus.isInitialized', status.isInitialized);
+  await vscode.commands.executeCommand('setContext', 'janus.hasNonNoteFiles', status.hasNonNoteFiles);
+  return status;
+}
+
+export async function initNotesRootCommand(
+  companionManager: CompanionManager = new CompanionManager(),
+  treeProvider?: { refresh: () => void }
+): Promise<vscode.Uri | undefined> {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || folders.length === 0) {
+    vscode.window.showErrorMessage('Kein Workspace geöffnet.');
+    return undefined;
+  }
+
+  const targetUri = companionManager.getNotesRootUri() || folders[0].uri;
+
+  try {
+    await vscode.workspace.fs.createDirectory(targetUri);
+  } catch (err) {
+    console.warn('Could not create directory for notes root:', err);
+  }
+
+  const inboxUri = vscode.Uri.joinPath(targetUri, 'inbox.md');
+  let inboxExists = false;
+  try {
+    await vscode.workspace.fs.stat(inboxUri);
+    inboxExists = true;
+  } catch {
+    inboxExists = false;
+  }
+
+  if (!inboxExists) {
+    const initialContent = Buffer.from(
+      '# Inbox\n\nWillkommen in deinen Janus Notes!\nHier kannst du neue Notizen und Gedanken erfassen.\n',
+      'utf-8'
+    );
+    await vscode.workspace.fs.writeFile(inboxUri, initialContent);
+  }
+
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(targetUri) || folders[0];
+  const config = vscode.workspace.getConfiguration('janus', workspaceFolder.uri);
+  await config.update('initialized', true, vscode.ConfigurationTarget.Workspace);
+
+  await updateNotesContextKeys(companionManager);
+  if (treeProvider) {
+    treeProvider.refresh();
+  }
+
+  try {
+    await vscode.commands.executeCommand('vscode.openWith', inboxUri, 'janus.markdownEditor');
+  } catch (err) {
+    console.warn('Could not open inbox.md in Janus markdown editor:', err);
+  }
+
+  return inboxUri;
 }

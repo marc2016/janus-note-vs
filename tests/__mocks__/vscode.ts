@@ -43,11 +43,24 @@ export class LanguageModelToolResult {
 }
 
 export class EventEmitter<T = any> {
-  fire(_data?: T) {}
+  private listeners: ((e: T) => any)[] = [];
+  fire(data?: T) {
+    for (const listener of this.listeners) {
+      listener(data as T);
+    }
+  }
   event = (listener: (e: T) => any) => {
-    return { dispose: () => {} };
+    this.listeners.push(listener);
+    return {
+      dispose: () => {
+        const idx = this.listeners.indexOf(listener);
+        if (idx !== -1) this.listeners.splice(idx, 1);
+      },
+    };
   };
-  dispose() {}
+  dispose() {
+    this.listeners = [];
+  }
 }
 
 export enum ConfigurationTarget {
@@ -105,7 +118,7 @@ export const workspace = {
   }),
   fs: {
     stat: async () => {},
-    readFile: async () => Buffer.from(''),
+    readFile: async () => Buffer.from('{}'),
     writeFile: async () => {},
     readDirectory: async (_uri: Uri): Promise<[string, FileType][]> => [],
     createDirectory: async (_uri: Uri): Promise<void> => {},
@@ -119,7 +132,32 @@ export const workspace = {
   onDidChangeTextDocument: () => ({ dispose: () => {} }),
   applyEdit: async () => true,
   registerTextDocumentContentProvider: () => ({ dispose: () => {} }),
+  openTextDocument: async (uri: Uri) => ({ uri }),
 };
+
+export enum TreeItemCollapsibleState {
+  None = 0,
+  Collapsed = 1,
+  Expanded = 2,
+}
+
+export class ThemeIcon {
+  constructor(public readonly id: string, public readonly color?: any) {}
+}
+
+export class TreeItem {
+  public resourceUri?: Uri;
+  public contextValue?: string;
+  public iconPath?: any;
+  public tooltip?: string;
+  public command?: any;
+  public description?: string;
+
+  constructor(
+    public label: string | any,
+    public collapsibleState: TreeItemCollapsibleState = TreeItemCollapsibleState.None
+  ) {}
+}
 
 export const window = {
   activeTextEditor: undefined,
@@ -128,6 +166,9 @@ export const window = {
   showOpenDialog: async () => undefined,
   showInputBox: async (_options?: any): Promise<string | undefined> => undefined,
   registerCustomEditorProvider: () => ({ dispose: () => {} }),
+  registerTreeDataProvider: () => ({ dispose: () => {} }),
+  createTreeView: () => ({ dispose: () => {} }),
+  showTextDocument: async (doc: any) => ({ document: doc }),
 };
 
 export const languages = {

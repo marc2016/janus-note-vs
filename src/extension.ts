@@ -11,13 +11,20 @@ import { MutateTasksTool } from './agent/tools/mutateTasksTool';
 import { MutateChartTool } from './agent/tools/mutateChartTool';
 import { JanusChatParticipant } from './agent/chatParticipant';
 import { isMarkdownNote } from './companion/companionPaths';
-import { setNotesRootCommand, resetNotesRootCommand } from './commands/notesRootCommands';
+import {
+  setNotesRootCommand,
+  resetNotesRootCommand,
+  initNotesRootCommand,
+  updateNotesContextKeys,
+} from './commands/notesRootCommands';
+import { NotesTreeDataProvider } from './ui/notesTreeDataProvider';
 
 export function activate(context: vscode.ExtensionContext) {
   // 1. Core Services
   const companionManager = new CompanionManager();
   const codeLensProvider = new CompanionCodeLensProvider(companionManager);
   const companionWatcher = new CompanionWatcher(codeLensProvider);
+  const notesTreeDataProvider = new NotesTreeDataProvider(companionManager);
 
   // 2. Diff and Review Services
   const diffContentProvider = new DiffContentProvider();
@@ -27,10 +34,22 @@ export function activate(context: vscode.ExtensionContext) {
     companionWatcher,
     vscode.languages.registerCodeLensProvider({ language: 'markdown' }, codeLensProvider),
     vscode.workspace.registerTextDocumentContentProvider(DiffContentProvider.scheme, diffContentProvider),
+    vscode.window.registerTreeDataProvider('janus.notesView', notesTreeDataProvider),
     TasksEditorProvider.register(context),
     ChartEditorProvider.register(context),
     MarkdownEditorProvider.register(context)
   );
+
+  // Listen to companion & note file changes to refresh tree view and context state
+  context.subscriptions.push(
+    companionWatcher.onDidChangeCompanion(() => {
+      notesTreeDataProvider.refresh();
+      updateNotesContextKeys(companionManager);
+    })
+  );
+
+  // Initial context keys update on activation
+  updateNotesContextKeys(companionManager);
 
   // 3. Register Language Model Tools
   if (vscode.lm && typeof vscode.lm.registerTool === 'function') {
@@ -141,10 +160,19 @@ export function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('janus.setNotesRoot', setNotesRootCommand),
     vscode.commands.registerCommand('janus.resetNotesRoot', resetNotesRootCommand),
+    vscode.commands.registerCommand('janus.initNotesRoot', async () => {
+      await initNotesRootCommand(companionManager, notesTreeDataProvider);
+    }),
+    vscode.commands.registerCommand('janus.refreshNotesTree', () => {
+      notesTreeDataProvider.refresh();
+      updateNotesContextKeys(companionManager);
+    }),
 
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('janus.notesRoot')) {
+      if (e.affectsConfiguration('janus.notesRoot') || e.affectsConfiguration('janus.initialized')) {
         codeLensProvider.refresh();
+        notesTreeDataProvider.refresh();
+        updateNotesContextKeys(companionManager);
       }
     })
   );
