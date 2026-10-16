@@ -21,6 +21,17 @@
     "onStartupFinished"
   ],
   "contributes": {
+    "configuration": {
+      "title": "Janus Note",
+      "properties": {
+        "janus.notesRoot": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Relative path to the notes root directory within the workspace. If empty, the workspace root is used."
+        }
+      }
+    },
     "commands": [
       {
         "command": "janus.openCompanion",
@@ -37,8 +48,25 @@
       {
         "command": "janus.openMarkdownEditor",
         "title": "Janus: Open in Rich Markdown Editor"
+      },
+      {
+        "command": "janus.setNotesRoot",
+        "title": "Janus: Als Notizen-Ordner festlegen"
+      },
+      {
+        "command": "janus.resetNotesRoot",
+        "title": "Janus: Notizen-Ordner zurücksetzen"
       }
     ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "janus.setNotesRoot",
+          "when": "explorerResourceIsFolder",
+          "group": "navigation@10"
+        }
+      ]
+    },
     "customEditors": [
       {
         "viewType": "janus.tasksEditor",

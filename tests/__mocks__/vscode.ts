@@ -21,7 +21,8 @@ export class Uri {
   }
 
   static joinPath(base: Uri, ...pathSegments: string[]): Uri {
-    return new Uri(base.scheme, base.authority, [base.path, ...pathSegments].join('/'));
+    const joined = [base.path, ...pathSegments].join('/').replace(/\/+/g, '/');
+    return new Uri(base.scheme, base.authority, joined);
   }
 }
 
@@ -49,11 +50,65 @@ export class EventEmitter<T = any> {
   dispose() {}
 }
 
+export enum ConfigurationTarget {
+  Global = 1,
+  Workspace = 2,
+  WorkspaceFolder = 3,
+}
+
+let _configStore: Record<string, any> = {};
+
+export function __setConfigStore(store: Record<string, any>) {
+  _configStore = { ...store };
+}
+
+export function __getConfigStore() {
+  return _configStore;
+}
+
+export enum FileType {
+  Unknown = 0,
+  File = 1,
+  Directory = 2,
+  SymbolicLink = 64,
+}
+
 export const workspace = {
+  workspaceFolders: undefined as any[] | undefined,
+  getWorkspaceFolder: (uri: Uri) => {
+    if (!workspace.workspaceFolders) return undefined;
+    return workspace.workspaceFolders.find(wf => uri.fsPath.startsWith(wf.uri.fsPath));
+  },
+  getConfiguration: (section?: string, _scope?: any) => ({
+    get: <T>(key: string, defaultValue?: T): T => {
+      const fullKey = section ? `${section}.${key}` : key;
+      if (fullKey in _configStore) {
+        return _configStore[fullKey];
+      }
+      if (section && section in _configStore && typeof _configStore[section] === 'object' && key in _configStore[section]) {
+        return _configStore[section][key];
+      }
+      return defaultValue as T;
+    },
+    update: async (key: string, value: any, _target?: ConfigurationTarget) => {
+      const fullKey = section ? `${section}.${key}` : key;
+      _configStore[fullKey] = value;
+    },
+    has: (key: string) => {
+      const fullKey = section ? `${section}.${key}` : key;
+      return fullKey in _configStore;
+    },
+    inspect: (_key: string) => undefined,
+  }),
+  onDidChangeConfiguration: (_listener: (e: { affectsConfiguration: (section: string) => boolean }) => any) => ({
+    dispose: () => {},
+  }),
   fs: {
     stat: async () => {},
     readFile: async () => Buffer.from(''),
     writeFile: async () => {},
+    readDirectory: async (_uri: Uri): Promise<[string, FileType][]> => [],
+    createDirectory: async (_uri: Uri): Promise<void> => {},
   },
   createFileSystemWatcher: () => ({
     onDidCreate: () => ({ dispose: () => {} }),
@@ -68,8 +123,10 @@ export const workspace = {
 
 export const window = {
   activeTextEditor: undefined,
-  showInformationMessage: async () => undefined,
-  showErrorMessage: async () => undefined,
+  showInformationMessage: async (..._args: any[]): Promise<any> => undefined,
+  showErrorMessage: async (..._args: any[]): Promise<any> => undefined,
+  showOpenDialog: async () => undefined,
+  showInputBox: async (_options?: any): Promise<string | undefined> => undefined,
   registerCustomEditorProvider: () => ({ dispose: () => {} }),
 };
 

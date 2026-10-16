@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { getCompanionPaths, getNotePathFromCompanion } from './companionPaths';
 import { createInitialTasksCompanion, parseTasksCompanion, TasksCompanion } from '../models/tasks';
 import { createInitialChartCompanion, parseChartCompanion, ChartCompanion } from '../models/chart';
@@ -108,5 +109,53 @@ export class CompanionManager {
   getNoteUriFromCompanion(companionUri: vscode.Uri): vscode.Uri | null {
     const notePath = getNotePathFromCompanion(companionUri.fsPath);
     return notePath ? vscode.Uri.file(notePath) : null;
+  }
+
+  /**
+   * Resolves the configured notes root directory as a Uri.
+   * Defaults to workspace folder root if unset or empty.
+   */
+  getNotesRootUri(scopeUri?: vscode.Uri): vscode.Uri | undefined {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length === 0) {
+      return undefined;
+    }
+
+    const folder = (scopeUri ? vscode.workspace.getWorkspaceFolder(scopeUri) : undefined) || folders[0];
+    const config = vscode.workspace.getConfiguration('janus', folder.uri);
+    const notesRoot = (config.get<string>('notesRoot') || '').trim();
+
+    if (!notesRoot) {
+      return folder.uri;
+    }
+
+    const normalizedRelPath = notesRoot.replace(/^(\.\/|\/)+/, '');
+    return vscode.Uri.joinPath(folder.uri, normalizedRelPath);
+  }
+
+  /**
+   * Checks whether the given URI is located within the active notes root.
+   */
+  isUnderNotesRoot(uri: vscode.Uri): boolean {
+    const root = this.getNotesRootUri(uri);
+    if (!root) {
+      return false;
+    }
+
+    const rel = path.relative(root.fsPath, uri.fsPath);
+    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+  }
+
+  /**
+   * Resolves a relative path to a full URI under the configured notes root.
+   */
+  resolveRelativeNotesPath(relPath: string, scopeUri?: vscode.Uri): vscode.Uri | undefined {
+    const root = this.getNotesRootUri(scopeUri);
+    if (!root) {
+      return undefined;
+    }
+
+    const normalized = relPath.replace(/^(\.\/|\/)+/, '');
+    return vscode.Uri.joinPath(root, normalized);
   }
 }

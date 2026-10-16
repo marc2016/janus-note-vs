@@ -11,6 +11,7 @@ import { MutateTasksTool } from './agent/tools/mutateTasksTool';
 import { MutateChartTool } from './agent/tools/mutateChartTool';
 import { JanusChatParticipant } from './agent/chatParticipant';
 import { isMarkdownNote } from './companion/companionPaths';
+import { setNotesRootCommand, resetNotesRootCommand } from './commands/notesRootCommands';
 
 export function activate(context: vscode.ExtensionContext) {
   // 1. Core Services
@@ -135,6 +136,15 @@ export function activate(context: vscode.ExtensionContext) {
         await vscode.commands.executeCommand('vscode.openWith', status.chartUri, ChartEditorProvider.viewType);
       } else if (selected.label.includes('Create Diagram View')) {
         await vscode.commands.executeCommand('janus.createChartCompanion', targetUri);
+      }
+    }),
+
+    vscode.commands.registerCommand('janus.setNotesRoot', setNotesRootCommand),
+    vscode.commands.registerCommand('janus.resetNotesRoot', resetNotesRootCommand),
+
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('janus.notesRoot')) {
+        codeLensProvider.refresh();
       }
     })
   );
