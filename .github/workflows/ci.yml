@@ -37,6 +37,6 @@ jobs:
       - name: Upload VSIX Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: janus-note-vs-vsix
+          name: janus-note-vsix
           path: '*.vsix'
           retention-days: 14
