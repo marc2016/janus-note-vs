@@ -1,0 +1,140 @@
+import * as vscode from 'vscode';
+import { parseTasksCompanion, TasksCompanion, TaskItem } from '../models/tasks';
+
+export class TasksEditorProvider implements vscode.CustomTextEditorProvider {
+  public static readonly viewType = 'janus.tasksEditor';
+
+  constructor(private readonly context: vscode.ExtensionContext) {}
+
+  public static register(context: vscode.ExtensionContext): vscode.Disposable {
+    const provider = new TasksEditorProvider(context);
+    return vscode.window.registerCustomEditorProvider(TasksEditorProvider.viewType, provider, {
+      webviewOptions: {
+        retainContextWhenHidden: true,
+      },
+      supportsMultipleEditorsPerDocument: false,
+    });
+  }
+
+  async resolveCustomTextEditor(
+    document: vscode.TextDocument,
+    webviewPanel: vscode.WebviewPanel,
+    _token: vscode.CancellationToken
+  ): Promise<void> {
+    webviewPanel.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [
+        vscode.Uri.joinPath(this.context.extensionUri, 'dist'),
+      ],
+    };
+
+    webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview, document);
+
+    const updateWebview = () => {
+      try {
+        const text = document.getText();
+        const data = parseTasksCompanion(text || '{}');
+        webviewPanel.webview.postMessage({
+          type: 'init',
+          data,
+        });
+      } catch (err: any) {
+        webviewPanel.webview.postMessage({
+          type: 'error',
+          message: 'Malformed *.tasks.json: ' + (err?.message || String(err)),
+        });
+      }
+    };
+
+    // Listen for changes from webview
+    webviewPanel.webview.onDidReceiveMessage(async (message) => {
+      if (message.type === 'ready') {
+        updateWebview();
+        return;
+      }
+      if (message.type === 'updateTasks') {
+        const newTasks: TaskItem[] = message.tasks;
+        try {
+          const currentText = document.getText();
+          let currentData: TasksCompanion;
+          try {
+            currentData = parseTasksCompanion(currentText || '{}');
+          } catch {
+            currentData = { version: 1, title: 'Task Board', tasks: [] };
+          }
+
+          currentData.tasks = newTasks;
+
+          const updatedJson = JSON.stringify(currentData, null, 2);
+          const fullRange = new vscode.Range(
+            document.positionAt(0),
+            document.positionAt(document.getText().length)
+          );
+
+          const edit = new vscode.WorkspaceEdit();
+          edit.replace(document.uri, fullRange, updatedJson);
+          await vscode.workspace.applyEdit(edit);
+        } catch (error: any) {
+          vscode.window.showErrorMessage('Failed to update tasks: ' + error.message);
+        }
+      }
+    });
+
+    // Sync external or undo/redo changes back to webview
+    const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument((e) => {
+      if (e.document.uri.toString() === document.uri.toString()) {
+        updateWebview();
+      }
+    });
+
+    webviewPanel.onDidDispose(() => {
+      changeDocumentSubscription.dispose();
+    });
+
+    // Initial render
+    updateWebview();
+  }
+
+  private getHtmlForWebview(webview: vscode.Webview, document: vscode.TextDocument): string {
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webviews', 'tasks.js')
+    );
+    const styleUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webviews', 'globals.css')
+    );
+
+    const nonce = getNonce();
+
+    let initialData: TasksCompanion = { version: 1, title: 'Janus Task Board', tasks: [] };
+    try {
+      const parsed = parseTasksCompanion(document.getText() || '{}');
+      initialData = { ...initialData, ...parsed };
+    } catch {}
+
+    const initialJson = JSON.stringify(initialData).replace(/</g, '\\u003c');
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Janus Task Board</title>
+  <link rel="stylesheet" href="${styleUri}">
+</head>
+<body class="bg-[var(--vscode-editor-background,#1e1e1e)] text-[var(--vscode-editor-foreground,#d4d4d4)] antialiased m-0 p-0">
+  <script id="initial-data" type="application/json">${initialJson}</script>
+  <div id="root"></div>
+  <script nonce="${nonce}" src="${scriptUri}"></script>
+</body>
+</html>`;
+  }
+}
+
+function getNonce(): string {
+  let text = '';
+  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  for (let i = 0; i < 32; i++) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
+}

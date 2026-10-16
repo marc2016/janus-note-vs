@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+:root {
+  --background: var(--vscode-editor-background, #1e1e1e);
+  --foreground: var(--vscode-editor-foreground, #d4d4d4);
+  --card: var(--vscode-editorWidget-background, #252526);
+  --card-foreground: var(--vscode-editorWidget-foreground, #cccccc);
+  --border: var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.25));
+  --input: var(--vscode-input-background, #3c3c3c);
+  --primary: var(--vscode-button-background, #0e639c);
+  --primary-foreground: var(--vscode-button-foreground, #ffffff);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* High-contrast diagram enhancements */
+.mermaid-container svg {
+  max-width: 100%;
+  height: auto;
+  font-family: inherit;
+}
+
+.mermaid-container text {
+  font-family: inherit !important;
+  font-weight: 500;
+}
+
+.mermaid-container .messageText {
+  stroke: none !important;
+  font-weight: 600 !important;
+}
+
+.mermaid-container .actor text {
+  font-weight: 600 !important;
+}
+
+/* CodeMirror 6 markdown editor styles */
+.cm-editor {
+  outline: none !important;
+  height: 100% !important;
+}
+
+.cm-editor .cm-scroller {
+  font-family: inherit;
+  line-height: 1.65;
+  height: 100% !important;
+  overflow: auto !important;
+}
+
+.cm-editor .cm-content {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  box-sizing: border-box;
+}
+
+.cm-editor .cm-line {
+  line-height: 1.65;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}

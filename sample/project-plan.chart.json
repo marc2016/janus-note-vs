@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "title": "Janus Note Workflow Sequence",
+  "chartType": "mermaid",
+  "code": [
+    "sequenceDiagram",
+    "    autonumber",
+    "    actor User as Developer",
+    "    participant VS as VS Code Editor",
+    "    participant CM as Companion Manager",
+    "    participant WV as React Webview",
+    "    participant AI as @janus Agent",
+    "",
+    "    User->>VS: Opens Note (project-plan.md)",
+    "    VS->>CM: Checks Companion Files (*.tasks.json, *.chart.json)",
+    "    CM-->>VS: Returns Companion Status",
+    "    VS->>User: Displays CodeLens (Tasks count, Diagram type)",
+    "",
+    "    User->>VS: Clicks CodeLens \"Diagram (mermaid)\"",
+    "    VS->>WV: Opens Custom Diagram Webview",
+    "    WV->>CM: Sends ready handshake",
+    "    CM-->>WV: Injects chart data (*.chart.json)",
+    "    WV-->>User: Renders Mermaid Sequence Diagram",
+    "",
+    "    User->>AI: Prompt: \"@janus Plan next milestone\"",
+    "    AI->>CM: Invokes Tool: mutate_tasks / mutate_chart",
+    "    CM->>VS: Writes validated JSON to companion file",
+    "    VS->>WV: Live-sync onDidChangeTextDocument",
+    "    WV-->>User: Updates diagram in real time"
+  ]
+}

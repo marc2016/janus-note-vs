@@ -1,0 +1,223 @@
+{
+  "name": "janus-note-vs",
+  "displayName": "Janus Note",
+  "description": "Human Markdown Notes & Machine-Operable Companion Files with AI Assistance",
+  "version": "0.1.0",
+  "publisher": "marc2016",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/marc2016/janus-note-vs"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other",
+    "Notebooks",
+    "AI"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "janus.openCompanion",
+        "title": "Janus: Open Companion File"
+      },
+      {
+        "command": "janus.createTasksCompanion",
+        "title": "Janus: Create Tasks Companion (*.tasks.json)"
+      },
+      {
+        "command": "janus.createChartCompanion",
+        "title": "Janus: Create Diagram Companion (*.chart.json)"
+      },
+      {
+        "command": "janus.openMarkdownEditor",
+        "title": "Janus: Open in Rich Markdown Editor"
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "janus.tasksEditor",
+        "displayName": "Janus Task Board",
+        "selector": [
+          {
+            "filenamePattern": "*.tasks.json"
+          }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "janus.chartEditor",
+        "displayName": "Janus Diagram View",
+        "selector": [
+          {
+            "filenamePattern": "*.chart.json"
+          }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "janus.markdownEditor",
+        "displayName": "Janus Markdown Editor (WYSIWYG)",
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "chatParticipants": [
+      {
+        "id": "janus",
+        "name": "janus",
+        "fullName": "Janus Note",
+        "description": "Assistant for managing notes and companion tasks and diagrams"
+      }
+    ],
+    "languageModelTools": [
+      {
+        "name": "janus_read_note_and_companions",
+        "displayName": "Janus: Read Note and Companions",
+        "modelDescription": "Reads the active or specified markdown note and returns its text along with attached companion files (*.tasks.json, *.chart.json).",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "noteUri": {
+              "type": "string",
+              "description": "Optional URI or path to the markdown note. If omitted, uses active document."
+            }
+          }
+        }
+      },
+      {
+        "name": "janus_mutate_tasks",
+        "displayName": "Janus: Mutate Tasks",
+        "modelDescription": "Creates, updates, or checks off tasks in a *.tasks.json companion file with schema validation.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "noteUri": {
+              "type": "string",
+              "description": "URI or path to the target note or tasks companion file"
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "add",
+                "update",
+                "delete",
+                "setAll"
+              ],
+              "description": "Action to perform on the task companion"
+            },
+            "tasks": {
+              "type": "array",
+              "description": "Array of task items with id, title, completed, status",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "completed": {
+                    "type": "boolean"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "todo",
+                      "in_progress",
+                      "done"
+                    ]
+                  }
+                },
+                "required": [
+                  "title"
+                ]
+              }
+            }
+          },
+          "required": [
+            "noteUri",
+            "action"
+          ]
+        }
+      },
+      {
+        "name": "janus_mutate_chart",
+        "displayName": "Janus: Mutate Chart",
+        "modelDescription": "Creates or updates a *.chart.json companion file with diagram syntax (such as Mermaid).",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "noteUri": {
+              "type": "string",
+              "description": "URI or path to the target note or chart companion file"
+            },
+            "chartType": {
+              "type": "string",
+              "description": "Type of diagram (e.g. mermaid, flowchart)"
+            },
+            "code": {
+              "type": "string",
+              "description": "Mermaid diagram code or chart definition"
+            }
+          },
+          "required": [
+            "noteUri",
+            "code"
+          ]
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "compile": "tsc -p ./ --noEmit",
+    "watch": "node esbuild.js --watch",
+    "build": "node esbuild.js",
+    "test": "vitest run",
+    "package": "vsce package --no-git-tag-version"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.20.3",
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/language": "^6.13.1",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.14",
+    "@mdi/js": "^7.4.47",
+    "@radix-ui/react-slot": "^1.5.0",
+    "@types/d3": "^7.4.3",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "d3": "^7.9.0",
+    "mermaid": "^12.2.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tailwind-merge": "^3.7.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "@types/node": "^22.13.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^4.0.0",
+    "autoprefixer": "^10.6.1",
+    "esbuild": "^0.25.0",
+    "postcss": "^8.5.30",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}
