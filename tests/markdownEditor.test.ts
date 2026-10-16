@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { markdown } from '@codemirror/lang-markdown';
+import { Table } from '@lezer/markdown';
 import { syntaxTree } from '@codemirror/language';
 import { slashCommandSource } from '../src/webviews/markdown/extensions/slashCommands';
 import { styledLists } from '../src/webviews/markdown/extensions/styledLists';
@@ -12,6 +13,11 @@ import {
   SyntaxVisibilityMode,
 } from '../src/webviews/markdown/extensions/livePreview';
 import { toggleInlineFormatting, formattingKeymap } from '../src/webviews/markdown/lib/formatting';
+import {
+  styledTables,
+  insertEmptyMarkdownTable,
+  markdownTableAutocompleter,
+} from '../src/webviews/markdown/extensions/styledTables';
 
 describe('CodeMirror Markdown Editor & Zero-Diff Verification', () => {
   describe('Slash Command Autocomplete', () => {
@@ -414,5 +420,83 @@ describe('CodeMirror Markdown Editor & Zero-Diff Verification', () => {
       expect(trHidden.state.facet(syntaxVisibilityFacet)).toBe('hidden');
     });
   });
+
+  describe('Visual GFM Table Styling and Interactive Tables', () => {
+    function createTableTestView(
+      doc: string,
+      cursor: number | { from: number; to: number }
+    ) {
+      let state = EditorState.create({
+        doc,
+        selection:
+          typeof cursor === 'number'
+            ? { anchor: cursor }
+            : { anchor: cursor.from, head: cursor.to },
+        extensions: [
+          markdown({ extensions: [Table] }),
+          styledTables(),
+        ],
+      });
+      const view: any = {
+        get state() {
+          return state;
+        },
+        dispatch(tr: any) {
+          const transaction = tr.state ? tr : state.update(tr);
+          state = transaction.state;
+        },
+        focus() {},
+      };
+      return view;
+    }
+
+    it('exports styledTables extension function', () => {
+      const ext = styledTables();
+      expect(ext).toBeDefined();
+    });
+
+    it('exports insertEmptyMarkdownTable command', () => {
+      expect(typeof insertEmptyMarkdownTable).toBe('function');
+      const cmd = insertEmptyMarkdownTable();
+      expect(typeof cmd).toBe('function');
+    });
+
+    it('exports markdownTableAutocompleter completion source', () => {
+      expect(typeof markdownTableAutocompleter).toBe('function');
+    });
+
+    it('detects and parses GFM tables in markdown syntax tree', () => {
+      const doc = '| H1 | H2 |\n| --- | --- |\n| A1 | A2 |';
+      const state = EditorState.create({
+        doc,
+        extensions: [markdown({ extensions: [Table] })],
+      });
+      const tree = syntaxTree(state);
+      expect(tree.toString()).toContain('Table');
+      expect(tree.toString()).toContain('TableHeader');
+      expect(tree.toString()).toContain('TableRow');
+    });
+
+    it('preserves exact byte-for-byte markdown syntax without extraneous diffs when modifying a table cell', () => {
+      const initialDoc = '# Intro\n\n| Item | Qty |\n| --- | --- |\n| Apple | 10 |\n\nOutro text';
+      const view = createTableTestView(initialDoc, 0);
+
+      // Replace "10" with "25"
+      const pos10 = initialDoc.indexOf('10');
+      view.dispatch({
+        changes: { from: pos10, to: pos10 + 2, insert: '25' },
+      });
+
+      const updated = view.state.doc.toString();
+      expect(updated).toBe('# Intro\n\n| Item | Qty |\n| --- | --- |\n| Apple | 25 |\n\nOutro text');
+
+      // Check unchanged lines
+      expect(updated.split('\n')[0]).toBe('# Intro');
+      expect(updated.split('\n')[2]).toBe('| Item | Qty |');
+      expect(updated.split('\n')[3]).toBe('| --- | --- |');
+      expect(updated.split('\n')[6]).toBe('Outro text');
+    });
+  });
 });
+
 

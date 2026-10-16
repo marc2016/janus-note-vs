@@ -3,6 +3,7 @@ import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, keymap, drawSelection, dropCursor } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
+import { Table } from '@lezer/markdown';
 import { syntaxTree } from '@codemirror/language';
 
 import {
@@ -14,6 +15,7 @@ import {
 import { taskCheckboxes } from './extensions/taskCheckboxes';
 import { slashCommands } from './extensions/slashCommands';
 import { styledLists } from './extensions/styledLists';
+import { styledTables } from './extensions/styledTables';
 import {
   MarkdownToolbar,
   ActiveToolbarState,
@@ -231,10 +233,11 @@ export const MarkdownEditorApp: React.FC = () => {
         drawSelection(),
         dropCursor(),
         keymap.of([...formattingKeymap, ...defaultKeymap, ...historyKeymap]),
-        markdown(),
+        markdown({ extensions: [Table] }),
         livePreview(syntaxMode),
         styledLists(),
         taskCheckboxes(),
+        styledTables(),
         slashCommands(),
         EditorView.lineWrapping,
         themeCompartment.of(getEditorTheme(effectiveIsDark)),
