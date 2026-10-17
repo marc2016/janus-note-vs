@@ -21,6 +21,10 @@ import {
   ActiveToolbarState,
   defaultActiveToolbarState,
 } from './components/MarkdownToolbar';
+import {
+  NotesLinksFooter,
+  NoteLinksData,
+} from './components/NotesLinksFooter';
 import { formattingKeymap } from './lib/formatting';
 
 declare function acquireVsCodeApi(): {
@@ -178,6 +182,7 @@ export const MarkdownEditorApp: React.FC = () => {
   const [editorView, setEditorView] = useState<EditorView | null>(null);
   const [activeState, setActiveState] = useState<ActiveToolbarState>(defaultActiveToolbarState);
   const [syntaxMode, setSyntaxMode] = useState<SyntaxVisibilityMode>(getInitialSyntaxMode);
+  const [linksData, setLinksData] = useState<NoteLinksData | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isUpdatingFromHostRef = useRef<boolean>(false);
@@ -299,6 +304,8 @@ export const MarkdownEditorApp: React.FC = () => {
             isUpdatingFromHostRef.current = false;
           }
         }
+      } else if (message.type === 'updateLinks' && message.linksData) {
+        setLinksData(message.linksData);
       }
     };
 
@@ -310,6 +317,34 @@ export const MarkdownEditorApp: React.FC = () => {
     const api = getVsCodeApi();
     if (api) {
       api.postMessage({ type: 'openSource' });
+    }
+  };
+
+  const handleOpenLink = (targetUri: string, viewType?: string) => {
+    const api = getVsCodeApi();
+    if (api) {
+      api.postMessage({
+        type: 'openLink',
+        targetUri,
+        viewType,
+      });
+    }
+  };
+
+  const handleAddLink = () => {
+    const api = getVsCodeApi();
+    if (api) {
+      api.postMessage({ type: 'addLink' });
+    }
+  };
+
+  const handleCreateCompanion = (companionType: 'tasks' | 'chart') => {
+    const api = getVsCodeApi();
+    if (api) {
+      api.postMessage({
+        type: 'createCompanion',
+        companionType,
+      });
     }
   };
 
@@ -349,6 +384,14 @@ export const MarkdownEditorApp: React.FC = () => {
       <div
         ref={containerRef}
         className="flex-1 min-h-0 overflow-hidden outline-none w-full"
+      />
+
+      {/* Interactive Links & Companions Footer Bar */}
+      <NotesLinksFooter
+        linksData={linksData}
+        onOpenLink={handleOpenLink}
+        onAddLink={handleAddLink}
+        onCreateCompanion={handleCreateCompanion}
       />
     </div>
   );

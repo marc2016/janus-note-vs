@@ -176,6 +176,7 @@ export const window = {
   showErrorMessage: async (..._args: any[]): Promise<any> => undefined,
   showOpenDialog: async () => undefined,
   showInputBox: async (_options?: any): Promise<string | undefined> => undefined,
+  showQuickPick: async (_items?: any, _options?: any): Promise<any> => undefined,
   registerCustomEditorProvider: () => ({ dispose: () => {} }),
   registerTreeDataProvider: () => ({ dispose: () => {} }),
   createTreeView: () => ({

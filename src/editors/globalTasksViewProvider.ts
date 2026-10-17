@@ -64,7 +64,7 @@ export class GlobalTasksViewProvider {
       tasks: g.tasks,
     }));
 
-    await this.panel.webview.postMessage({
+    void this.panel.webview.postMessage({
       type: 'initGlobalTasks',
       title: 'Alle Aufgaben (Workspace)',
       groups: serializedGroups,

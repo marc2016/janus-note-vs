@@ -1,10 +1,10 @@
-# Spec Delta
+# note-linking Specification
 
 ## Purpose
 
 Enables automated discovery, bi-directional backlink indexing, and companion status aggregation for interconnected Markdown notes in the workspace.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Wiki-Link and Markdown Link Parsing
 The system SHALL parse outgoing references from Markdown document text, recognizing wiki-style links (`[[Note Name]]` or `[[note.md]]`) and standard Markdown links (`[Title](target.md)`).
@@ -21,8 +21,9 @@ The system SHALL identify all notes in the active notes root that reference the 
 - **THEN** system identifies Note B as an incoming backlink for Note A
 
 ### Requirement: Companion Status and Task Summary Resolution
-The system SHALL query direct companion files (`*.tasks.json`, `*.chart.json`) for the active note, determine their existence, and summarize open vs. completed task counts when a task board companion exists.
+The system SHALL query the containing folder's `tasks.json` and the active note's `*.chart.json` companion file, determine their existence, and summarize open vs. completed task counts when a folder task list exists.
 
 #### Scenario: Resolving companion files with tasks summary
-- **WHEN** user opens `alpha.md` which has an associated `alpha.tasks.json` containing 3 open tasks and 2 completed tasks
-- **THEN** system reports companion status with task board existence and summary counts (3 open, 5 total)
+- **WHEN** user opens `projekt-alpha/alpha.md` whose folder contains `projekt-alpha/tasks.json` with 3 open tasks and 2 completed tasks
+- **THEN** system reports companion status with folder task list existence and summary counts (3 open, 5 total)
+

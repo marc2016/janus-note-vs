@@ -37,21 +37,25 @@ export class AllTasksTreeItem extends vscode.TreeItem {
 }
 
 export class FolderTasksTreeItem extends vscode.TreeItem {
+  public readonly folderUri: vscode.Uri;
+
   constructor(
     public readonly uri: vscode.Uri,
-    public readonly openCount: number = 0
+    public readonly openCount: number = 0,
+    folderUri?: vscode.Uri
   ) {
     super('Aufgaben', vscode.TreeItemCollapsibleState.None);
 
+    this.folderUri = folderUri || vscode.Uri.file(path.dirname(uri.fsPath));
     this.resourceUri = uri;
     this.contextValue = 'janusFolderTasks';
     this.iconPath = new vscode.ThemeIcon('checklist');
     this.description = `(${openCount} offen)`;
-    this.tooltip = `Ordner-Aufgaben: ${uri.fsPath} (${openCount} offen)`;
+    this.tooltip = `Ordner-Aufgaben: ${this.folderUri.fsPath} (${openCount} offen)`;
     this.command = {
-      command: 'vscode.openWith',
+      command: 'janus.openFolderTasks',
       title: 'Ordner-Aufgaben öffnen',
-      arguments: [uri, TasksEditorProvider.viewType],
+      arguments: [this.folderUri],
     };
   }
 }
@@ -74,13 +78,11 @@ export class NoteTreeItem extends vscode.TreeItem {
     public readonly companionStatus?: CompanionStatus
   ) {
     const name = path.basename(uri.fsPath);
-    const hasCompanions = Boolean(
-      companionStatus && (companionStatus.tasksExist || companionStatus.chartExist)
-    );
+    const hasChartCompanion = Boolean(companionStatus?.chartExist);
 
     super(
       name,
-      hasCompanions
+      hasChartCompanion
         ? vscode.TreeItemCollapsibleState.Collapsed
         : vscode.TreeItemCollapsibleState.None
     );
@@ -95,11 +97,8 @@ export class NoteTreeItem extends vscode.TreeItem {
       arguments: [uri, MarkdownEditorProvider.viewType],
     };
 
-    if (hasCompanions) {
-      const parts: string[] = [];
-      if (companionStatus?.tasksExist) parts.push('Tasks');
-      if (companionStatus?.chartExist) parts.push('Diagram');
-      this.description = parts.join(', ');
+    if (hasChartCompanion) {
+      this.description = 'Diagram';
     }
   }
 }
@@ -111,7 +110,7 @@ export class CompanionTreeItem extends vscode.TreeItem {
     public readonly noteUri: vscode.Uri
   ) {
     const isTasks = companionType === 'tasks';
-    const label = isTasks ? 'Task Board' : 'Diagram View';
+    const label = isTasks ? 'Task List' : 'Diagram View';
 
     super(label, vscode.TreeItemCollapsibleState.None);
 
@@ -157,13 +156,13 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
         return [];
       }
       const totalOpen = await this.folderTasksService.countTotalOpenTasks(status.notesRootUri);
-      const allTasksItem = new AllTasksTreeItem(totalOpen);
-      const dirItems = await this.readDirectoryItems(status.notesRootUri);
+      const allTasksItem = new AllTasksTreeItem(totalOpen, status.notesRootUri);
+      const dirItems = await this.readDirectoryItems(status.notesRootUri, false);
       return [allTasksItem, ...dirItems];
     }
 
     if (element instanceof FolderTreeItem) {
-      return this.readDirectoryItems(element.uri);
+      return this.readDirectoryItems(element.uri, true);
     }
 
     if (element instanceof NoteTreeItem) {
@@ -174,10 +173,13 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
     return [];
   }
 
-  private async readDirectoryItems(dirUri: vscode.Uri): Promise<NotesTreeItem[]> {
+  private async readDirectoryItems(
+    dirUri: vscode.Uri,
+    isSubfolder: boolean
+  ): Promise<NotesTreeItem[]> {
     try {
       const entries = await vscode.workspace.fs.readDirectory(dirUri);
-      let folderTasksItem: FolderTasksTreeItem | undefined;
+      let hasTasksJson = false;
       const folders: FolderTreeItem[] = [];
       const notes: NoteTreeItem[] = [];
 
@@ -191,8 +193,7 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
         if (fileType === vscode.FileType.Directory) {
           folders.push(new FolderTreeItem(entryUri));
         } else if (fileType === vscode.FileType.File && name === 'tasks.json') {
-          const openCount = await this.folderTasksService.countOpenTasksInFile(entryUri);
-          folderTasksItem = new FolderTasksTreeItem(entryUri, openCount);
+          hasTasksJson = true;
         } else if (fileType === vscode.FileType.File && isMarkdownNote(name)) {
           const status = await this.companionManager.getCompanionStatus(entryUri);
           notes.push(new NoteTreeItem(entryUri, status));
@@ -202,6 +203,16 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
       // Sort alphabetically: folders first, then notes
       folders.sort((a, b) => (a.label as string).localeCompare(b.label as string));
       notes.sort((a, b) => (a.label as string).localeCompare(b.label as string));
+
+      // Every folder gets a FolderTasksTreeItem (and root gets one if tasks.json exists in root)
+      let folderTasksItem: FolderTasksTreeItem | undefined;
+      if (isSubfolder || hasTasksJson) {
+        const tasksUri = vscode.Uri.joinPath(dirUri, 'tasks.json');
+        const openCount = hasTasksJson
+          ? await this.folderTasksService.countOpenTasksInFile(tasksUri)
+          : 0;
+        folderTasksItem = new FolderTasksTreeItem(tasksUri, openCount, dirUri);
+      }
 
       return [
         ...(folderTasksItem ? [folderTasksItem] : []),
@@ -221,9 +232,6 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
 
     const children: CompanionTreeItem[] = [];
 
-    if (status.tasksExist) {
-      children.push(new CompanionTreeItem('tasks', status.tasksUri, noteItem.uri));
-    }
     if (status.chartExist) {
       children.push(new CompanionTreeItem('chart', status.chartUri, noteItem.uri));
     }

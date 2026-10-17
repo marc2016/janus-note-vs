@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { CompanionManager } from './companionManager';
 import { isMarkdownNote } from './companionPaths';
+import { parseTasksCompanion } from '../models/tasks';
 
 export class CompanionCodeLensProvider implements vscode.CodeLensProvider {
   private _onDidChangeCodeLenses: vscode.EventEmitter<void> = new vscode.EventEmitter<void>();
@@ -24,28 +26,30 @@ export class CompanionCodeLensProvider implements vscode.CodeLensProvider {
     const topRange = new vscode.Range(0, 0, 0, 0);
 
     const status = await this.companionManager.getCompanionStatus(document.uri);
+    const folderUri = vscode.Uri.file(path.dirname(document.uri.fsPath));
+    const folderTasksUri = vscode.Uri.joinPath(folderUri, 'tasks.json');
 
-    // 1. Tasks CodeLens
-    if (status.tasksExist && status.tasks) {
-      const total = status.tasks.tasks.length;
-      const open = status.tasks.tasks.filter((t) => !t.completed && t.status !== 'done').length;
-      const title = `$(checklist) Tasks: ${open}/${total} open`;
-
+    // 1. Folder Tasks CodeLens (pro Ordner, nicht pro Notiz)
+    try {
+      const rawBytes = await vscode.workspace.fs.readFile(folderTasksUri);
+      const folderTasks = parseTasksCompanion(Buffer.from(rawBytes).toString('utf-8'));
+      const total = folderTasks.tasks.length;
+      const open = folderTasks.tasks.filter((t) => !t.completed && t.status !== 'done').length;
       lenses.push(
         new vscode.CodeLens(topRange, {
-          title,
-          tooltip: 'Open Janus Task Board for this note',
-          command: 'vscode.openWith',
-          arguments: [status.tasksUri, 'janus.tasksEditor'],
+          title: `$(checklist) Ordner-Aufgaben: ${open}/${total} offen`,
+          tooltip: 'Ordner-Aufgabenliste (tasks.json) öffnen',
+          command: 'janus.openFolderTasks',
+          arguments: [folderUri],
         })
       );
-    } else {
+    } catch {
       lenses.push(
         new vscode.CodeLens(topRange, {
-          title: '$(add) Add Tasks Companion',
-          tooltip: 'Create a *.tasks.json companion file for this note',
-          command: 'janus.createTasksCompanion',
-          arguments: [document.uri],
+          title: '$(checklist) Ordner-Aufgaben',
+          tooltip: 'Ordner-Aufgabenliste (tasks.json) öffnen oder anlegen',
+          command: 'janus.openFolderTasks',
+          arguments: [folderUri],
         })
       );
     }

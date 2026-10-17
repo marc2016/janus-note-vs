@@ -90,9 +90,9 @@ describe('NotesTreeDataProvider', () => {
       return Buffer.from('{}', 'utf-8');
     });
 
-    // Mock companion stat to say meeting.tasks.json exists
+    // Mock companion stat to say meeting.chart.json exists
     vi.spyOn(vscode.workspace.fs, 'stat').mockImplementation(async (uri) => {
-      if (uri.fsPath.endsWith('meeting.tasks.json')) {
+      if (uri.fsPath.endsWith('meeting.chart.json')) {
         return {} as any;
       }
       throw new Error('Not found');
@@ -125,7 +125,7 @@ describe('NotesTreeDataProvider', () => {
     expect(note2 instanceof NoteTreeItem).toBe(true);
     expect(note2.label).toBe('meeting.md');
     expect(note2.collapsibleState).toBe(vscode.TreeItemCollapsibleState.Collapsed);
-    expect(note2.description).toBe('Tasks');
+    expect(note2.description).toBe('Diagram');
   });
 
   it('displays FolderTasksTreeItem inside a folder that contains tasks.json', async () => {
@@ -168,14 +168,11 @@ describe('NotesTreeDataProvider', () => {
     expect(tasksChild instanceof FolderTasksTreeItem).toBe(true);
     expect(tasksChild.label).toBe('Aufgaben');
     expect(tasksChild.description).toBe('(3 offen)');
-    expect(tasksChild.command?.command).toBe('vscode.openWith');
-    expect(tasksChild.command?.arguments).toEqual([
-      vscode.Uri.file('/workspace/project/notes/projekt-alpha/tasks.json'),
-      'janus.tasksEditor',
-    ]);
+    expect(tasksChild.command?.command).toBe('janus.openFolderTasks');
+    expect(tasksChild.command?.arguments).toEqual([folderUri]);
   });
 
-  it('resolves companion children for a NoteTreeItem', async () => {
+  it('resolves diagram companion children for a NoteTreeItem (tasks are strictly per folder)', async () => {
     const noteUri = vscode.Uri.file('/workspace/project/notes/meeting.md');
 
     vi.spyOn(vscode.workspace.fs, 'stat').mockImplementation(async (uri) => {
@@ -188,14 +185,10 @@ describe('NotesTreeDataProvider', () => {
     const noteItem = new NoteTreeItem(noteUri);
     const children = await provider.getChildren(noteItem);
 
-    expect(children.length).toBe(2);
+    expect(children.length).toBe(1);
     expect(children[0] instanceof CompanionTreeItem).toBe(true);
-    expect((children[0] as CompanionTreeItem).companionType).toBe('tasks');
-    expect((children[0] as CompanionTreeItem).label).toBe('Task Board');
-
-    expect(children[1] instanceof CompanionTreeItem).toBe(true);
-    expect((children[1] as CompanionTreeItem).companionType).toBe('chart');
-    expect((children[1] as CompanionTreeItem).label).toBe('Diagram View');
+    expect((children[0] as CompanionTreeItem).companionType).toBe('chart');
+    expect((children[0] as CompanionTreeItem).label).toBe('Diagram View');
   });
 
   it('returns empty children for CompanionTreeItem', async () => {

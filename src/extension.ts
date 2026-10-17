@@ -91,16 +91,14 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('janus.createTasksCompanion', async (uri?: vscode.Uri) => {
       const targetUri = uri || vscode.window.activeTextEditor?.document.uri;
       if (!targetUri) {
-        vscode.window.showErrorMessage('No markdown note selected to create tasks companion for.');
+        vscode.window.showErrorMessage('Keine Notiz oder kein Ordner ausgewählt.');
         return;
       }
-      try {
-        const tasksUri = await companionManager.createTasksCompanion(targetUri);
-        await vscode.commands.executeCommand('vscode.openWith', tasksUri, TasksEditorProvider.viewType);
-        codeLensProvider.refresh();
-      } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create tasks companion: ${err?.message || String(err)}`);
-      }
+      const folderUri = isMarkdownNote(targetUri.fsPath)
+        ? vscode.Uri.file(targetUri.fsPath.replace(/[\\/][^\\/]+$/, ''))
+        : targetUri;
+      await vscode.commands.executeCommand('janus.openFolderTasks', folderUri);
+      codeLensProvider.refresh();
     }),
 
     vscode.commands.registerCommand('janus.createChartCompanion', async (uri?: vscode.Uri) => {
@@ -135,19 +133,14 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       const status = await companionManager.getCompanionStatus(targetUri);
-      const items: vscode.QuickPickItem[] = [];
-
-      if (status.tasksExist) {
-        items.push({
-          label: '$(checklist) Open Task Board',
-          description: status.tasksUri.fsPath,
-        });
-      } else {
-        items.push({
-          label: '$(plus) Create Task Board',
-          description: 'Create a new *.tasks.json companion',
-        });
-      }
+      const folderUri = vscode.Uri.file(targetUri.fsPath.replace(/[\\/][^\\/]+$/, ''));
+      const folderTasksUri = vscode.Uri.joinPath(folderUri, 'tasks.json');
+      const items: vscode.QuickPickItem[] = [
+        {
+          label: '$(checklist) Ordner-Aufgaben öffnen',
+          description: folderTasksUri.fsPath,
+        },
+      ];
 
       if (status.chartExist) {
         items.push({
@@ -162,15 +155,13 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       const selected = await vscode.window.showQuickPick(items, {
-        placeHolder: 'Select Janus companion action',
+        placeHolder: 'Select Janus action',
       });
 
       if (!selected) return;
 
-      if (selected.label.includes('Open Task Board')) {
-        await vscode.commands.executeCommand('vscode.openWith', status.tasksUri, TasksEditorProvider.viewType);
-      } else if (selected.label.includes('Create Task Board')) {
-        await vscode.commands.executeCommand('janus.createTasksCompanion', targetUri);
+      if (selected.label.includes('Ordner-Aufgaben')) {
+        await vscode.commands.executeCommand('janus.openFolderTasks', folderUri);
       } else if (selected.label.includes('Open Diagram View')) {
         await vscode.commands.executeCommand('vscode.openWith', status.chartUri, ChartEditorProvider.viewType);
       } else if (selected.label.includes('Create Diagram View')) {
