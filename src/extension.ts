@@ -17,7 +17,13 @@ import {
   initNotesRootCommand,
   updateNotesContextKeys,
 } from './commands/notesRootCommands';
-import { NotesTreeDataProvider } from './ui/notesTreeDataProvider';
+import {
+  createFolderCommand,
+  createNoteCommand,
+  renameItemCommand,
+  deleteItemCommand,
+} from './commands/notesFileCommands';
+import { NotesTreeDataProvider, NotesTreeItem } from './ui/notesTreeDataProvider';
 
 export function activate(context: vscode.ExtensionContext) {
   // 1. Core Services
@@ -25,6 +31,10 @@ export function activate(context: vscode.ExtensionContext) {
   const codeLensProvider = new CompanionCodeLensProvider(companionManager);
   const companionWatcher = new CompanionWatcher(codeLensProvider);
   const notesTreeDataProvider = new NotesTreeDataProvider(companionManager);
+  const notesTreeView = vscode.window.createTreeView('janus.notesView', {
+    treeDataProvider: notesTreeDataProvider,
+    showCollapseAll: true,
+  });
 
   // 2. Diff and Review Services
   const diffContentProvider = new DiffContentProvider();
@@ -34,7 +44,7 @@ export function activate(context: vscode.ExtensionContext) {
     companionWatcher,
     vscode.languages.registerCodeLensProvider({ language: 'markdown' }, codeLensProvider),
     vscode.workspace.registerTextDocumentContentProvider(DiffContentProvider.scheme, diffContentProvider),
-    vscode.window.registerTreeDataProvider('janus.notesView', notesTreeDataProvider),
+    notesTreeView,
     TasksEditorProvider.register(context),
     ChartEditorProvider.register(context),
     MarkdownEditorProvider.register(context)
@@ -158,6 +168,18 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }),
 
+    vscode.commands.registerCommand('janus.createFolder', (item?: NotesTreeItem) =>
+      createFolderCommand(item, notesTreeView, companionManager, notesTreeDataProvider)
+    ),
+    vscode.commands.registerCommand('janus.createNote', (item?: NotesTreeItem) =>
+      createNoteCommand(item, notesTreeView, companionManager, notesTreeDataProvider)
+    ),
+    vscode.commands.registerCommand('janus.renameItem', (item?: NotesTreeItem) =>
+      renameItemCommand(item, notesTreeView, companionManager, notesTreeDataProvider)
+    ),
+    vscode.commands.registerCommand('janus.deleteItem', (item?: NotesTreeItem) =>
+      deleteItemCommand(item, notesTreeView, companionManager, notesTreeDataProvider)
+    ),
     vscode.commands.registerCommand('janus.setNotesRoot', setNotesRootCommand),
     vscode.commands.registerCommand('janus.resetNotesRoot', resetNotesRootCommand),
     vscode.commands.registerCommand('janus.initNotesRoot', async () => {

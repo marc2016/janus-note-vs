@@ -101,14 +101,76 @@
         "command": "janus.refreshNotesTree",
         "title": "Janus: Notizen-Baum aktualisieren",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "janus.createNote",
+        "title": "Janus: Neue Notiz",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "janus.createFolder",
+        "title": "Janus: Neuer Ordner",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "janus.renameItem",
+        "title": "Janus: Umbenennen...",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "janus.deleteItem",
+        "title": "Janus: Löschen",
+        "icon": "$(trash)"
       }
     ],
     "menus": {
       "view/title": [
         {
+          "command": "janus.createNote",
+          "when": "view == janus.notesView && janus.isInitialized",
+          "group": "navigation@1"
+        },
+        {
+          "command": "janus.createFolder",
+          "when": "view == janus.notesView && janus.isInitialized",
+          "group": "navigation@2"
+        },
+        {
           "command": "janus.refreshNotesTree",
           "when": "view == janus.notesView",
-          "group": "navigation"
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "janus.createNote",
+          "when": "view == janus.notesView && viewItem == janusFolder",
+          "group": "inline@1"
+        },
+        {
+          "command": "janus.createFolder",
+          "when": "view == janus.notesView && viewItem == janusFolder",
+          "group": "inline@2"
+        },
+        {
+          "command": "janus.createNote",
+          "when": "view == janus.notesView && viewItem == janusFolder",
+          "group": "new@1"
+        },
+        {
+          "command": "janus.createFolder",
+          "when": "view == janus.notesView && viewItem == janusFolder",
+          "group": "new@2"
+        },
+        {
+          "command": "janus.renameItem",
+          "when": "view == janus.notesView && (viewItem == janusFolder || viewItem == janusNote)",
+          "group": "modify@1"
+        },
+        {
+          "command": "janus.deleteItem",
+          "when": "view == janus.notesView && (viewItem == janusFolder || viewItem == janusNote)",
+          "group": "modify@2"
         }
       ],
       "explorer/context": [

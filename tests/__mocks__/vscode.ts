@@ -122,6 +122,8 @@ export const workspace = {
     writeFile: async () => {},
     readDirectory: async (_uri: Uri): Promise<[string, FileType][]> => [],
     createDirectory: async (_uri: Uri): Promise<void> => {},
+    delete: async (_uri: Uri, _options?: { recursive?: boolean; useTrash?: boolean }): Promise<void> => {},
+    rename: async (_source: Uri, _target: Uri, _options?: { overwrite?: boolean }): Promise<void> => {},
   },
   createFileSystemWatcher: () => ({
     onDidCreate: () => ({ dispose: () => {} }),
@@ -162,12 +164,17 @@ export class TreeItem {
 export const window = {
   activeTextEditor: undefined,
   showInformationMessage: async (..._args: any[]): Promise<any> => undefined,
+  showWarningMessage: async (..._args: any[]): Promise<any> => undefined,
   showErrorMessage: async (..._args: any[]): Promise<any> => undefined,
   showOpenDialog: async () => undefined,
   showInputBox: async (_options?: any): Promise<string | undefined> => undefined,
   registerCustomEditorProvider: () => ({ dispose: () => {} }),
   registerTreeDataProvider: () => ({ dispose: () => {} }),
-  createTreeView: () => ({ dispose: () => {} }),
+  createTreeView: () => ({
+    selection: [] as any[],
+    dispose: () => {},
+    reveal: async () => {},
+  }),
   showTextDocument: async (doc: any) => ({ document: doc }),
 };
 
