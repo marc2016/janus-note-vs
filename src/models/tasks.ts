@@ -16,9 +16,12 @@ export const TaskItemSchema = z.object({
     return s as TaskStatus;
   }),
   priority: TaskPrioritySchema.optional().default('medium'),
+  note: z.string().optional(),
   dueDate: z.string().optional(),
   createdAt: z.string().optional().default(() => new Date().toISOString()),
   updatedAt: z.string().optional(),
+  folder: z.string().optional(),
+  folderUri: z.string().optional(),
 }).transform((task) => {
   const isDone = task.status === 'done';
   const completed = task.completed !== undefined ? task.completed : isDone;
@@ -52,7 +55,10 @@ export const TasksCompanionSchema = z.object({
           completed,
           status: (completed ? 'done' : status) as TaskStatus,
           priority: (['low', 'medium', 'high'].includes(raw?.priority) ? raw.priority : 'medium') as TaskPriority,
+          note: typeof raw?.note === 'string' ? raw.note : undefined,
           createdAt: raw?.createdAt || new Date().toISOString(),
+          folder: typeof raw?.folder === 'string' ? raw.folder : undefined,
+          folderUri: typeof raw?.folderUri === 'string' ? raw.folderUri : undefined,
         };
       }
     });

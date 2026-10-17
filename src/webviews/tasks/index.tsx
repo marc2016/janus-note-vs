@@ -1,9 +1,9 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { TaskBoardApp } from './TaskBoardApp';
+import { TaskListApp } from './TaskListApp';
 
 const container = document.getElementById('root');
 if (container) {
   const root = createRoot(container);
-  root.render(<TaskBoardApp />);
+  root.render(<TaskListApp />);
 }

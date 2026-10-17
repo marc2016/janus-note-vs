@@ -6,8 +6,55 @@ import { TasksEditorProvider } from '../editors/tasksEditorProvider';
 import { ChartEditorProvider } from '../editors/chartEditorProvider';
 import { MarkdownEditorProvider } from '../editors/markdownEditorProvider';
 import { checkNotesRootStatus } from '../commands/notesRootCommands';
+import { FolderTasksService } from '../services/folderTasksService';
 
-export type NotesTreeItem = FolderTreeItem | NoteTreeItem | CompanionTreeItem;
+export type NotesTreeItem =
+  | AllTasksTreeItem
+  | FolderTasksTreeItem
+  | FolderTreeItem
+  | NoteTreeItem
+  | CompanionTreeItem;
+
+export class AllTasksTreeItem extends vscode.TreeItem {
+  public readonly uri: vscode.Uri;
+
+  constructor(
+    public readonly openCount: number = 0,
+    notesRootUri?: vscode.Uri
+  ) {
+    super('Alle Aufgaben', vscode.TreeItemCollapsibleState.None);
+
+    this.uri = notesRootUri || vscode.Uri.parse('janus-tasks:///all');
+    this.contextValue = 'janusAllTasks';
+    this.iconPath = new vscode.ThemeIcon('checklist');
+    this.description = `(${openCount} offen)`;
+    this.tooltip = `Alle Aufgaben im Workspace (${openCount} offen)`;
+    this.command = {
+      command: 'janus.openAllTasks',
+      title: 'Alle Aufgaben öffnen',
+    };
+  }
+}
+
+export class FolderTasksTreeItem extends vscode.TreeItem {
+  constructor(
+    public readonly uri: vscode.Uri,
+    public readonly openCount: number = 0
+  ) {
+    super('Aufgaben', vscode.TreeItemCollapsibleState.None);
+
+    this.resourceUri = uri;
+    this.contextValue = 'janusFolderTasks';
+    this.iconPath = new vscode.ThemeIcon('checklist');
+    this.description = `(${openCount} offen)`;
+    this.tooltip = `Ordner-Aufgaben: ${uri.fsPath} (${openCount} offen)`;
+    this.command = {
+      command: 'vscode.openWith',
+      title: 'Ordner-Aufgaben öffnen',
+      arguments: [uri, TasksEditorProvider.viewType],
+    };
+  }
+}
 
 export class FolderTreeItem extends vscode.TreeItem {
   constructor(public readonly uri: vscode.Uri) {
@@ -89,7 +136,10 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
   readonly onDidChangeTreeData: vscode.Event<NotesTreeItem | undefined | null | void> =
     this._onDidChangeTreeData.event;
 
-  constructor(private readonly companionManager: CompanionManager) {}
+  constructor(
+    private readonly companionManager: CompanionManager,
+    private readonly folderTasksService: FolderTasksService = new FolderTasksService()
+  ) {}
 
   refresh(): void {
     this._onDidChangeTreeData.fire();
@@ -106,7 +156,10 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
       if (!status.isInitialized || !status.notesRootUri) {
         return [];
       }
-      return this.readDirectoryItems(status.notesRootUri);
+      const totalOpen = await this.folderTasksService.countTotalOpenTasks(status.notesRootUri);
+      const allTasksItem = new AllTasksTreeItem(totalOpen);
+      const dirItems = await this.readDirectoryItems(status.notesRootUri);
+      return [allTasksItem, ...dirItems];
     }
 
     if (element instanceof FolderTreeItem) {
@@ -117,13 +170,14 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
       return this.getCompanionChildren(element);
     }
 
-    // Companion items have no children
+    // Companion or task items have no children
     return [];
   }
 
   private async readDirectoryItems(dirUri: vscode.Uri): Promise<NotesTreeItem[]> {
     try {
       const entries = await vscode.workspace.fs.readDirectory(dirUri);
+      let folderTasksItem: FolderTasksTreeItem | undefined;
       const folders: FolderTreeItem[] = [];
       const notes: NoteTreeItem[] = [];
 
@@ -136,6 +190,9 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
 
         if (fileType === vscode.FileType.Directory) {
           folders.push(new FolderTreeItem(entryUri));
+        } else if (fileType === vscode.FileType.File && name === 'tasks.json') {
+          const openCount = await this.folderTasksService.countOpenTasksInFile(entryUri);
+          folderTasksItem = new FolderTasksTreeItem(entryUri, openCount);
         } else if (fileType === vscode.FileType.File && isMarkdownNote(name)) {
           const status = await this.companionManager.getCompanionStatus(entryUri);
           notes.push(new NoteTreeItem(entryUri, status));
@@ -146,7 +203,11 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
       folders.sort((a, b) => (a.label as string).localeCompare(b.label as string));
       notes.sort((a, b) => (a.label as string).localeCompare(b.label as string));
 
-      return [...folders, ...notes];
+      return [
+        ...(folderTasksItem ? [folderTasksItem] : []),
+        ...folders,
+        ...notes,
+      ];
     } catch (err) {
       console.warn('Error reading notes directory for tree view:', err);
       return [];

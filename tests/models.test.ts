@@ -56,6 +56,39 @@ describe('TasksCompanion Model', () => {
     expect(initial.title).toBe('My Notes');
     expect(initial.tasks).toEqual([]);
   });
+
+  it('supports directory-scoped task items with optional note reference and folder metadata', () => {
+    const raw = JSON.stringify({
+      version: 1,
+      tasks: [
+        {
+          id: 't-folder-1',
+          title: 'Review architecture document',
+          completed: false,
+          priority: 'high',
+          note: 'architektur.md',
+          folder: 'projekt-alpha',
+          folderUri: 'file:///workspace/notes/projekt-alpha/tasks.json'
+        },
+        {
+          id: 't-folder-2',
+          title: 'Complete sprint retro',
+          completed: true,
+          priority: 'low'
+        }
+      ]
+    });
+
+    const parsed = parseTasksCompanion(raw);
+    expect(parsed.tasks).toHaveLength(2);
+    expect(parsed.tasks[0].note).toBe('architektur.md');
+    expect(parsed.tasks[0].folder).toBe('projekt-alpha');
+    expect(parsed.tasks[0].priority).toBe('high');
+    expect(parsed.tasks[0].status).toBe('todo');
+    expect(parsed.tasks[1].completed).toBe(true);
+    expect(parsed.tasks[1].status).toBe('done');
+    expect(parsed.tasks[1].note).toBeUndefined();
+  });
 });
 
 describe('ChartCompanion Model', () => {

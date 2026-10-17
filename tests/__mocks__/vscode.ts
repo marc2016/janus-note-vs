@@ -161,6 +161,14 @@ export class TreeItem {
   ) {}
 }
 
+export enum ViewColumn {
+  Active = -1,
+  Beside = -2,
+  One = 1,
+  Two = 2,
+  Three = 3,
+}
+
 export const window = {
   activeTextEditor: undefined,
   showInformationMessage: async (..._args: any[]): Promise<any> => undefined,
@@ -174,6 +182,19 @@ export const window = {
     selection: [] as any[],
     dispose: () => {},
     reveal: async () => {},
+  }),
+  createWebviewPanel: (_viewType: string, title: string, _showOptions: any, _options?: any) => ({
+    title,
+    webview: {
+      html: '',
+      options: {},
+      asWebviewUri: (uri: Uri) => uri,
+      postMessage: async (_msg: any) => true,
+      onDidReceiveMessage: (_listener: (msg: any) => any) => ({ dispose: () => {} }),
+    },
+    reveal: () => {},
+    onDidDispose: (_listener: () => any) => ({ dispose: () => {} }),
+    dispose: () => {},
   }),
   showTextDocument: async (doc: any) => ({ document: doc }),
 };

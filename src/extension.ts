@@ -5,6 +5,8 @@ import { CompanionWatcher } from './companion/companionWatcher';
 import { TasksEditorProvider } from './editors/tasksEditorProvider';
 import { ChartEditorProvider } from './editors/chartEditorProvider';
 import { MarkdownEditorProvider } from './editors/markdownEditorProvider';
+import { GlobalTasksViewProvider } from './editors/globalTasksViewProvider';
+import { FolderTasksService } from './services/folderTasksService';
 import { DiffContentProvider, NoteDiffViewer } from './agent/diffViewer';
 import { ReadNoteTool } from './agent/tools/readNoteTool';
 import { MutateTasksTool } from './agent/tools/mutateTasksTool';
@@ -16,6 +18,7 @@ import {
   resetNotesRootCommand,
   initNotesRootCommand,
   updateNotesContextKeys,
+  checkNotesRootStatus,
 } from './commands/notesRootCommands';
 import {
   createFolderCommand,
@@ -23,14 +26,20 @@ import {
   renameItemCommand,
   deleteItemCommand,
 } from './commands/notesFileCommands';
-import { NotesTreeDataProvider, NotesTreeItem } from './ui/notesTreeDataProvider';
+import { NotesTreeDataProvider, NotesTreeItem, FolderTreeItem } from './ui/notesTreeDataProvider';
 
 export function activate(context: vscode.ExtensionContext) {
   // 1. Core Services
   const companionManager = new CompanionManager();
+  const folderTasksService = new FolderTasksService();
   const codeLensProvider = new CompanionCodeLensProvider(companionManager);
   const companionWatcher = new CompanionWatcher(codeLensProvider);
-  const notesTreeDataProvider = new NotesTreeDataProvider(companionManager);
+  const notesTreeDataProvider = new NotesTreeDataProvider(companionManager, folderTasksService);
+  const globalTasksViewProvider = new GlobalTasksViewProvider(
+    context,
+    folderTasksService,
+    () => notesTreeDataProvider.refresh()
+  );
   const notesTreeView = vscode.window.createTreeView('janus.notesView', {
     treeDataProvider: notesTreeDataProvider,
     showCollapseAll: true,
@@ -54,6 +63,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     companionWatcher.onDidChangeCompanion(() => {
       notesTreeDataProvider.refresh();
+      globalTasksViewProvider.refresh();
       updateNotesContextKeys(companionManager);
     })
   );
@@ -180,6 +190,41 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('janus.deleteItem', (item?: NotesTreeItem) =>
       deleteItemCommand(item, notesTreeView, companionManager, notesTreeDataProvider)
     ),
+    vscode.commands.registerCommand('janus.openAllTasks', async () => {
+      const status = await checkNotesRootStatus(companionManager);
+      const rootUri = status.notesRootUri;
+      if (!rootUri) {
+        vscode.window.showErrorMessage('Kein Notizen-Ordner im Workspace gefunden.');
+        return;
+      }
+      await globalTasksViewProvider.open(rootUri);
+    }),
+    vscode.commands.registerCommand('janus.openFolderTasks', async (item?: NotesTreeItem | vscode.Uri) => {
+      let folderUri: vscode.Uri | undefined;
+      if (item instanceof FolderTreeItem) {
+        folderUri = item.uri;
+      } else if (item instanceof vscode.Uri) {
+        folderUri = item;
+      } else {
+        const status = await checkNotesRootStatus(companionManager);
+        folderUri = status.notesRootUri;
+      }
+      if (!folderUri) {
+        vscode.window.showErrorMessage('Kein Ziel-Ordner für Aufgaben ausgewählt.');
+        return;
+      }
+      const tasksUri = vscode.Uri.joinPath(folderUri, 'tasks.json');
+      try {
+        await vscode.workspace.fs.stat(tasksUri);
+      } catch {
+        await folderTasksService.writeFolderCompanion(tasksUri, {
+          version: 1,
+          tasks: [],
+        });
+        notesTreeDataProvider.refresh();
+      }
+      await vscode.commands.executeCommand('vscode.openWith', tasksUri, TasksEditorProvider.viewType);
+    }),
     vscode.commands.registerCommand('janus.setNotesRoot', setNotesRootCommand),
     vscode.commands.registerCommand('janus.resetNotesRoot', resetNotesRootCommand),
     vscode.commands.registerCommand('janus.initNotesRoot', async () => {

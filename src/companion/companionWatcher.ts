@@ -11,8 +11,8 @@ export class CompanionWatcher implements vscode.Disposable {
   }
 
   private initWatcher(): void {
-    // Watch for tasks, chart companion files and markdown notes
-    const watcher = vscode.workspace.createFileSystemWatcher('**/*.{tasks.json,chart.json,md}');
+    // Watch for folder tasks.json, legacy tasks/chart companion files, and markdown notes
+    const watcher = vscode.workspace.createFileSystemWatcher('**/{tasks.json,*.tasks.json,*.chart.json,*.md}');
 
     const handleChange = (uri: vscode.Uri) => {
       this.codeLensProvider.refresh();

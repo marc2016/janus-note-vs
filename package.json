@@ -121,6 +121,16 @@
         "command": "janus.deleteItem",
         "title": "Janus: Löschen",
         "icon": "$(trash)"
+      },
+      {
+        "command": "janus.openAllTasks",
+        "title": "Janus: Alle Aufgaben öffnen",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "janus.openFolderTasks",
+        "title": "Janus: Ordner-Aufgaben öffnen",
+        "icon": "$(checklist)"
       }
     ],
     "menus": {
@@ -163,6 +173,11 @@
           "group": "new@2"
         },
         {
+          "command": "janus.openFolderTasks",
+          "when": "view == janus.notesView && viewItem == janusFolder",
+          "group": "new@3"
+        },
+        {
           "command": "janus.renameItem",
           "when": "view == janus.notesView && (viewItem == janusFolder || viewItem == janusNote)",
           "group": "modify@1"
@@ -184,8 +199,11 @@
     "customEditors": [
       {
         "viewType": "janus.tasksEditor",
-        "displayName": "Janus Task Board",
+        "displayName": "Janus Task List",
         "selector": [
+          {
+            "filenamePattern": "tasks.json"
+          },
           {
             "filenamePattern": "*.tasks.json"
           }

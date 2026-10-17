@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { parseTasksCompanion, TasksCompanion, TaskItem } from '../models/tasks';
+import { MarkdownEditorProvider } from './markdownEditorProvider';
 
 export class TasksEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'janus.tasksEditor';
@@ -14,6 +16,15 @@ export class TasksEditorProvider implements vscode.CustomTextEditorProvider {
       },
       supportsMultipleEditorsPerDocument: false,
     });
+  }
+
+  private getDefaultTitle(document: vscode.TextDocument): string {
+    const fileName = path.basename(document.uri.fsPath);
+    const folderName = path.basename(path.dirname(document.uri.fsPath));
+    if (fileName === 'tasks.json' && folderName) {
+      return `Aufgaben: ${folderName}`;
+    }
+    return 'Janus Task List';
   }
 
   async resolveCustomTextEditor(
@@ -34,6 +45,9 @@ export class TasksEditorProvider implements vscode.CustomTextEditorProvider {
       try {
         const text = document.getText();
         const data = parseTasksCompanion(text || '{}');
+        if (!data.title || data.title === 'Task Board') {
+          data.title = this.getDefaultTitle(document);
+        }
         webviewPanel.webview.postMessage({
           type: 'init',
           data,
@@ -41,7 +55,7 @@ export class TasksEditorProvider implements vscode.CustomTextEditorProvider {
       } catch (err: any) {
         webviewPanel.webview.postMessage({
           type: 'error',
-          message: 'Malformed *.tasks.json: ' + (err?.message || String(err)),
+          message: 'Malformed tasks JSON: ' + (err?.message || String(err)),
         });
       }
     };
@@ -52,6 +66,22 @@ export class TasksEditorProvider implements vscode.CustomTextEditorProvider {
         updateWebview();
         return;
       }
+
+      if (message.type === 'openNote' && typeof message.note === 'string') {
+        const folderDir = path.dirname(document.uri.fsPath);
+        const noteUri = vscode.Uri.file(path.join(folderDir, message.note));
+        try {
+          await vscode.commands.executeCommand(
+            'vscode.openWith',
+            noteUri,
+            MarkdownEditorProvider.viewType
+          );
+        } catch {
+          vscode.window.showErrorMessage(`Notiz konnte nicht geöffnet werden: ${message.note}`);
+        }
+        return;
+      }
+
       if (message.type === 'updateTasks') {
         const newTasks: TaskItem[] = message.tasks;
         try {
@@ -60,7 +90,11 @@ export class TasksEditorProvider implements vscode.CustomTextEditorProvider {
           try {
             currentData = parseTasksCompanion(currentText || '{}');
           } catch {
-            currentData = { version: 1, title: 'Task Board', tasks: [] };
+            currentData = {
+              version: 1,
+              title: this.getDefaultTitle(document),
+              tasks: [],
+            };
           }
 
           currentData.tasks = newTasks;
@@ -105,20 +139,25 @@ export class TasksEditorProvider implements vscode.CustomTextEditorProvider {
 
     const nonce = getNonce();
 
-    let initialData: TasksCompanion = { version: 1, title: 'Janus Task Board', tasks: [] };
+    const defaultTitle = this.getDefaultTitle(document);
+    let initialData: TasksCompanion = { version: 1, title: defaultTitle, tasks: [] };
     try {
       const parsed = parseTasksCompanion(document.getText() || '{}');
-      initialData = { ...initialData, ...parsed };
+      initialData = {
+        ...initialData,
+        ...parsed,
+        title: parsed.title && parsed.title !== 'Task Board' ? parsed.title : defaultTitle,
+      };
     } catch {}
 
-    const initialJson = JSON.stringify(initialData).replace(/</g, '\\u003c');
+    const initialJson = JSON.stringify({ mode: 'folder', ...initialData }).replace(/</g, '\\u003c');
 
     return `<!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Janus Task Board</title>
+  <title>${defaultTitle}</title>
   <link rel="stylesheet" href="${styleUri}">
 </head>
 <body class="bg-[var(--vscode-editor-background,#1e1e1e)] text-[var(--vscode-editor-foreground,#d4d4d4)] antialiased m-0 p-0">
