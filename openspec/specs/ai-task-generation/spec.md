@@ -34,3 +34,4 @@ The system SHALL extract actionable tasks (`title`, `priority: 'low' | 'medium' 
 #### Scenario: Handling missing or unconfigured AI model gracefully
 - **WHEN** user triggers task generation but no AI model is available or configured
 - **THEN** system prompts the user to select an available model or configure an AI provider before running extraction
+
