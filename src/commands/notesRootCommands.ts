@@ -102,6 +102,40 @@ export async function resetNotesRootCommand(): Promise<void> {
   vscode.window.showInformationMessage('Janus Notizen-Ordner auf Workspace-Root zurückgesetzt.');
 }
 
+export const DEFAULT_ROOT_FOLDERS = ['meetings', 'projects', 'knowledge'] as const;
+export type DefaultRootFolder = (typeof DEFAULT_ROOT_FOLDERS)[number];
+
+export function isDefaultRootFolder(name: string): name is DefaultRootFolder {
+  return (DEFAULT_ROOT_FOLDERS as readonly string[]).includes(name.toLowerCase());
+}
+
+export function getLocalizedRootFolderLabel(folderName: string, language?: string): string {
+  const lang = (language || vscode.env?.language || 'de').toLowerCase();
+  const isGerman = lang.startsWith('de');
+  switch (folderName.toLowerCase()) {
+    case 'meetings':
+      return isGerman ? 'Allgemeine Meetings' : 'General Meetings';
+    case 'projects':
+      return isGerman ? 'Projekte' : 'Projects';
+    case 'knowledge':
+      return isGerman ? 'Wissensbasis' : 'Knowledge Base';
+    default:
+      return folderName;
+  }
+}
+
+export function formatRelativePathWithLocalizedRoot(
+  relativePath: string,
+  language?: string
+): string {
+  const segments = relativePath.replace(/\\/g, '/').split('/').filter(Boolean);
+  if (segments.length === 0) {
+    return relativePath;
+  }
+  segments[0] = getLocalizedRootFolderLabel(segments[0], language);
+  return segments.join('/');
+}
+
 export interface NotesRootStatus {
   isInitialized: boolean;
   hasNonNoteFiles: boolean;
@@ -128,10 +162,15 @@ export async function checkNotesRootStatus(
 
   try {
     const entries = await vscode.workspace.fs.readDirectory(rootUri);
-    for (const [name] of entries) {
+    for (const [name, fileType] of entries) {
       if (name.startsWith('.')) continue;
       if (name.toLowerCase() === 'inbox.md') {
         hasInbox = true;
+      } else if (
+        fileType === vscode.FileType.Directory &&
+        isDefaultRootFolder(name)
+      ) {
+        continue;
       } else if (!isTasksCompanion(name) && !isChartCompanion(name)) {
         hasOtherFiles = true;
       }
@@ -171,6 +210,9 @@ export async function initNotesRootCommand(
 
   try {
     await vscode.workspace.fs.createDirectory(targetUri);
+    for (const rootFolder of DEFAULT_ROOT_FOLDERS) {
+      await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(targetUri, rootFolder));
+    }
   } catch (err) {
     console.warn('Could not create directory for notes root:', err);
   }

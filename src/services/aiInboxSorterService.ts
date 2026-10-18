@@ -4,6 +4,12 @@ import { z } from 'zod';
 import { AiModelService } from './aiModelService';
 import { CompanionManager } from '../companion/companionManager';
 import { findMarkdownNotesInRoot } from './noteLinkService';
+import {
+  DEFAULT_ROOT_FOLDERS,
+  DefaultRootFolder,
+  formatRelativePathWithLocalizedRoot,
+  getLocalizedRootFolderLabel,
+} from '../commands/notesRootCommands';
 
 const RawInboxSortItemSchema = z.object({
   title: z.string().min(1),
@@ -46,9 +52,51 @@ const DEFAULT_INBOX_WELCOME_LINES = [
   'Hier kannst du neue Notizen und Gedanken erfassen.',
 ];
 
+function mapSegmentToCanonicalRootFolder(segment: string): DefaultRootFolder | null {
+  const lower = segment.trim().toLowerCase();
+  if (
+    lower === 'meetings' ||
+    lower === 'meeting' ||
+    lower === 'general meetings' ||
+    lower === 'general-meetings' ||
+    lower === 'allgemeine meetings' ||
+    lower === 'allgemeine-meetings' ||
+    lower === 'besprechungen' ||
+    lower === 'termine'
+  ) {
+    return 'meetings';
+  }
+  if (
+    lower === 'projects' ||
+    lower === 'project' ||
+    lower === 'projekte' ||
+    lower === 'projekt'
+  ) {
+    return 'projects';
+  }
+  if (
+    lower === 'knowledge' ||
+    lower === 'knowledge base' ||
+    lower === 'knowledge-base' ||
+    lower === 'wissensbasis' ||
+    lower === 'wissen' ||
+    lower === 'notizen' ||
+    lower === 'notes' ||
+    lower === 'ideen' ||
+    lower === 'ideas' ||
+    lower === 'wiki' ||
+    lower === 'docs'
+  ) {
+    return 'knowledge';
+  }
+  return null;
+}
+
 /**
  * Normalizes and validates a relative Markdown path inside notesRoot.
- * Rejects path traversal ('..') or pointing back to root 'inbox.md'.
+ * Enforces that every sorted note path starts with one of the three canonical internal
+ * English root folders (`meetings/`, `projects/`, `knowledge/`) and rejects path traversal ('..')
+ * or pointing back to root 'inbox.md'.
  */
 export function sanitizeRelativeNotePath(rawPath: string): string | null {
   const normalized = rawPath
@@ -69,6 +117,28 @@ export function sanitizeRelativeNotePath(rawPath: string): string | null {
   const lastIdx = segments.length - 1;
   if (!/\.(md|markdown)$/i.test(segments[lastIdx])) {
     segments[lastIdx] = `${segments[lastIdx]}.md`;
+  }
+
+  if (segments.length === 1 && segments[0].toLowerCase() === 'inbox.md') {
+    return null;
+  }
+
+  const mappedRoot = mapSegmentToCanonicalRootFolder(segments[0]);
+  if (mappedRoot) {
+    if (segments.length === 1) {
+      // e.g. someone passed "meetings" -> "meetings.md"
+      return null;
+    }
+    segments[0] = mappedRoot;
+  } else {
+    // Enforce canonical root category guardrail:
+    // If a subfolder was given (e.g. "App-Launch/todo.md"), place it under "projects/App-Launch/todo.md";
+    // if only a bare filename was given (e.g. "note.md"), place it under "knowledge/note.md".
+    if (segments.length > 1) {
+      segments.unshift('projects');
+    } else {
+      segments.unshift('knowledge');
+    }
   }
 
   const result = segments.join('/');
@@ -179,7 +249,8 @@ export class AiInboxSorterService {
   }
 
   /**
-   * Analyzes `<notesRoot>/inbox.md`, proposes target notes/folders via AI, optionally shows
+   * Analyzes `<notesRoot>/inbox.md`, proposes target notes/folders via AI within the three
+   * canonical root categories (`meetings`, `projects`, `knowledge`), optionally shows
    * a multi-select preview QuickPick, strictly appends to existing files (never deleting or
    * overwriting existing content), and cleans up sorted entries from `inbox.md`.
    */
@@ -226,7 +297,18 @@ export class AiInboxSorterService {
 
     const allNotes = await findMarkdownNotesInRoot(notesRootUri);
     const existingNoteRelPaths: string[] = [];
-    const existingFolderSet = new Set<string>();
+    const existingFolderSet = new Set<string>(DEFAULT_ROOT_FOLDERS);
+
+    try {
+      const rootEntries = await vscode.workspace.fs.readDirectory(notesRootUri);
+      for (const [name, type] of rootEntries) {
+        if (!name.startsWith('.') && type === vscode.FileType.Directory) {
+          existingFolderSet.add(name);
+        }
+      }
+    } catch {
+      // Ignore if directory read fails
+    }
 
     for (const noteUri of allNotes) {
       const rel = path.relative(notesRootUri.fsPath, noteUri.fsPath).replace(/\\/g, '/');
@@ -240,13 +322,14 @@ export class AiInboxSorterService {
       }
     }
 
-    const foldersText =
-      existingFolderSet.size > 0
-        ? Array.from(existingFolderSet)
-            .sort()
-            .map((f) => `- ${f}/`)
-            .join('\n')
-        : '(Noch keine Unterordner vorhanden)';
+    const foldersText = Array.from(existingFolderSet)
+      .sort()
+      .map((f) => {
+        const topSeg = f.split('/')[0];
+        const localized = getLocalizedRootFolderLabel(topSeg);
+        return localized !== topSeg ? `- ${f}/ (${localized})` : `- ${f}/`;
+      })
+      .join('\n');
 
     const notesText =
       existingNoteRelPaths.length > 0
@@ -259,13 +342,18 @@ export class AiInboxSorterService {
     const systemPrompt = [
       'Du bist ein präziser Assistent zum thematischen Einsortieren von Inbox-Notizen in Janus Note.',
       'Analysiere den Inhalt aus `inbox.md` und teile ihn in logische, thematisch zusammenhängende Abschnitte auf.',
-      'Ordne jeden Abschnitt entweder einer passenden BESTEHENDEN Notiz (`"action": "append"`) zu oder schlage eine NEUE Notiz in einem bestehenden oder neuen thematischen Ordner vor (`"action": "create"`).',
-      'WICHTIG:',
+      'Ordne jeden Abschnitt entweder einer passenden BESTEHENDEN Notiz (`"action": "append"`) zu oder schlage eine NEUE Notiz vor (`"action": "create"`).',
+      'VERBINDLICHE ORDNER-STRUKTUR (WICHTIG):',
+      'Auf oberster Ebene existieren EXAKT diese drei englischen Hauptordner (erfinde NIEMALS andere Hauptordner auf Root-Ebene!):',
+      `- "meetings/" (${getLocalizedRootFolderLabel('meetings')}: allgemeine, projektübergreifende Meetings, Retros, 1:1s)`,
+      `- "projects/" (${getLocalizedRootFolderLabel('projects')}: alle projektbezogenen Notizen und Unterordner, z.B. "projects/App-Launch/app-launch.md")`,
+      `- "knowledge/" (${getLocalizedRootFolderLabel('knowledge')}: zeitloses Wissen, Referenzen, Ideen, Dokumentation, z.B. "knowledge/ki-prompts.md")`,
+      'Weitere Regeln:',
       '1. Verändere oder kürze den inhaltlichen Text des Nutzers NICHT (`content` soll den vollständigen Gedanken/Abschnitt im Markdown-Format enthalten).',
       '2. Gib unter `sourceText` den exakten Original-Abschnitt aus der Inbox an.',
-      '3. Verwende für `targetRelativePath` immer einen relativen Pfad mit `.md`-Endung (z.B. "Projekte/App-Launch.md" oder "Ideen/KI-Features.md"), niemals "inbox.md".',
+      '3. Verwende für `targetRelativePath` IMMER einen Pfad, der mit `meetings/`, `projects/` oder `knowledge/` beginnt und auf `.md` endet.',
       '4. Antworte AUSSCHLIESSLICH mit gültigem JSON im folgenden Format (ohne Markdown-Erklärungen):',
-      '{"items": [{"title": "Kurze Beschreibung", "content": "Markdown-Abschnitt", "sourceText": "Originaltext aus inbox.md", "action": "append" | "create", "targetRelativePath": "Ordner/Notiz.md"}]}',
+      '{"items": [{"title": "Kurze Beschreibung", "content": "Markdown-Abschnitt", "sourceText": "Originaltext aus inbox.md", "action": "append" | "create", "targetRelativePath": "projects/Projektname/Notiz.md"}]}',
       'Wenn keine sortierbaren Inhalte vorliegen, antworte mit {"items": []}.',
     ].join('\n');
 
@@ -307,10 +395,11 @@ export class AiInboxSorterService {
         );
         const alreadyExists = await this.fileExists(targetUri);
         const actionLabel = alreadyExists ? '$(add) Anhängen an' : '$(new-file) Neu erstellen';
+        const displayPath = formatRelativePathWithLocalizedRoot(proposal.targetRelativePath);
 
         quickPickItems.push({
-          label: `${actionLabel}: ${proposal.targetRelativePath}`,
-          description: proposal.title,
+          label: `${actionLabel}: ${displayPath}`,
+          description: `${proposal.title} (${proposal.targetRelativePath})`,
           detail: proposal.content.replace(/\s+/g, ' ').slice(0, 140),
           picked: true,
           proposal,
@@ -328,7 +417,7 @@ export class AiInboxSorterService {
         canPickMany: true,
         title: 'KI Inbox-Sortierung – Vorschau bestätigen',
         placeHolder:
-          'Wähle die Abschnitte aus, die einsortiert werden sollen (Besthende Dateien werden nur ergänzt, nichts wird gelöscht)',
+          'Wähle die Abschnitte aus, die einsortiert werden sollen (Bestehende Dateien werden nur ergänzt, nichts wird gelöscht)',
       });
 
       if (!picked) {
@@ -449,4 +538,3 @@ export class AiInboxSorterService {
     };
   }
 }
-

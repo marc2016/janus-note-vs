@@ -5,6 +5,8 @@ import {
   checkNotesRootStatus,
   updateNotesContextKeys,
   initNotesRootCommand,
+  getLocalizedRootFolderLabel,
+  formatRelativePathWithLocalizedRoot,
 } from '../src/commands/notesRootCommands';
 import { __setConfigStore } from './__mocks__/vscode';
 
@@ -18,6 +20,7 @@ describe('notesRootCommands initialization & context state', () => {
     (vscode.workspace as any).workspaceFolders = [
       { uri: mockWorkspaceUri, name: 'project', index: 0 },
     ];
+    (vscode.env as any).language = 'de';
     vi.restoreAllMocks();
   });
 
@@ -79,14 +82,14 @@ describe('notesRootCommands initialization & context state', () => {
     });
   });
 
-  describe('initNotesRootCommand', () => {
-    it('creates inbox.md, marks initialized, opens document, and refreshes tree', async () => {
-      let createdDir: vscode.Uri | undefined;
+  describe('initNotesRootCommand & root folder localization', () => {
+    it('creates inbox.md and the three canonical root folders (meetings, projects, knowledge)', async () => {
+      const createdDirs: string[] = [];
       let writtenFile: { uri: vscode.Uri; content: string } | undefined;
       let refreshed = false;
 
       vi.spyOn(vscode.workspace.fs, 'createDirectory').mockImplementation(async (uri) => {
-        createdDir = uri;
+        createdDirs.push(uri.fsPath);
       });
 
       vi.spyOn(vscode.workspace.fs, 'stat').mockImplementation(async () => {
@@ -109,7 +112,12 @@ describe('notesRootCommands initialization & context state', () => {
 
       expect(inboxUri).toBeDefined();
       expect(inboxUri?.fsPath).toBe('/workspace/project/inbox.md');
-      expect(createdDir?.fsPath).toBe('/workspace/project');
+      expect(createdDirs).toEqual([
+        '/workspace/project',
+        '/workspace/project/meetings',
+        '/workspace/project/projects',
+        '/workspace/project/knowledge',
+      ]);
 
       expect(writtenFile).toBeDefined();
       expect(writtenFile?.uri.fsPath).toBe('/workspace/project/inbox.md');
@@ -127,6 +135,23 @@ describe('notesRootCommands initialization & context state', () => {
       await initNotesRootCommand(companionManager);
 
       expect(writeSpy).not.toHaveBeenCalled();
+    });
+
+    it('localizes root folder labels according to language (de vs en)', () => {
+      expect(getLocalizedRootFolderLabel('meetings', 'de')).toBe('Allgemeine Meetings');
+      expect(getLocalizedRootFolderLabel('projects', 'de-DE')).toBe('Projekte');
+      expect(getLocalizedRootFolderLabel('knowledge', 'de')).toBe('Wissensbasis');
+
+      expect(getLocalizedRootFolderLabel('meetings', 'en')).toBe('General Meetings');
+      expect(getLocalizedRootFolderLabel('projects', 'en-US')).toBe('Projects');
+      expect(getLocalizedRootFolderLabel('knowledge', 'en')).toBe('Knowledge Base');
+
+      expect(
+        formatRelativePathWithLocalizedRoot('projects/App-Launch/app-launch.md', 'de')
+      ).toBe('Projekte/App-Launch/app-launch.md');
+      expect(
+        formatRelativePathWithLocalizedRoot('projects/App-Launch/app-launch.md', 'en')
+      ).toBe('Projects/App-Launch/app-launch.md');
     });
   });
 });

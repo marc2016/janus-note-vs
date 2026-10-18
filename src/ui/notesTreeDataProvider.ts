@@ -5,7 +5,10 @@ import { isMarkdownNote } from '../companion/companionPaths';
 import { TasksEditorProvider } from '../editors/tasksEditorProvider';
 import { ChartEditorProvider } from '../editors/chartEditorProvider';
 import { MarkdownEditorProvider } from '../editors/markdownEditorProvider';
-import { checkNotesRootStatus } from '../commands/notesRootCommands';
+import {
+  checkNotesRootStatus,
+  getLocalizedRootFolderLabel,
+} from '../commands/notesRootCommands';
 import { FolderTasksService } from '../services/folderTasksService';
 
 export type NotesTreeItem =
@@ -61,10 +64,17 @@ export class FolderTasksTreeItem extends vscode.TreeItem {
 }
 
 export class FolderTreeItem extends vscode.TreeItem {
-  constructor(public readonly uri: vscode.Uri) {
-    const name = path.basename(uri.fsPath);
-    super(name, vscode.TreeItemCollapsibleState.Collapsed);
+  public readonly folderName: string;
 
+  constructor(
+    public readonly uri: vscode.Uri,
+    public readonly isRootChild: boolean = true
+  ) {
+    const rawName = path.basename(uri.fsPath);
+    const displayLabel = isRootChild ? getLocalizedRootFolderLabel(rawName) : rawName;
+    super(displayLabel, vscode.TreeItemCollapsibleState.Collapsed);
+
+    this.folderName = rawName;
     this.resourceUri = uri;
     this.contextValue = 'janusFolder';
     this.iconPath = new vscode.ThemeIcon('folder');
@@ -191,7 +201,7 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
         const entryUri = vscode.Uri.joinPath(dirUri, name);
 
         if (fileType === vscode.FileType.Directory) {
-          folders.push(new FolderTreeItem(entryUri));
+          folders.push(new FolderTreeItem(entryUri, !isSubfolder));
         } else if (fileType === vscode.FileType.File && name === 'tasks.json') {
           hasTasksJson = true;
         } else if (fileType === vscode.FileType.File && isMarkdownNote(name)) {

@@ -237,3 +237,8 @@ export class WorkspaceEdit {
   replace() {}
 }
 
+export const env = {
+  language: 'de',
+};
+
+

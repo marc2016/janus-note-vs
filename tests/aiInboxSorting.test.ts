@@ -18,6 +18,7 @@ describe('aiInboxSorting', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     __setConfigStore({});
+    (vscode.env as any).language = 'de';
     fsMap = new Map<string, string>();
 
     mockContext = {
@@ -58,9 +59,21 @@ describe('aiInboxSorting', () => {
   });
 
   describe('sanitizeRelativeNotePath & parseAiInboxSortItems', () => {
-    it('normalizes relative note paths and rejects traversal or root inbox.md', () => {
-      expect(sanitizeRelativeNotePath('Projekte/App-Launch')).toBe('Projekte/App-Launch.md');
-      expect(sanitizeRelativeNotePath('/Ideen\\KI-Feature.md')).toBe('Ideen/KI-Feature.md');
+    it('normalizes relative note paths to canonical English root categories (meetings, projects, knowledge) and rejects traversal or root inbox.md', () => {
+      expect(sanitizeRelativeNotePath('Projekte/App-Launch')).toBe('projects/App-Launch.md');
+      expect(sanitizeRelativeNotePath('projects/App-Launch/app-launch.md')).toBe(
+        'projects/App-Launch/app-launch.md'
+      );
+      expect(sanitizeRelativeNotePath('Allgemeine Meetings/Sprint-Review')).toBe(
+        'meetings/Sprint-Review.md'
+      );
+      expect(sanitizeRelativeNotePath('General Meetings/weekly.md')).toBe('meetings/weekly.md');
+      expect(sanitizeRelativeNotePath('/Wissensbasis\\KI-Feature.md')).toBe(
+        'knowledge/KI-Feature.md'
+      );
+      expect(sanitizeRelativeNotePath('/Ideen\\KI-Feature.md')).toBe('knowledge/KI-Feature.md');
+      expect(sanitizeRelativeNotePath('bare-note')).toBe('knowledge/bare-note.md');
+      expect(sanitizeRelativeNotePath('App-Launch/spec')).toBe('projects/App-Launch/spec.md');
       expect(sanitizeRelativeNotePath('../outside.md')).toBeNull();
       expect(sanitizeRelativeNotePath('inbox.md')).toBeNull();
       expect(sanitizeRelativeNotePath('INBOX')).toBeNull();
@@ -93,7 +106,7 @@ describe('aiInboxSorting', () => {
         content: '- Beta-Test am Freitag starten',
         sourceText: '- Beta-Test am Freitag starten',
         action: 'append',
-        targetRelativePath: 'Projekte/App-Launch.md',
+        targetRelativePath: 'projects/App-Launch.md',
       });
     });
 
@@ -118,7 +131,7 @@ describe('aiInboxSorting', () => {
         '# Inbox\n\nGedanke A für bestehende Notiz.\n\nGedanke B für komplett neue Notiz.\n'
       );
       fsMap.set(
-        '/workspace/Projekte/App-Launch.md',
+        '/workspace/projects/App-Launch.md',
         '# App Launch\n\nBestehender wichtiger Inhalt, der nicht gelöscht werden darf.'
       );
 
@@ -139,7 +152,7 @@ describe('aiInboxSorting', () => {
               content: 'Gedanke B für komplett neue Notiz.',
               sourceText: 'Gedanke B für komplett neue Notiz.',
               action: 'create',
-              targetRelativePath: 'Ideen/Architektur.md',
+              targetRelativePath: 'Wissensbasis/Architektur.md',
             },
           ],
         })
@@ -150,15 +163,17 @@ describe('aiInboxSorting', () => {
 
       expect(result.sortedItems).toHaveLength(2);
       expect(result.sortedItems[0].effectiveAction).toBe('append');
+      expect(result.sortedItems[0].targetRelativePath).toBe('projects/App-Launch.md');
       expect(result.sortedItems[1].effectiveAction).toBe('create');
+      expect(result.sortedItems[1].targetRelativePath).toBe('knowledge/Architektur.md');
 
       // Existing file must preserve 100% of old content and append the new section
-      expect(fsMap.get('/workspace/Projekte/App-Launch.md')).toBe(
+      expect(fsMap.get('/workspace/projects/App-Launch.md')).toBe(
         '# App Launch\n\nBestehender wichtiger Inhalt, der nicht gelöscht werden darf.\n\nGedanke A für bestehende Notiz.\n'
       );
 
       // New file is created with heading + content
-      expect(fsMap.get('/workspace/Ideen/Architektur.md')).toBe(
+      expect(fsMap.get('/workspace/knowledge/Architektur.md')).toBe(
         '# Architektur\n\nGedanke B für komplett neue Notiz.\n'
       );
 
@@ -182,14 +197,14 @@ describe('aiInboxSorting', () => {
               content: 'Erster Abschnitt zum Sortieren.',
               sourceText: 'Erster Abschnitt zum Sortieren.',
               action: 'create',
-              targetRelativePath: 'Notizen/Erster.md',
+              targetRelativePath: 'meetings/Erster.md',
             },
             {
               title: 'Zweiter Abschnitt',
               content: 'Zweiter Abschnitt soll in Inbox bleiben.',
               sourceText: 'Zweiter Abschnitt soll in Inbox bleiben.',
               action: 'create',
-              targetRelativePath: 'Notizen/Zweiter.md',
+              targetRelativePath: 'knowledge/Zweiter.md',
             },
           ],
         })
@@ -197,6 +212,7 @@ describe('aiInboxSorting', () => {
 
       // Simulate user selecting ONLY the first item in QuickPick
       vi.spyOn(vscode.window, 'showQuickPick').mockImplementation(async (items: any) => {
+        expect(items[0].label).toContain('Allgemeine Meetings/Erster.md');
         return [items[0]];
       });
 
@@ -205,10 +221,10 @@ describe('aiInboxSorting', () => {
 
       expect(result.sortedItems).toHaveLength(1);
       expect(result.remainingItems).toHaveLength(1);
-      expect(fsMap.get('/workspace/Notizen/Erster.md')).toBe(
+      expect(fsMap.get('/workspace/meetings/Erster.md')).toBe(
         '# Erster\n\nErster Abschnitt zum Sortieren.\n'
       );
-      expect(fsMap.has('/workspace/Notizen/Zweiter.md')).toBe(false);
+      expect(fsMap.has('/workspace/knowledge/Zweiter.md')).toBe(false);
 
       // Unselected second section must remain in inbox.md!
       expect(fsMap.get('/workspace/inbox.md')).toBe(
@@ -232,8 +248,8 @@ describe('aiInboxSorting', () => {
             content: 'Inhalt',
             sourceText: 'Inhalt',
             action: 'create',
-            targetRelativePath: 'Projekte/Test.md',
-            targetUri: vscode.Uri.file('/workspace/Projekte/Test.md'),
+            targetRelativePath: 'projects/Test.md',
+            targetUri: vscode.Uri.file('/workspace/projects/Test.md'),
             effectiveAction: 'create',
           },
         ],
@@ -272,4 +288,3 @@ describe('aiInboxSorting', () => {
     });
   });
 });
-

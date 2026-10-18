@@ -211,4 +211,29 @@ describe('NotesTreeDataProvider', () => {
     provider.refresh();
     expect(fired).toBe(true);
   });
+
+  it('renders localized labels for default root folders (meetings, projects, knowledge) based on vscode.env.language', () => {
+    (vscode.env as any).language = 'de';
+    expect(new FolderTreeItem(vscode.Uri.file('/workspace/notes/meetings'), true).label).toBe(
+      'Allgemeine Meetings'
+    );
+    expect(new FolderTreeItem(vscode.Uri.file('/workspace/notes/projects'), true).label).toBe(
+      'Projekte'
+    );
+    expect(new FolderTreeItem(vscode.Uri.file('/workspace/notes/knowledge'), true).label).toBe(
+      'Wissensbasis'
+    );
+
+    (vscode.env as any).language = 'en';
+    expect(new FolderTreeItem(vscode.Uri.file('/workspace/notes/meetings'), true).label).toBe(
+      'General Meetings'
+    );
+    expect(new FolderTreeItem(vscode.Uri.file('/workspace/notes/projects'), true).label).toBe(
+      'Projects'
+    );
+    expect(new FolderTreeItem(vscode.Uri.file('/workspace/notes/knowledge'), true).label).toBe(
+      'Knowledge Base'
+    );
+    (vscode.env as any).language = 'de';
+  });
 });
