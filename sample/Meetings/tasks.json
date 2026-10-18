@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "title": "Aufgaben: Meetings",
+  "tasks": [
+    {
+      "id": "t-meet-1",
+      "title": "Einladungen für Q4-Planung verschicken",
+      "completed": false,
+      "status": "todo",
+      "priority": "low",
+      "note": "sprint-review.md",
+      "createdAt": "2026-10-17T12:00:00.000Z"
+    }
+  ]
+}
+

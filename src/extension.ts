@@ -9,6 +9,7 @@ import { GlobalTasksViewProvider } from './editors/globalTasksViewProvider';
 import { FolderTasksService } from './services/folderTasksService';
 import { AiModelService } from './services/aiModelService';
 import { AiTaskGeneratorService } from './services/aiTaskGeneratorService';
+import { AiInboxSorterService } from './services/aiInboxSorterService';
 import { DiffContentProvider, NoteDiffViewer } from './agent/diffViewer';
 import { ReadNoteTool } from './agent/tools/readNoteTool';
 import { MutateTasksTool } from './agent/tools/mutateTasksTool';
@@ -36,6 +37,7 @@ export function activate(context: vscode.ExtensionContext) {
   const folderTasksService = new FolderTasksService();
   const aiModelService = new AiModelService(context);
   const aiTaskGeneratorService = new AiTaskGeneratorService(aiModelService, folderTasksService);
+  const aiInboxSorterService = new AiInboxSorterService(aiModelService, companionManager);
   const codeLensProvider = new CompanionCodeLensProvider(companionManager);
   const companionWatcher = new CompanionWatcher(codeLensProvider);
   const notesTreeDataProvider = new NotesTreeDataProvider(companionManager, folderTasksService);
@@ -60,7 +62,13 @@ export function activate(context: vscode.ExtensionContext) {
     notesTreeView,
     TasksEditorProvider.register(context),
     ChartEditorProvider.register(context),
-    MarkdownEditorProvider.register(context, companionManager, aiModelService, aiTaskGeneratorService)
+    MarkdownEditorProvider.register(
+      context,
+      companionManager,
+      aiModelService,
+      aiTaskGeneratorService,
+      aiInboxSorterService
+    )
   );
 
   // Listen to companion & note file changes to refresh tree view and context state
@@ -249,6 +257,48 @@ export function activate(context: vscode.ExtensionContext) {
         }
       } catch (err: any) {
         vscode.window.showErrorMessage(`KI-Aufgaben-Generierung fehlgeschlagen: ${err?.message || String(err)}`);
+      }
+    }),
+    vscode.commands.registerCommand('janus.sortInbox', async (uri?: vscode.Uri) => {
+      try {
+        const targetUri = uri || vscode.window.activeTextEditor?.document.uri;
+        const result = await aiInboxSorterService.sortInbox(
+          targetUri,
+          vscode.window.activeTextEditor?.document
+        );
+        notesTreeDataProvider.refresh();
+        if (result.cancelled) {
+          return;
+        }
+        if (result.skippedEmpty) {
+          void vscode.window.showInformationMessage(
+            'Die Inbox (inbox.md) ist leer – es gibt keine Einträge zum Einsortieren.'
+          );
+        } else if (result.sortedItems.length > 0) {
+          const firstTarget = result.sortedItems[0];
+          void vscode.window
+            .showInformationMessage(
+              `${result.sortedItems.length} Abschnitt(e) aus der Inbox einsortiert.`,
+              'Notiz öffnen'
+            )
+            .then((action) => {
+              if (action === 'Notiz öffnen' && firstTarget) {
+                void vscode.commands.executeCommand(
+                  'vscode.openWith',
+                  firstTarget.targetUri,
+                  MarkdownEditorProvider.viewType
+                );
+              }
+            });
+        } else {
+          void vscode.window.showInformationMessage(
+            'Keine sortierbaren Abschnitte in der Inbox erkannt.'
+          );
+        }
+      } catch (err: any) {
+        vscode.window.showErrorMessage(
+          `KI-Inbox-Sortierung fehlgeschlagen: ${err?.message || String(err)}`
+        );
       }
     }),
     vscode.commands.registerCommand('janus.setNotesRoot', setNotesRootCommand),

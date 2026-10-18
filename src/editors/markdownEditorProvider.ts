@@ -7,6 +7,7 @@ import {
 } from '../services/noteLinkService';
 import { AiModelService } from '../services/aiModelService';
 import { AiTaskGeneratorService } from '../services/aiTaskGeneratorService';
+import { AiInboxSorterService } from '../services/aiInboxSorterService';
 import { TasksEditorProvider } from './tasksEditorProvider';
 import { ChartEditorProvider } from './chartEditorProvider';
 
@@ -14,29 +15,36 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'janus.markdownEditor';
   private readonly aiModelService: AiModelService;
   private readonly aiTaskGeneratorService: AiTaskGeneratorService;
+  private readonly aiInboxSorterService: AiInboxSorterService;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly companionManager: CompanionManager = new CompanionManager(),
     aiModelService?: AiModelService,
-    aiTaskGeneratorService?: AiTaskGeneratorService
+    aiTaskGeneratorService?: AiTaskGeneratorService,
+    aiInboxSorterService?: AiInboxSorterService
   ) {
     this.aiModelService = aiModelService || new AiModelService(context);
     this.aiTaskGeneratorService =
       aiTaskGeneratorService || new AiTaskGeneratorService(this.aiModelService);
+    this.aiInboxSorterService =
+      aiInboxSorterService ||
+      new AiInboxSorterService(this.aiModelService, this.companionManager);
   }
 
   public static register(
     context: vscode.ExtensionContext,
     companionManager?: CompanionManager,
     aiModelService?: AiModelService,
-    aiTaskGeneratorService?: AiTaskGeneratorService
+    aiTaskGeneratorService?: AiTaskGeneratorService,
+    aiInboxSorterService?: AiInboxSorterService
   ): vscode.Disposable {
     const provider = new MarkdownEditorProvider(
       context,
       companionManager,
       aiModelService,
-      aiTaskGeneratorService
+      aiTaskGeneratorService,
+      aiInboxSorterService
     );
     return vscode.window.registerCustomEditorProvider(MarkdownEditorProvider.viewType, provider, {
       webviewOptions: {
@@ -226,6 +234,76 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         void vscode.window
           .showErrorMessage(
             `KI-Aufgaben-Generierung fehlgeschlagen: ${msg}`,
+            'KI-Modell konfigurieren'
+          )
+          .then((choice) => {
+            if (choice === 'KI-Modell konfigurieren') {
+              void this.aiModelService.selectModelInteractive().then(() => {
+                if (sendLinksUpdate) {
+                  void sendLinksUpdate();
+                }
+              });
+            }
+          });
+      }
+      return;
+    }
+
+    if (message.type === 'sortAiInbox') {
+      void webviewPanel.webview.postMessage({
+        type: 'aiInboxSorting',
+        isSorting: true,
+      });
+      try {
+        const result = await this.aiInboxSorterService.sortInbox(document.uri, document);
+        void webviewPanel.webview.postMessage({
+          type: 'aiInboxSorting',
+          isSorting: false,
+        });
+        updateWebview?.();
+        if (sendLinksUpdate) {
+          void sendLinksUpdate();
+        }
+        if (result.cancelled) {
+          return;
+        }
+        if (result.skippedEmpty) {
+          void vscode.window.showInformationMessage(
+            'Die Inbox (inbox.md) ist leer – es gibt keine Einträge zum Einsortieren.'
+          );
+        } else if (result.sortedItems.length > 0) {
+          const firstTarget = result.sortedItems[0];
+          void vscode.window
+            .showInformationMessage(
+              `${result.sortedItems.length} Abschnitt(e) aus der Inbox einsortiert.`,
+              'Notiz öffnen'
+            )
+            .then((action) => {
+              if (action === 'Notiz öffnen' && firstTarget) {
+                void vscode.commands.executeCommand(
+                  'vscode.openWith',
+                  firstTarget.targetUri,
+                  MarkdownEditorProvider.viewType
+                );
+              }
+            });
+        } else {
+          void vscode.window.showInformationMessage(
+            'Keine sortierbaren Abschnitte in der Inbox erkannt.'
+          );
+        }
+      } catch (err: any) {
+        void webviewPanel.webview.postMessage({
+          type: 'aiInboxSorting',
+          isSorting: false,
+        });
+        if (sendLinksUpdate) {
+          void sendLinksUpdate();
+        }
+        const msg = err?.message || String(err);
+        void vscode.window
+          .showErrorMessage(
+            `KI-Inbox-Sortierung fehlgeschlagen: ${msg}`,
             'KI-Modell konfigurieren'
           )
           .then((choice) => {

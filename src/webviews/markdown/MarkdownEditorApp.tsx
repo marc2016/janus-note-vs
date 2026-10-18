@@ -184,6 +184,7 @@ export const MarkdownEditorApp: React.FC = () => {
   const [syntaxMode, setSyntaxMode] = useState<SyntaxVisibilityMode>(getInitialSyntaxMode);
   const [linksData, setLinksData] = useState<NoteLinksData | null>(null);
   const [isGeneratingTasks, setIsGeneratingTasks] = useState<boolean>(false);
+  const [isSortingInbox, setIsSortingInbox] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isUpdatingFromHostRef = useRef<boolean>(false);
@@ -309,6 +310,8 @@ export const MarkdownEditorApp: React.FC = () => {
         setLinksData(message.linksData);
       } else if (message.type === 'aiTasksGenerating') {
         setIsGeneratingTasks(Boolean(message.isGenerating));
+      } else if (message.type === 'aiInboxSorting') {
+        setIsSortingInbox(Boolean(message.isSorting));
       }
     };
 
@@ -355,6 +358,13 @@ export const MarkdownEditorApp: React.FC = () => {
     const api = getVsCodeApi();
     if (api) {
       api.postMessage({ type: 'generateAiTasks' });
+    }
+  };
+
+  const handleSortAiInbox = () => {
+    const api = getVsCodeApi();
+    if (api) {
+      api.postMessage({ type: 'sortAiInbox' });
     }
   };
 
@@ -410,8 +420,10 @@ export const MarkdownEditorApp: React.FC = () => {
         onAddLink={handleAddLink}
         onCreateCompanion={handleCreateCompanion}
         onGenerateAiTasks={handleGenerateAiTasks}
+        onSortAiInbox={handleSortAiInbox}
         onSelectAiModel={handleSelectAiModel}
         isGeneratingTasks={isGeneratingTasks}
+        isSortingInbox={isSortingInbox}
       />
     </div>
   );

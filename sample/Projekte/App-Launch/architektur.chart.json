@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "title": "App-Launch Sync & KI Architektur",
+  "chartType": "mermaid",
+  "code": [
+    "flowchart LR",
+    "    Client[\"📱 Mobile App (SQLite)\"] <-->|WebSocket Sync| Gateway[\"⚡ Sync Gateway\"]",
+    "    Gateway --> DB[(\"🗄️ PostgreSQL\")]",
+    "    Gateway --> AI[\"🤖 KI-Worker (Copilot / Ollama)\"]",
+    "    AI --> DB"
+  ]
+}
+

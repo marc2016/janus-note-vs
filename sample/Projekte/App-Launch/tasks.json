@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "title": "Aufgaben: App-Launch",
+  "tasks": [
+    {
+      "id": "t-app-1",
+      "title": "TestFlight Build 2.0.1 hochladen",
+      "description": "Signiertes IPA-Paket in App Store Connect bereitstellen",
+      "completed": true,
+      "status": "done",
+      "priority": "high",
+      "note": "app-launch.md",
+      "createdAt": "2026-10-16T09:00:00.000Z",
+      "updatedAt": "2026-10-17T14:30:00.000Z"
+    },
+    {
+      "id": "t-app-2",
+      "title": "OAuth2 Token-Refresh bei instabiler Verbindung absichern",
+      "description": "Retry-Backoff in der Sync-Engine ergänzen",
+      "completed": false,
+      "status": "in_progress",
+      "priority": "high",
+      "note": "architektur.md",
+      "createdAt": "2026-10-17T10:15:00.000Z"
+    },
+    {
+      "id": "t-app-3",
+      "title": "Onboarding-Screens mit neuen Icons aktualisieren",
+      "completed": false,
+      "status": "todo",
+      "priority": "medium",
+      "note": "app-launch.md",
+      "createdAt": "2026-10-17T11:00:00.000Z"
+    }
+  ]
+}
+

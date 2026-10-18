@@ -1,9 +1,17 @@
-# Janus Note Project Plan
+# Janus Note – Beispiel-Workspace & Übersicht
 
-Welcome to your Janus Note workspace in VS Code!
+Willkommen im **Janus Note** Test-Workspace (`sample/`)! Hier kannst du alle Funktionen direkt ausprobieren:
 
-Above this heading, you will notice the interactive **Janus CodeLens**:
-- Click on **Tasks** to open the visual Kanban Board.
-- Click on **Diagram** to open the interactive D3.js and Mermaid viewer.
+## 1. Gefüllte Inbox testen
+Öffne die [[inbox]] – dort warten bereits mehrere verschiedene Gedanken und Abschnitte:
+- Klicke unten in der Fußleiste auf **„Inbox einsortieren"**, um die Abschnitte per KI in bestehende Notizen (wie [[app-launch]] oder [[kickoff]]) anzuhängen oder als neue Notiz anzulegen.
+- Standardmäßig erscheint zuerst die **Vorschau** (QuickPick), in der du einzelne Vorschläge an- oder abwählen kannst.
 
-You can also prompt `@janus` in the VS Code Copilot Chat to inspect this note or mutate tasks & charts!
+## 2. Aufgaben per KI aus Notizen generieren
+Öffne [[app-launch]], [[kickoff]] oder [[sprint-review]] und klicke unten in der Fußleiste auf **„Aufgaben generieren"**:
+- Die KI liest die offenen Punkte aus dem Text und trägt neue Aufgaben ohne Duplikate in die `tasks.json` des jeweiligen Ordners ein.
+
+## 3. Verknüpfungen, Backlinks & Diagramme
+- **Projekte**: [[app-launch]], [[architektur]] (inkl. Mermaid-Diagramm), [[kickoff]], [[design-system]]
+- **Meetings**: [[sprint-review]]
+- **Wissensbasis**: [[ki-prompts]]

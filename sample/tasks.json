@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "title": "Aufgaben: Workspace Allgemein",
+  "tasks": [
+    {
+      "id": "t-root-1",
+      "title": "Janus Note Beispiel-Workspace erkunden",
+      "description": "Öffne inbox.md und teste die Buttons 'Aufgaben generieren' und 'Inbox einsortieren'",
+      "completed": false,
+      "status": "todo",
+      "priority": "high",
+      "note": "project-plan.md",
+      "createdAt": "2026-10-18T08:00:00.000Z"
+    }
+  ]
+}
+

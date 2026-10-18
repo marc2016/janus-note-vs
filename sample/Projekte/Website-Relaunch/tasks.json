@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "title": "Aufgaben: Website-Relaunch",
+  "tasks": [
+    {
+      "id": "t-web-1",
+      "title": "Hero-Sektion für Startseite in Tailwind umsetzen",
+      "completed": true,
+      "status": "done",
+      "priority": "medium",
+      "note": "kickoff.md",
+      "createdAt": "2026-10-15T08:00:00.000Z",
+      "updatedAt": "2026-10-16T17:00:00.000Z"
+    },
+    {
+      "id": "t-web-2",
+      "title": "Dark-Mode Farb-Tokens im Design-System abnehmen",
+      "completed": false,
+      "status": "todo",
+      "priority": "medium",
+      "note": "design-system.md",
+      "createdAt": "2026-10-17T09:30:00.000Z"
+    }
+  ]
+}
+

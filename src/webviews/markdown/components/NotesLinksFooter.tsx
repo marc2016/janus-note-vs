@@ -15,6 +15,7 @@ import {
   mdiAutoFix,
   mdiRobotOutline,
   mdiLoading,
+  mdiInboxArrowDown,
 } from '@mdi/js';
 
 export interface FooterLinkItem {
@@ -60,8 +61,10 @@ export interface NotesLinksFooterProps {
   onAddLink: () => void;
   onCreateCompanion?: (companionType: 'tasks' | 'chart') => void;
   onGenerateAiTasks?: () => void;
+  onSortAiInbox?: () => void;
   onSelectAiModel?: () => void;
   isGeneratingTasks?: boolean;
+  isSortingInbox?: boolean;
 }
 
 export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
@@ -70,8 +73,10 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
   onAddLink,
   onCreateCompanion,
   onGenerateAiTasks,
+  onSortAiInbox,
   onSelectAiModel,
   isGeneratingTasks = false,
+  isSortingInbox = false,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -137,6 +142,25 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
                   className={isGeneratingTasks ? 'animate-spin' : ''}
                 />
                 <span>{isGeneratingTasks ? 'Generiere...' : 'Aufgaben generieren'}</span>
+              </Button>
+            )}
+
+            {onSortAiInbox && (
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                disabled={isSortingInbox}
+                onClick={onSortAiInbox}
+                className="h-6 px-2.5 text-[11px]"
+                title="Inhalte aus inbox.md mit der aktiven KI thematisch in bestehende oder neue Notizen und Ordner einsortieren"
+              >
+                <MdiIcon
+                  path={isSortingInbox ? mdiLoading : mdiInboxArrowDown}
+                  size={12}
+                  className={isSortingInbox ? 'animate-spin' : ''}
+                />
+                <span>{isSortingInbox ? 'Sortiere...' : 'Inbox einsortieren'}</span>
               </Button>
             )}
 
