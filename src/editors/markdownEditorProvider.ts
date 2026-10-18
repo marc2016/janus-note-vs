@@ -363,7 +363,12 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     if (message.type === 'createCompanion' && typeof message.companionType === 'string') {
       if (message.companionType === 'tasks') {
         const folderUri = vscode.Uri.file(path.dirname(document.uri.fsPath));
-        await vscode.commands.executeCommand('janus.openFolderTasks', folderUri);
+        const notesRootUri = this.companionManager.getNotesRootUri(document.uri);
+        if (notesRootUri && path.resolve(folderUri.fsPath) === path.resolve(notesRootUri.fsPath)) {
+          await vscode.commands.executeCommand('janus.openAllTasks');
+        } else {
+          await vscode.commands.executeCommand('janus.openFolderTasks', folderUri);
+        }
       } else if (message.companionType === 'chart') {
         await vscode.commands.executeCommand('janus.createChartCompanion', document.uri);
       }

@@ -214,9 +214,9 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
       folders.sort((a, b) => (a.label as string).localeCompare(b.label as string));
       notes.sort((a, b) => (a.label as string).localeCompare(b.label as string));
 
-      // Every folder gets a FolderTasksTreeItem (and root gets one if tasks.json exists in root)
+      // Only subfolders get an individual FolderTasksTreeItem (root level uses the global AllTasksTreeItem)
       let folderTasksItem: FolderTasksTreeItem | undefined;
-      if (isSubfolder || hasTasksJson) {
+      if (isSubfolder) {
         const tasksUri = vscode.Uri.joinPath(dirUri, 'tasks.json');
         const openCount = hasTasksJson
           ? await this.folderTasksService.countOpenTasksInFile(tasksUri)
