@@ -183,6 +183,7 @@ export const MarkdownEditorApp: React.FC = () => {
   const [activeState, setActiveState] = useState<ActiveToolbarState>(defaultActiveToolbarState);
   const [syntaxMode, setSyntaxMode] = useState<SyntaxVisibilityMode>(getInitialSyntaxMode);
   const [linksData, setLinksData] = useState<NoteLinksData | null>(null);
+  const [isGeneratingTasks, setIsGeneratingTasks] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isUpdatingFromHostRef = useRef<boolean>(false);
@@ -306,6 +307,8 @@ export const MarkdownEditorApp: React.FC = () => {
         }
       } else if (message.type === 'updateLinks' && message.linksData) {
         setLinksData(message.linksData);
+      } else if (message.type === 'aiTasksGenerating') {
+        setIsGeneratingTasks(Boolean(message.isGenerating));
       }
     };
 
@@ -345,6 +348,20 @@ export const MarkdownEditorApp: React.FC = () => {
         type: 'createCompanion',
         companionType,
       });
+    }
+  };
+
+  const handleGenerateAiTasks = () => {
+    const api = getVsCodeApi();
+    if (api) {
+      api.postMessage({ type: 'generateAiTasks' });
+    }
+  };
+
+  const handleSelectAiModel = () => {
+    const api = getVsCodeApi();
+    if (api) {
+      api.postMessage({ type: 'selectAiModel' });
     }
   };
 
@@ -392,6 +409,9 @@ export const MarkdownEditorApp: React.FC = () => {
         onOpenLink={handleOpenLink}
         onAddLink={handleAddLink}
         onCreateCompanion={handleCreateCompanion}
+        onGenerateAiTasks={handleGenerateAiTasks}
+        onSelectAiModel={handleSelectAiModel}
+        isGeneratingTasks={isGeneratingTasks}
       />
     </div>
   );

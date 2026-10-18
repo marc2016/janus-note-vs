@@ -12,6 +12,9 @@ import {
   mdiLinkVariant,
   mdiChevronUp,
   mdiChevronDown,
+  mdiAutoFix,
+  mdiRobotOutline,
+  mdiLoading,
 } from '@mdi/js';
 
 export interface FooterLinkItem {
@@ -44,6 +47,11 @@ export interface NoteLinksData {
   companions: FooterCompanions;
   outgoingLinks: FooterLinkItem[];
   backlinks: FooterLinkItem[];
+  aiModel?: {
+    provider: string;
+    modelId: string;
+    label: string;
+  };
 }
 
 export interface NotesLinksFooterProps {
@@ -51,6 +59,9 @@ export interface NotesLinksFooterProps {
   onOpenLink: (targetUri: string, viewType?: string) => void;
   onAddLink: () => void;
   onCreateCompanion?: (companionType: 'tasks' | 'chart') => void;
+  onGenerateAiTasks?: () => void;
+  onSelectAiModel?: () => void;
+  isGeneratingTasks?: boolean;
 }
 
 export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
@@ -58,6 +69,9 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
   onOpenLink,
   onAddLink,
   onCreateCompanion,
+  onGenerateAiTasks,
+  onSelectAiModel,
+  isGeneratingTasks = false,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -65,6 +79,7 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
   const chartCompanion = linksData?.companions?.chart;
   const outgoingLinks = linksData?.outgoingLinks || [];
   const backlinks = linksData?.backlinks || [];
+  const aiModelLabel = linksData?.aiModel?.label || 'KI-Modell wählen';
 
   const totalConnections =
     (tasksCompanion?.exists ? 1 : 0) +
@@ -76,7 +91,7 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
     <footer className="shrink-0 border-t border-[var(--vscode-editorWidget-border,rgba(128,128,128,0.22))] bg-[var(--vscode-editorWidget-background,rgba(24,24,27,0.85))] backdrop-blur-md px-4 py-2 text-xs select-none">
       <div className="max-w-3xl mx-auto flex flex-col gap-2">
         {/* Top bar: Title summary + Quick actions */}
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <button
             type="button"
             onClick={() => setIsCollapsed((prev) => !prev)}
@@ -90,7 +105,41 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
             <MdiIcon path={isCollapsed ? mdiChevronUp : mdiChevronDown} size={14} />
           </button>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {onSelectAiModel && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onSelectAiModel}
+                className="h-6 px-2 text-[11px] opacity-85 hover:opacity-100"
+                title="Aktives KI-Modell wechseln oder API-Key konfigurieren (Copilot, Ollama, OpenAI, Anthropic, Gemini)"
+              >
+                <MdiIcon path={mdiRobotOutline} size={12} />
+                <span className="max-w-[160px] truncate">{aiModelLabel}</span>
+                <MdiIcon path={mdiChevronDown} size={11} className="opacity-70" />
+              </Button>
+            )}
+
+            {onGenerateAiTasks && (
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                disabled={isGeneratingTasks}
+                onClick={onGenerateAiTasks}
+                className="h-6 px-2.5 text-[11px]"
+                title="Aufgaben mit der aktiven KI aus dieser Notiz extrahieren und in die Ordner-Aufgabenliste eintragen"
+              >
+                <MdiIcon
+                  path={isGeneratingTasks ? mdiLoading : mdiAutoFix}
+                  size={12}
+                  className={isGeneratingTasks ? 'animate-spin' : ''}
+                />
+                <span>{isGeneratingTasks ? 'Generiere...' : 'Aufgaben generieren'}</span>
+              </Button>
+            )}
+
             {!tasksCompanion?.exists && onCreateCompanion && (
               <Button
                 type="button"

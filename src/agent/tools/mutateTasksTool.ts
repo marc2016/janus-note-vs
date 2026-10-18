@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { z } from 'zod';
+import * as path from 'path';
 import { CompanionManager } from '../../companion/companionManager';
-import { getCompanionPaths, isTasksCompanion } from '../../companion/companionPaths';
+import { isTasksCompanion } from '../../companion/companionPaths';
 import { TaskItem, TaskItemSchema, TasksCompanion } from '../../models/tasks';
 
 export interface MutateTasksToolInput {
@@ -36,12 +37,12 @@ export class MutateTasksTool implements vscode.LanguageModelTool<MutateTasksTool
     let targetTasksUri: vscode.Uri;
 
     try {
-      const parsedUri = vscode.Uri.parse(noteUri);
-      if (isTasksCompanion(parsedUri.fsPath)) {
+      const parsedUri = noteUri.includes('://') ? vscode.Uri.parse(noteUri) : vscode.Uri.file(noteUri);
+      if (parsedUri.fsPath.endsWith('tasks.json') || isTasksCompanion(parsedUri.fsPath)) {
         targetTasksUri = parsedUri;
       } else {
-        const paths = getCompanionPaths(parsedUri.fsPath);
-        targetTasksUri = vscode.Uri.file(paths.tasksPath);
+        const folderDir = path.dirname(parsedUri.fsPath);
+        targetTasksUri = vscode.Uri.file(path.join(folderDir, 'tasks.json'));
       }
     } catch (err: any) {
       return new vscode.LanguageModelToolResult([

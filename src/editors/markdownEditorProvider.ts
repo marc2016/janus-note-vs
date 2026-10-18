@@ -5,22 +5,39 @@ import {
   findMarkdownNotesInRoot,
   getNoteLinksData,
 } from '../services/noteLinkService';
+import { AiModelService } from '../services/aiModelService';
+import { AiTaskGeneratorService } from '../services/aiTaskGeneratorService';
 import { TasksEditorProvider } from './tasksEditorProvider';
 import { ChartEditorProvider } from './chartEditorProvider';
 
 export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'janus.markdownEditor';
+  private readonly aiModelService: AiModelService;
+  private readonly aiTaskGeneratorService: AiTaskGeneratorService;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
-    private readonly companionManager: CompanionManager = new CompanionManager()
-  ) {}
+    private readonly companionManager: CompanionManager = new CompanionManager(),
+    aiModelService?: AiModelService,
+    aiTaskGeneratorService?: AiTaskGeneratorService
+  ) {
+    this.aiModelService = aiModelService || new AiModelService(context);
+    this.aiTaskGeneratorService =
+      aiTaskGeneratorService || new AiTaskGeneratorService(this.aiModelService);
+  }
 
   public static register(
     context: vscode.ExtensionContext,
-    companionManager?: CompanionManager
+    companionManager?: CompanionManager,
+    aiModelService?: AiModelService,
+    aiTaskGeneratorService?: AiTaskGeneratorService
   ): vscode.Disposable {
-    const provider = new MarkdownEditorProvider(context, companionManager);
+    const provider = new MarkdownEditorProvider(
+      context,
+      companionManager,
+      aiModelService,
+      aiTaskGeneratorService
+    );
     return vscode.window.registerCustomEditorProvider(MarkdownEditorProvider.viewType, provider, {
       webviewOptions: {
         retainContextWhenHidden: true,
@@ -46,12 +63,12 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     const updateWebview = () => {
       try {
         const text = document.getText();
-        webviewPanel.webview.postMessage({
+        void webviewPanel.webview.postMessage({
           type: 'init',
           content: text,
         });
       } catch (err: any) {
-        webviewPanel.webview.postMessage({
+        void webviewPanel.webview.postMessage({
           type: 'error',
           message: 'Error loading markdown: ' + (err?.message || String(err)),
         });
@@ -60,11 +77,11 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
 
     const sendLinksUpdate = async () => {
       try {
-        const linksData = await getNoteLinksData(
-          document.uri,
-          document.getText(),
-          this.companionManager
-        );
+        const [linksData, aiModel] = await Promise.all([
+          getNoteLinksData(document.uri, document.getText(), this.companionManager),
+          this.aiModelService.getActiveModelInfo(),
+        ]);
+        linksData.aiModel = aiModel;
         void webviewPanel.webview.postMessage({
           type: 'updateLinks',
           linksData,
@@ -89,6 +106,16 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       }
     });
 
+    const aiModelChangeSubscription = this.aiModelService.onDidChangeModel(() => {
+      void sendLinksUpdate();
+    });
+
+    const configChangeSubscription = vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('janus.ai')) {
+        void sendLinksUpdate();
+      }
+    });
+
     const companionWatcher = vscode.workspace.createFileSystemWatcher(
       '**/{tasks.json,*.tasks.json,*.chart.json,*.md}'
     );
@@ -101,6 +128,8 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
 
     webviewPanel.onDidDispose(() => {
       changeDocumentSubscription.dispose();
+      aiModelChangeSubscription.dispose();
+      configChangeSubscription.dispose();
       subCreate.dispose();
       subChange.dispose();
       subDelete.dispose();
@@ -127,15 +156,87 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       if (sendLinksUpdate) {
         void sendLinksUpdate();
       } else {
-        const linksData = await getNoteLinksData(
-          document.uri,
-          document.getText(),
-          this.companionManager
-        );
+        const [linksData, aiModel] = await Promise.all([
+          getNoteLinksData(document.uri, document.getText(), this.companionManager),
+          this.aiModelService.getActiveModelInfo(),
+        ]);
+        linksData.aiModel = aiModel;
         void webviewPanel.webview.postMessage({
           type: 'updateLinks',
           linksData,
         });
+      }
+      return;
+    }
+
+    if (message.type === 'selectAiModel') {
+      await this.aiModelService.selectModelInteractive();
+      if (sendLinksUpdate) {
+        void sendLinksUpdate();
+      }
+      return;
+    }
+
+    if (message.type === 'generateAiTasks') {
+      void webviewPanel.webview.postMessage({
+        type: 'aiTasksGenerating',
+        isGenerating: true,
+      });
+      try {
+        const result = await this.aiTaskGeneratorService.generateTasksForNote(
+          document.uri,
+          document.getText()
+        );
+        void webviewPanel.webview.postMessage({
+          type: 'aiTasksGenerating',
+          isGenerating: false,
+        });
+        if (sendLinksUpdate) {
+          void sendLinksUpdate();
+        }
+        if (result.addedTasks.length > 0) {
+          void vscode.window
+            .showInformationMessage(
+              `${result.addedTasks.length} neue Aufgabe(n) wurden zum Ordner hinzugefügt.`,
+              'Aufgaben öffnen'
+            )
+            .then((action) => {
+              if (action === 'Aufgaben öffnen') {
+                void vscode.commands.executeCommand(
+                  'vscode.openWith',
+                  result.tasksUri,
+                  TasksEditorProvider.viewType
+                );
+              }
+            });
+        } else {
+          void vscode.window.showInformationMessage(
+            'Keine neuen Aufgaben in dieser Notiz gefunden (oder bereits im Ordner vorhanden).'
+          );
+        }
+      } catch (err: any) {
+        void webviewPanel.webview.postMessage({
+          type: 'aiTasksGenerating',
+          isGenerating: false,
+        });
+        if (sendLinksUpdate) {
+          void sendLinksUpdate();
+        }
+        const msg = err?.message || String(err);
+        void vscode.window
+          .showErrorMessage(
+            `KI-Aufgaben-Generierung fehlgeschlagen: ${msg}`,
+            'KI-Modell konfigurieren'
+          )
+          .then((choice) => {
+            if (choice === 'KI-Modell konfigurieren') {
+              void this.aiModelService.selectModelInteractive().then(() => {
+                if (sendLinksUpdate) {
+                  void sendLinksUpdate();
+                }
+              });
+            }
+          });
       }
       return;
     }

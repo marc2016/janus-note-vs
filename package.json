@@ -36,6 +36,34 @@
           "default": false,
           "scope": "resource",
           "description": "Indicates whether the Janus notes root has been initialized."
+        },
+        "janus.ai.provider": {
+          "type": "string",
+          "enum": [
+            "vscode-lm",
+            "ollama",
+            "openai",
+            "anthropic",
+            "gemini",
+            "custom"
+          ],
+          "default": "vscode-lm",
+          "description": "Active AI provider used by Janus Note for task generation."
+        },
+        "janus.ai.modelId": {
+          "type": "string",
+          "default": "",
+          "description": "Active AI model identifier for task generation (e.g. gpt-4o, claude-3-5-sonnet, llama3.3, gemini-2.5-flash)."
+        },
+        "janus.ai.ollamaBaseUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Base URL for a local Ollama server."
+        },
+        "janus.ai.customBaseUrl": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "description": "Base URL for an OpenAI-compatible custom endpoint (e.g. OpenRouter, LM Studio, vLLM)."
         }
       }
     },
@@ -131,6 +159,16 @@
         "command": "janus.openFolderTasks",
         "title": "Janus: Ordner-Aufgaben öffnen",
         "icon": "$(checklist)"
+      },
+      {
+        "command": "janus.selectAiModel",
+        "title": "Janus: KI-Modell auswählen / konfigurieren",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "janus.generateTasksFromNote",
+        "title": "Janus: Aufgaben mit KI aus Notiz generieren",
+        "icon": "$(sparkle)"
       }
     ],
     "menus": {

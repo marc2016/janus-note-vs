@@ -41,6 +41,11 @@ export interface NoteLinksData {
   companions: CompanionSummary;
   outgoingLinks: NoteLinkItem[];
   backlinks: NoteLinkItem[];
+  aiModel?: {
+    provider: string;
+    modelId: string;
+    label: string;
+  };
 }
 
 const EXTERNAL_PROTOCOL_RE = /^(https?:|mailto:|tel:|vscode:|data:|#)/i;

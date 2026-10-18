@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { CompanionManager } from '../../companion/companionManager';
 import { isMarkdownNote } from '../../companion/companionPaths';
 
@@ -16,7 +17,9 @@ export class ReadNoteTool implements vscode.LanguageModelTool<ReadNoteToolInput>
     let targetUri: vscode.Uri | undefined;
 
     if (options.input.noteUri) {
-      targetUri = vscode.Uri.parse(options.input.noteUri);
+      targetUri = options.input.noteUri.includes('://')
+        ? vscode.Uri.parse(options.input.noteUri)
+        : vscode.Uri.file(options.input.noteUri);
     } else {
       targetUri = vscode.window.activeTextEditor?.document.uri;
     }
@@ -38,12 +41,27 @@ export class ReadNoteTool implements vscode.LanguageModelTool<ReadNoteToolInput>
       const noteContent = Buffer.from(docBytes).toString('utf-8');
 
       const status = await this.companionManager.getCompanionStatus(targetUri);
+      const folderTasksUri = vscode.Uri.file(path.join(path.dirname(targetUri.fsPath), 'tasks.json'));
+
+      let tasks = status.tasks || null;
+      let hasTasksCompanion = status.tasksExist;
+
+      if (!hasTasksCompanion) {
+        try {
+          await vscode.workspace.fs.stat(folderTasksUri);
+          tasks = await this.companionManager.readTasksCompanion(folderTasksUri);
+          hasTasksCompanion = true;
+        } catch {
+          // No folder tasks.json yet
+        }
+      }
 
       const resultPayload = {
         noteUri: targetUri.toString(),
+        folderTasksUri: folderTasksUri.toString(),
         noteContent,
-        hasTasksCompanion: status.tasksExist,
-        tasks: status.tasks || null,
+        hasTasksCompanion,
+        tasks,
         hasChartCompanion: status.chartExist,
         chart: status.chart || null,
       };

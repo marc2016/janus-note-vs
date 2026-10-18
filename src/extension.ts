@@ -7,6 +7,8 @@ import { ChartEditorProvider } from './editors/chartEditorProvider';
 import { MarkdownEditorProvider } from './editors/markdownEditorProvider';
 import { GlobalTasksViewProvider } from './editors/globalTasksViewProvider';
 import { FolderTasksService } from './services/folderTasksService';
+import { AiModelService } from './services/aiModelService';
+import { AiTaskGeneratorService } from './services/aiTaskGeneratorService';
 import { DiffContentProvider, NoteDiffViewer } from './agent/diffViewer';
 import { ReadNoteTool } from './agent/tools/readNoteTool';
 import { MutateTasksTool } from './agent/tools/mutateTasksTool';
@@ -32,6 +34,8 @@ export function activate(context: vscode.ExtensionContext) {
   // 1. Core Services
   const companionManager = new CompanionManager();
   const folderTasksService = new FolderTasksService();
+  const aiModelService = new AiModelService(context);
+  const aiTaskGeneratorService = new AiTaskGeneratorService(aiModelService, folderTasksService);
   const codeLensProvider = new CompanionCodeLensProvider(companionManager);
   const companionWatcher = new CompanionWatcher(codeLensProvider);
   const notesTreeDataProvider = new NotesTreeDataProvider(companionManager, folderTasksService);
@@ -47,7 +51,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 2. Diff and Review Services
   const diffContentProvider = new DiffContentProvider();
-  const noteDiffViewer = new NoteDiffViewer(diffContentProvider);
+  const _noteDiffViewer = new NoteDiffViewer(diffContentProvider);
 
   context.subscriptions.push(
     companionWatcher,
@@ -56,7 +60,7 @@ export function activate(context: vscode.ExtensionContext) {
     notesTreeView,
     TasksEditorProvider.register(context),
     ChartEditorProvider.register(context),
-    MarkdownEditorProvider.register(context)
+    MarkdownEditorProvider.register(context, companionManager, aiModelService, aiTaskGeneratorService)
   );
 
   // Listen to companion & note file changes to refresh tree view and context state
@@ -215,6 +219,37 @@ export function activate(context: vscode.ExtensionContext) {
         notesTreeDataProvider.refresh();
       }
       await vscode.commands.executeCommand('vscode.openWith', tasksUri, TasksEditorProvider.viewType);
+    }),
+    vscode.commands.registerCommand('janus.selectAiModel', async () => {
+      await aiModelService.selectModelInteractive();
+    }),
+    vscode.commands.registerCommand('janus.generateTasksFromNote', async (uri?: vscode.Uri) => {
+      const targetUri = uri || vscode.window.activeTextEditor?.document.uri;
+      if (!targetUri || !isMarkdownNote(targetUri.fsPath)) {
+        vscode.window.showErrorMessage('Bitte zuerst eine Markdown-Notiz öffnen oder auswählen.');
+        return;
+      }
+      try {
+        const result = await aiTaskGeneratorService.generateTasksForNote(targetUri);
+        notesTreeDataProvider.refresh();
+        if (result.addedTasks.length > 0) {
+          const action = await vscode.window.showInformationMessage(
+            `${result.addedTasks.length} neue Aufgabe(n) wurden zum Ordner hinzugefügt.`,
+            'Aufgaben öffnen'
+          );
+          if (action === 'Aufgaben öffnen') {
+            await vscode.commands.executeCommand(
+              'vscode.openWith',
+              result.tasksUri,
+              TasksEditorProvider.viewType
+            );
+          }
+        } else {
+          vscode.window.showInformationMessage('Keine neuen Aufgaben in dieser Notiz gefunden.');
+        }
+      } catch (err: any) {
+        vscode.window.showErrorMessage(`KI-Aufgaben-Generierung fehlgeschlagen: ${err?.message || String(err)}`);
+      }
     }),
     vscode.commands.registerCommand('janus.setNotesRoot', setNotesRootCommand),
     vscode.commands.registerCommand('janus.resetNotesRoot', resetNotesRootCommand),

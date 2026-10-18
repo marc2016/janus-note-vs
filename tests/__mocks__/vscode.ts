@@ -212,6 +212,7 @@ export const commands = {
 export const lm = {
   tools: [],
   registerTool: () => ({ dispose: () => {} }),
+  selectChatModels: async (_selector?: any): Promise<any[]> => [],
 };
 
 export const chat = {
@@ -224,6 +225,15 @@ export class LanguageModelChatMessage {
   }
 }
 
+export class CancellationTokenSource {
+  token = { isCancellationRequested: false, onCancellationRequested: () => ({ dispose: () => {} }) };
+  cancel() {
+    this.token.isCancellationRequested = true;
+  }
+  dispose() {}
+}
+
 export class WorkspaceEdit {
   replace() {}
 }
+
