@@ -167,9 +167,10 @@ describe('aiInboxSorting', () => {
       expect(result.sortedItems[1].effectiveAction).toBe('create');
       expect(result.sortedItems[1].targetRelativePath).toBe('knowledge/Architektur.md');
 
-      // Existing file must preserve 100% of old content and append the new section
-      expect(fsMap.get('/workspace/projects/App-Launch.md')).toBe(
-        '# App Launch\n\nBestehender wichtiger Inhalt, der nicht gelöscht werden darf.\n\nGedanke A für bestehende Notiz.\n'
+      // Existing file must preserve 100% of old content and append the new section with a ## <Thema> (YYYY-MM-DD HH:mm) heading
+      const appendedContent = fsMap.get('/workspace/projects/App-Launch.md')!;
+      expect(appendedContent).toMatch(
+        /^# App Launch\n\nBestehender wichtiger Inhalt, der nicht gelöscht werden darf\.\n\n## Ergänzung zum App Launch \(\d{4}-\d{2}-\d{2} \d{2}:\d{2}\)\n\nGedanke A für bestehende Notiz\.\n$/
       );
 
       // New file is created with heading + content

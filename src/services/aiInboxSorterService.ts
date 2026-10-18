@@ -162,6 +162,44 @@ export function extractMeaningfulInboxBody(rawInboxText: string): string {
 }
 
 /**
+ * Formats a Date into `YYYY-MM-DD HH:mm` local time.
+ */
+export function formatInboxTimestamp(date: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const yyyy = date.getFullYear();
+  const mm = pad(date.getMonth() + 1);
+  const dd = pad(date.getDate());
+  const hh = pad(date.getHours());
+  const min = pad(date.getMinutes());
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+}
+
+/**
+ * Formats an inbox section for appending to an existing note with a heading
+ * containing the topic (`title`), date, and time: `## <Thema> (YYYY-MM-DD HH:mm)`.
+ */
+export function formatAppendedInboxSection(
+  title: string,
+  rawContent: string,
+  now: Date = new Date()
+): string {
+  const timestamp = formatInboxTimestamp(now);
+  const trimmed = rawContent.trim();
+  const leadingHeadingMatch = trimmed.match(/^#{1,6}\s+([^\n]+)\n*([\s\S]*)$/);
+  if (leadingHeadingMatch) {
+    const existingHeadingText = leadingHeadingMatch[1].trim();
+    const restBody = leadingHeadingMatch[2].trim();
+    const headingWithTime = existingHeadingText.includes(timestamp)
+      ? `## ${existingHeadingText}`
+      : `## ${existingHeadingText} (${timestamp})`;
+    return restBody ? `${headingWithTime}\n\n${restBody}` : headingWithTime;
+  }
+
+  const cleanTitle = title.replace(/^#{1,6}\s+/, '').trim() || 'Inbox-Notiz';
+  return `## ${cleanTitle} (${timestamp})\n\n${trimmed}`;
+}
+
+/**
  * Parses and validates the JSON sorting proposals from an LLM response.
  */
 export function parseAiInboxSortItems(rawResponse: string): InboxSortProposal[] {
@@ -466,7 +504,8 @@ export class AiInboxSorterService {
         const existingText = Buffer.from(existingBytes).toString('utf-8');
         const trimmedExisting = existingText.replace(/\s+$/, '');
         const separator = trimmedExisting.length > 0 ? '\n\n' : '';
-        const updatedText = `${trimmedExisting}${separator}${item.content.trim()}\n`;
+        const formattedSection = formatAppendedInboxSection(item.title, item.content);
+        const updatedText = `${trimmedExisting}${separator}${formattedSection}\n`;
         await vscode.workspace.fs.writeFile(targetUri, Buffer.from(updatedText, 'utf-8'));
 
         sortedItems.push({
