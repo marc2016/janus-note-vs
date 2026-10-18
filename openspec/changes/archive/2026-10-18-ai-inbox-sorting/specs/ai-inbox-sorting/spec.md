@@ -22,11 +22,11 @@ The system SHALL analyze the content of `<notesRoot>/inbox.md` along with the wo
 - **THEN** the system informs the user that there are no entries to sort without calling the AI model or modifying any files
 
 ### Requirement: Strict Append-Only Protection for Existing Notes
-The system SHALL never overwrite, truncate, or delete existing content in any target Markdown note when sorting inbox entries; if a target file already exists on disk, the system MUST append the new section to the end of the file even if the AI model proposed a `create` action.
+The system SHALL never overwrite, truncate, or delete existing content in any target Markdown note when sorting inbox entries; if a target file already exists on disk, the system MUST append the new section to the end of the file preceded by a section heading containing the topic, date, and time (`## <Title> (YYYY-MM-DD HH:mm)`) even if the AI model proposed a `create` action.
 
 #### Scenario: Appending a section to an existing note
 - **WHEN** a sorting proposal targets an existing note `projects/App-Launch/app-launch.md`
-- **THEN** the system reads the existing file content and appends the sorted section at the end separated by a blank line (`\n\n`), preserving 100% of the existing file content byte-for-byte
+- **THEN** the system reads the existing file content and appends the sorted section at the end separated by a blank line (`\n\n`) under a `## <Title> (YYYY-MM-DD HH:mm)` heading, preserving 100% of the existing file content byte-for-byte
 
 #### Scenario: Fallback to append when a proposed new note already exists
 - **WHEN** a sorting proposal specifies action `create` for `knowledge/ki-prompts.md` but `knowledge/ki-prompts.md` already exists on disk

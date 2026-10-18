@@ -157,11 +157,15 @@ The system SHALL allow users to click any link or companion chip in the footer b
 - **THEN** system presents a quick-pick list of workspace notes and appends the selected link to the active document
 
 ### Requirement: Footer Bar AI Task Generation and Model Selector
-The system SHALL render an AI task generation button and an interactive AI model selector badge in the Markdown editor's bottom footer bar (`NotesLinksFooter`), allowing users to view or switch the active AI model and generate folder tasks from the current note with visual loading feedback.
+The system SHALL render an AI task generation button, an AI inbox sorting button (`Inbox einsortieren`), and an interactive AI model selector badge in the Markdown editor's bottom footer bar (`NotesLinksFooter`), allowing users to view or switch the active AI model, generate folder tasks from the current note, and sort entries from `inbox.md` with visual loading feedback.
 
 #### Scenario: Clicking AI task generation button in the footer bar
 - **WHEN** user clicks the `Aufgaben generieren` button in the Markdown editor footer bar
 - **THEN** the button displays a loading state while the active AI model extracts tasks from the note into `<folder>/tasks.json`, and updates the folder tasks badge once complete
+
+#### Scenario: Clicking AI inbox sorting button in the footer bar
+- **WHEN** user clicks the `Inbox einsortieren` button in the Markdown editor footer bar
+- **THEN** the button displays a loading state while the active AI model analyzes and sorts `inbox.md` entries into target notes and folders, resetting the loading state once complete
 
 #### Scenario: Switching active AI model from the footer bar
 - **WHEN** user clicks the active AI model badge in the footer bar
