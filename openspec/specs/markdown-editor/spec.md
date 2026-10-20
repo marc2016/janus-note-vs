@@ -157,7 +157,7 @@ The system SHALL allow users to click any link or companion chip in the footer b
 - **THEN** system presents a quick-pick list of workspace notes and appends the selected link to the active document
 
 ### Requirement: Footer Bar AI Task Generation and Model Selector
-The system SHALL render an AI task generation button, an AI inbox sorting button (`Inbox einsortieren`), and an interactive AI model selector badge in the Markdown editor's bottom footer bar (`NotesLinksFooter`), allowing users to view or switch the active AI model, generate folder tasks from the current note, and sort entries from `inbox.md` with visual loading feedback.
+The system SHALL render an AI task generation button (`Aufgaben generieren`) and an AI inbox sorting button (`Inbox einsortieren`) in the Markdown editor's bottom footer bar (`NotesLinksFooter`), allowing users to generate folder tasks from the current note and sort entries from `inbox.md` with visual loading feedback, without rendering an AI model selector dropdown in the footer bar.
 
 #### Scenario: Clicking AI task generation button in the footer bar
 - **WHEN** user clicks the `Aufgaben generieren` button in the Markdown editor footer bar
@@ -167,7 +167,7 @@ The system SHALL render an AI task generation button, an AI inbox sorting button
 - **WHEN** user clicks the `Inbox einsortieren` button in the Markdown editor footer bar
 - **THEN** the button displays a loading state while the active AI model analyzes and sorts `inbox.md` entries into target notes and folders, resetting the loading state once complete
 
-#### Scenario: Switching active AI model from the footer bar
-- **WHEN** user clicks the active AI model badge in the footer bar
-- **THEN** system opens the AI model selection QuickPick and updates the displayed model name in the footer bar upon selection
+#### Scenario: Configuring AI model from error notification opens Settings Panel
+- **WHEN** AI task generation or inbox sorting fails and the user clicks `KI-Modell konfigurieren` in the error notification
+- **THEN** the system opens the Janus Settings Panel (`janus.openSettings`) so the user can configure the provider, model, or API key
 

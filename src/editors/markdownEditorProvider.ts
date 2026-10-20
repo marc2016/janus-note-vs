@@ -178,10 +178,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     if (message.type === 'selectAiModel') {
-      await this.aiModelService.selectModelInteractive();
-      if (sendLinksUpdate) {
-        void sendLinksUpdate();
-      }
+      await vscode.commands.executeCommand('janus.openSettings');
       return;
     }
 
@@ -238,11 +235,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
           )
           .then((choice) => {
             if (choice === 'KI-Modell konfigurieren') {
-              void this.aiModelService.selectModelInteractive().then(() => {
-                if (sendLinksUpdate) {
-                  void sendLinksUpdate();
-                }
-              });
+              void vscode.commands.executeCommand('janus.openSettings');
             }
           });
       }
@@ -308,11 +301,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
           )
           .then((choice) => {
             if (choice === 'KI-Modell konfigurieren') {
-              void this.aiModelService.selectModelInteractive().then(() => {
-                if (sendLinksUpdate) {
-                  void sendLinksUpdate();
-                }
-              });
+              void vscode.commands.executeCommand('janus.openSettings');
             }
           });
       }

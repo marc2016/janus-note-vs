@@ -38,6 +38,21 @@ export class LanguageModelTextPart {
   constructor(public value: string) {}
 }
 
+export class LanguageModelToolCallPart {
+  constructor(
+    public callId: string,
+    public name: string,
+    public input: Record<string, any>
+  ) {}
+}
+
+export class LanguageModelToolResultPart {
+  constructor(
+    public callId: string,
+    public content: any[]
+  ) {}
+}
+
 export class LanguageModelToolResult {
   constructor(public content: any[]) {}
 }
@@ -210,18 +225,26 @@ export const commands = {
 };
 
 export const lm = {
-  tools: [],
-  registerTool: () => ({ dispose: () => {} }),
+  tools: [] as any[],
+  registerTool: (_name: string, _tool: any) => ({ dispose: () => {} }),
+  invokeTool: async (_name: string, _options: any, _token?: any): Promise<LanguageModelToolResult> =>
+    new LanguageModelToolResult([]),
   selectChatModels: async (_selector?: any): Promise<any[]> => [],
 };
 
 export const chat = {
-  createChatParticipant: () => ({ iconPath: undefined }),
+  createChatParticipant: (_id: string, _handler: any) => ({
+    iconPath: undefined,
+    dispose: () => {},
+  }),
 };
 
 export class LanguageModelChatMessage {
-  static User(content: string) {
+  static User(content: string | any[]) {
     return { role: 'user', content };
+  }
+  static Assistant(content: string | any[]) {
+    return { role: 'assistant', content };
   }
 }
 

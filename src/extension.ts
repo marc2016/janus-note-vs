@@ -6,14 +6,17 @@ import { TasksEditorProvider } from './editors/tasksEditorProvider';
 import { ChartEditorProvider } from './editors/chartEditorProvider';
 import { MarkdownEditorProvider } from './editors/markdownEditorProvider';
 import { GlobalTasksViewProvider } from './editors/globalTasksViewProvider';
+import { SettingsViewProvider } from './editors/settingsViewProvider';
 import { FolderTasksService } from './services/folderTasksService';
 import { AiModelService } from './services/aiModelService';
 import { AiTaskGeneratorService } from './services/aiTaskGeneratorService';
 import { AiInboxSorterService } from './services/aiInboxSorterService';
+import { JanusSearchService } from './services/janusSearchService';
 import { DiffContentProvider, NoteDiffViewer } from './agent/diffViewer';
 import { ReadNoteTool } from './agent/tools/readNoteTool';
 import { MutateTasksTool } from './agent/tools/mutateTasksTool';
 import { MutateChartTool } from './agent/tools/mutateChartTool';
+import { SearchNotesTool } from './agent/tools/searchNotesTool';
 import { JanusChatParticipant } from './agent/chatParticipant';
 import { isMarkdownNote } from './companion/companionPaths';
 import {
@@ -38,6 +41,7 @@ export function activate(context: vscode.ExtensionContext) {
   const aiModelService = new AiModelService(context);
   const aiTaskGeneratorService = new AiTaskGeneratorService(aiModelService, folderTasksService);
   const aiInboxSorterService = new AiInboxSorterService(aiModelService, companionManager);
+  const janusSearchService = new JanusSearchService(companionManager, folderTasksService);
   const codeLensProvider = new CompanionCodeLensProvider(companionManager);
   const companionWatcher = new CompanionWatcher(codeLensProvider);
   const notesTreeDataProvider = new NotesTreeDataProvider(companionManager, folderTasksService);
@@ -46,6 +50,7 @@ export function activate(context: vscode.ExtensionContext) {
     folderTasksService,
     () => notesTreeDataProvider.refresh()
   );
+  const settingsViewProvider = new SettingsViewProvider(context, aiModelService);
   const notesTreeView = vscode.window.createTreeView('janus.notesView', {
     treeDataProvider: notesTreeDataProvider,
     showCollapseAll: true,
@@ -86,6 +91,7 @@ export function activate(context: vscode.ExtensionContext) {
   // 3. Register Language Model Tools
   if (vscode.lm && typeof vscode.lm.registerTool === 'function') {
     context.subscriptions.push(
+      vscode.lm.registerTool('janus_search_notes', new SearchNotesTool(janusSearchService)),
       vscode.lm.registerTool('janus_read_note_and_companions', new ReadNoteTool(companionManager)),
       vscode.lm.registerTool('janus_mutate_tasks', new MutateTasksTool(companionManager)),
       vscode.lm.registerTool('janus_mutate_chart', new MutateChartTool(companionManager))
@@ -94,7 +100,12 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 4. Register Chat Participant (@janus)
   if (vscode.chat && typeof vscode.chat.createChatParticipant === 'function') {
-    const chatParticipant = new JanusChatParticipant(companionManager);
+    const chatParticipant = new JanusChatParticipant(
+      companionManager,
+      janusSearchService,
+      folderTasksService,
+      aiModelService
+    );
     context.subscriptions.push(chatParticipant.register(context));
   }
 
@@ -228,8 +239,11 @@ export function activate(context: vscode.ExtensionContext) {
       }
       await vscode.commands.executeCommand('vscode.openWith', tasksUri, TasksEditorProvider.viewType);
     }),
+    vscode.commands.registerCommand('janus.openSettings', async () => {
+      await settingsViewProvider.open();
+    }),
     vscode.commands.registerCommand('janus.selectAiModel', async () => {
-      await aiModelService.selectModelInteractive();
+      await settingsViewProvider.open();
     }),
     vscode.commands.registerCommand('janus.generateTasksFromNote', async (uri?: vscode.Uri) => {
       const targetUri = uri || vscode.window.activeTextEditor?.document.uri;

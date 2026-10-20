@@ -116,3 +116,11 @@ The system SHALL store the three default top-level categories using internal Eng
 #### Scenario: Rendering root category folders in English locale
 - **WHEN** `vscode.env.language` starts with `en` (or any non-German locale) and the Notes TreeView renders the top-level directories `meetings`, `projects`, and `knowledge`
 - **THEN** the TreeView displays their labels as `General Meetings`, `Projects`, and `Knowledge Base`
+
+### Requirement: Settings Action in Notes Sidebar Header
+The system SHALL contribute a settings button (`janus.openSettings` with `$(gear)` icon) in the Notes TreeView title bar (`view/title`) so users can open the Janus Settings Panel with a single click from the sidebar.
+
+#### Scenario: Clicking the gear icon in the Notes sidebar header
+- **WHEN** the user clicks the `$(gear)` button in the Notes view title bar
+- **THEN** the system executes `janus.openSettings` and opens the Janus Settings Panel in the editor area
+

@@ -3,6 +3,8 @@ import * as vscode from 'vscode';
 import { MutateTasksTool } from '../src/agent/tools/mutateTasksTool';
 import { MutateChartTool } from '../src/agent/tools/mutateChartTool';
 import { ReadNoteTool } from '../src/agent/tools/readNoteTool';
+import { SearchNotesTool } from '../src/agent/tools/searchNotesTool';
+import { JanusSearchService } from '../src/services/janusSearchService';
 import { CompanionManager } from '../src/companion/companionManager';
 import { DiffContentProvider, NoteDiffViewer } from '../src/agent/diffViewer';
 
@@ -167,5 +169,57 @@ describe('NoteDiffViewer', () => {
 
     provider.clearContent(uri);
     expect(provider.provideTextDocumentContent(uri)).toBe('');
+  });
+});
+
+describe('SearchNotesTool', () => {
+  it('returns ranked note and task matches as JSON payload', async () => {
+    const searchService = new JanusSearchService();
+    vi.spyOn(searchService, 'searchWorkspace').mockResolvedValue({
+      query: 'Kickoff Entscheidungen',
+      tokens: ['kickoff', 'entscheidungen'],
+      notesRootUri: vscode.Uri.file('/workspace/notes'),
+      noteMatches: [
+        {
+          title: 'Kickoff Protokoll',
+          relativePath: 'meetings/kickoff.md',
+          uri: vscode.Uri.file('/workspace/notes/meetings/kickoff.md'),
+          score: 18,
+          snippet: '## Entscheidungen\nWir starten mit Phase 1.',
+          headings: ['Kickoff Protokoll', 'Entscheidungen'],
+        },
+      ],
+      taskMatches: [
+        {
+          id: 't-1',
+          title: 'Kickoff Folien teilen',
+          completed: false,
+          status: 'todo',
+          priority: 'high',
+          folder: 'meetings',
+          tasksUri: vscode.Uri.file('/workspace/notes/meetings/tasks.json'),
+          score: 6,
+        },
+      ],
+    });
+
+    const tool = new SearchNotesTool(searchService);
+    const result = await tool.invoke(
+      {
+        input: {
+          query: 'Kickoff Entscheidungen',
+        },
+        toolInvocationToken: undefined,
+      },
+      {} as any
+    );
+
+    const textPart = result.content[0] as vscode.LanguageModelTextPart;
+    const payload = JSON.parse(textPart.value);
+    expect(payload.query).toBe('Kickoff Entscheidungen');
+    expect(payload.noteMatches).toHaveLength(1);
+    expect(payload.noteMatches[0].relativePath).toBe('meetings/kickoff.md');
+    expect(payload.taskMatches).toHaveLength(1);
+    expect(payload.taskMatches[0].title).toBe('Kickoff Folien teilen');
   });
 });

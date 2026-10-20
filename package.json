@@ -179,6 +179,11 @@
         "command": "janus.sortInbox",
         "title": "Janus: Inbox mit KI einsortieren",
         "icon": "$(inbox)"
+      },
+      {
+        "command": "janus.openSettings",
+        "title": "Janus: Einstellungen öffnen",
+        "icon": "$(gear)"
       }
     ],
     "menus": {
@@ -197,6 +202,11 @@
           "command": "janus.refreshNotesTree",
           "when": "view == janus.notesView",
           "group": "navigation@3"
+        },
+        {
+          "command": "janus.openSettings",
+          "when": "view == janus.notesView",
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [
@@ -284,10 +294,53 @@
         "id": "janus",
         "name": "janus",
         "fullName": "Janus Note",
-        "description": "Assistant for managing notes and companion tasks and diagrams"
+        "description": "Assistant for managing notes and companion tasks and diagrams",
+        "commands": [
+          {
+            "name": "help",
+            "description": "Zeigt eine Übersicht aller verfügbaren @janus Commands und KI-Funktionen"
+          },
+          {
+            "name": "search",
+            "description": "Durchsucht alle Notizen und Aufgaben im Workspace und beantwortet Fragen dazu"
+          },
+          {
+            "name": "tasks",
+            "description": "Zeigt offene Aufgaben im Workspace oder generiert Aufgaben aus der aktiven Notiz"
+          },
+          {
+            "name": "summarize",
+            "description": "Fasst die aktive Notiz oder einen angegebenen Ordner/Projekt zusammen"
+          },
+          {
+            "name": "inbox",
+            "description": "Analysiert die Einträge in inbox.md und bietet KI-Einsortierung an"
+          }
+        ]
       }
     ],
     "languageModelTools": [
+      {
+        "name": "janus_search_notes",
+        "displayName": "Janus: Search Notes and Tasks",
+        "modelDescription": "Searches all Markdown notes and folder tasks.json files in the Janus notes root by query and returns ranked note snippets and matching tasks.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Search query or keywords to look up across notes and tasks"
+            },
+            "maxResults": {
+              "type": "number",
+              "description": "Maximum number of note matches to return (default: 8)"
+            }
+          },
+          "required": [
+            "query"
+          ]
+        }
+      },
       {
         "name": "janus_read_note_and_companions",
         "displayName": "Janus: Read Note and Companions",

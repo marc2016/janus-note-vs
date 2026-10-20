@@ -19,7 +19,7 @@ const badgeVariants = cva(
         high: 'bg-red-500/15 text-red-400 border-red-500/30 hover:bg-red-500/25',
         medium: 'bg-amber-500/15 text-amber-400 border-amber-500/30 hover:bg-amber-500/25',
         low: 'bg-slate-500/15 text-slate-400 border-slate-500/30 hover:bg-slate-500/25',
-        outline: 'border-[var(--vscode-editorWidget-border,rgba(128,128,128,0.3))] text-inherit',
+        outline: 'border-[var(--vscode-editorWidget-border,rgba(128,128,128,0.35))] text-[var(--vscode-editor-foreground,#d4d4d4)]',
       },
     },
     defaultVariants: {

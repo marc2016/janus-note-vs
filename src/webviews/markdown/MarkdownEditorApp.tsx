@@ -368,13 +368,6 @@ export const MarkdownEditorApp: React.FC = () => {
     }
   };
 
-  const handleSelectAiModel = () => {
-    const api = getVsCodeApi();
-    if (api) {
-      api.postMessage({ type: 'selectAiModel' });
-    }
-  };
-
   const handleToggleSyntaxVisibility = () => {
     setSyntaxMode((prev) => {
       const next: SyntaxVisibilityMode =
@@ -421,7 +414,6 @@ export const MarkdownEditorApp: React.FC = () => {
         onCreateCompanion={handleCreateCompanion}
         onGenerateAiTasks={handleGenerateAiTasks}
         onSortAiInbox={handleSortAiInbox}
-        onSelectAiModel={handleSelectAiModel}
         isGeneratingTasks={isGeneratingTasks}
         isSortingInbox={isSortingInbox}
       />

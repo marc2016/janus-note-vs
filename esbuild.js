@@ -33,6 +33,7 @@ async function build() {
       tasks: 'src/webviews/tasks/index.tsx',
       chart: 'src/webviews/chart/index.tsx',
       markdown: 'src/webviews/markdown/index.tsx',
+      settings: 'src/webviews/settings/index.tsx',
     },
     bundle: true,
     format: 'iife',

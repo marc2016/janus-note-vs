@@ -165,9 +165,9 @@ describe('aiTaskGeneration', () => {
       const aiModelService = new AiModelService(mockContext);
       const aiTaskGeneratorService = new AiTaskGeneratorService(aiModelService);
 
-      const selectSpy = vi
-        .spyOn(aiModelService, 'selectModelInteractive')
-        .mockResolvedValue({ provider: 'ollama', modelId: 'llama3.3', label: 'Ollama: llama3.3' });
+      const executeCommandSpy = vi
+        .spyOn(vscode.commands, 'executeCommand')
+        .mockResolvedValue(undefined);
 
       const generateSpy = vi
         .spyOn(aiTaskGeneratorService, 'generateTasksForNote')
@@ -204,7 +204,7 @@ describe('aiTaskGeneration', () => {
       } as any;
 
       await provider.handleWebviewMessage({ type: 'selectAiModel' }, mockDoc, mockPanel);
-      expect(selectSpy).toHaveBeenCalledTimes(1);
+      expect(executeCommandSpy).toHaveBeenCalledWith('janus.openSettings');
 
       await provider.handleWebviewMessage({ type: 'generateAiTasks' }, mockDoc, mockPanel);
       expect(generateSpy).toHaveBeenCalledWith(mockDoc.uri, '# Meeting\nTodo item');

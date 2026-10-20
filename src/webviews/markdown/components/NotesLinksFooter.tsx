@@ -13,7 +13,6 @@ import {
   mdiChevronUp,
   mdiChevronDown,
   mdiAutoFix,
-  mdiRobotOutline,
   mdiLoading,
   mdiInboxArrowDown,
 } from '@mdi/js';
@@ -62,10 +61,39 @@ export interface NotesLinksFooterProps {
   onCreateCompanion?: (companionType: 'tasks' | 'chart') => void;
   onGenerateAiTasks?: () => void;
   onSortAiInbox?: () => void;
-  onSelectAiModel?: () => void;
   isGeneratingTasks?: boolean;
   isSortingInbox?: boolean;
 }
+
+interface PillTooltipProps {
+  category: string;
+  description: string;
+  actionHint: string;
+  children: React.ReactElement;
+}
+
+const PillWithTooltip: React.FC<PillTooltipProps> = ({
+  category,
+  description,
+  actionHint,
+  children,
+}) => (
+  <div className="relative group inline-flex">
+    {children}
+    <div
+      role="tooltip"
+      className="pointer-events-none invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 transition-opacity duration-150 absolute bottom-full left-0 mb-2 z-50 w-64 rounded-md border border-[var(--vscode-editorHoverWidget-border,rgba(128,128,128,0.45))] bg-[var(--vscode-editorHoverWidget-background,#252526)] text-[var(--vscode-editorHoverWidget-foreground,#cccccc)] p-2.5 text-[11px] leading-snug shadow-lg"
+    >
+      <div className="font-semibold mb-0.5 text-[var(--vscode-editor-foreground,#ffffff)]">
+        {category}
+      </div>
+      <div className="opacity-90">{description}</div>
+      <div className="mt-1 pt-1 border-t border-[var(--vscode-editorHoverWidget-border,rgba(128,128,128,0.25))] opacity-75 text-[10px]">
+        {actionHint}
+      </div>
+    </div>
+  </div>
+);
 
 export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
   linksData,
@@ -74,7 +102,6 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
   onCreateCompanion,
   onGenerateAiTasks,
   onSortAiInbox,
-  onSelectAiModel,
   isGeneratingTasks = false,
   isSortingInbox = false,
 }) => {
@@ -84,7 +111,6 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
   const chartCompanion = linksData?.companions?.chart;
   const outgoingLinks = linksData?.outgoingLinks || [];
   const backlinks = linksData?.backlinks || [];
-  const aiModelLabel = linksData?.aiModel?.label || 'KI-Modell wählen';
 
   const totalConnections =
     (tasksCompanion?.exists ? 1 : 0) +
@@ -93,39 +119,28 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
     backlinks.length;
 
   return (
-    <footer className="shrink-0 border-t border-[var(--vscode-editorWidget-border,rgba(128,128,128,0.22))] bg-[var(--vscode-editorWidget-background,rgba(24,24,27,0.85))] backdrop-blur-md px-4 py-2 text-xs select-none">
+    <footer className="shrink-0 border-t border-[var(--vscode-editorWidget-border,rgba(128,128,128,0.28))] bg-[var(--vscode-editorWidget-background,#252526)] text-[var(--vscode-editor-foreground,#d4d4d4)] px-4 py-2.5 text-xs select-none">
       <div className="max-w-3xl mx-auto flex flex-col gap-2">
         {/* Top bar: Title summary + Quick actions */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <button
             type="button"
             onClick={() => setIsCollapsed((prev) => !prev)}
-            className="inline-flex items-center gap-1.5 font-medium opacity-75 hover:opacity-100 transition-opacity cursor-pointer"
+            title="Zeigt alle verknüpften Notizen (Blau ↗ = ausgehender Link, Grün ↙ = eingehender Backlink, Gelb = noch nicht erstellte Notiz) sowie Ordner-Aufgaben und Diagramme"
+            className="inline-flex items-center gap-1.5 font-semibold text-[var(--vscode-editor-foreground,#d4d4d4)] opacity-90 hover:opacity-100 transition-opacity cursor-pointer"
           >
             <MdiIcon path={mdiLinkVariant} size={14} className="text-primary" />
             <span>Verknüpfungen & Companions</span>
-            <Badge variant="outline" className="rounded-full px-1.5 py-0 text-[10px] font-normal">
+            <Badge
+              variant="outline"
+              className="rounded-full px-2 py-0 text-[11px] font-semibold bg-[var(--vscode-badge-background,#4d4d4d)] text-[var(--vscode-badge-foreground,#ffffff)] border-transparent"
+            >
               {totalConnections}
             </Badge>
             <MdiIcon path={isCollapsed ? mdiChevronUp : mdiChevronDown} size={14} />
           </button>
 
           <div className="flex flex-wrap items-center gap-1.5">
-            {onSelectAiModel && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={onSelectAiModel}
-                className="h-6 px-2 text-[11px] opacity-85 hover:opacity-100"
-                title="Aktives KI-Modell wechseln oder API-Key konfigurieren (Copilot, Ollama, OpenAI, Anthropic, Gemini)"
-              >
-                <MdiIcon path={mdiRobotOutline} size={12} />
-                <span className="max-w-[160px] truncate">{aiModelLabel}</span>
-                <MdiIcon path={mdiChevronDown} size={11} className="opacity-70" />
-              </Button>
-            )}
-
             {onGenerateAiTasks && (
               <Button
                 type="button"
@@ -133,7 +148,7 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
                 size="sm"
                 disabled={isGeneratingTasks}
                 onClick={onGenerateAiTasks}
-                className="h-6 px-2.5 text-[11px]"
+                className="h-6 px-2.5 text-[11px] font-medium"
                 title="Aufgaben mit der aktiven KI aus dieser Notiz extrahieren und in die Ordner-Aufgabenliste eintragen"
               >
                 <MdiIcon
@@ -152,7 +167,7 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
                 size="sm"
                 disabled={isSortingInbox}
                 onClick={onSortAiInbox}
-                className="h-6 px-2.5 text-[11px]"
+                className="h-6 px-2.5 text-[11px] font-medium"
                 title="Inhalte aus inbox.md mit der aktiven KI thematisch in bestehende oder neue Notizen und Ordner einsortieren"
               >
                 <MdiIcon
@@ -170,7 +185,7 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
                 variant="outline"
                 size="sm"
                 onClick={() => onCreateCompanion('tasks')}
-                className="h-6 px-2 text-[11px] border-dashed opacity-75 hover:opacity-100"
+                className="h-6 px-2 text-[11px] font-medium border-dashed opacity-90 hover:opacity-100"
                 title="Aufgabenliste (tasks.json) für diesen Ordner öffnen"
               >
                 <MdiIcon path={mdiFormatListCheckbox} size={12} />
@@ -184,7 +199,7 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
                 variant="outline"
                 size="sm"
                 onClick={() => onCreateCompanion('chart')}
-                className="h-6 px-2 text-[11px] border-dashed opacity-75 hover:opacity-100"
+                className="h-6 px-2 text-[11px] font-medium border-dashed opacity-90 hover:opacity-100"
                 title="Diagramm-Companion für diese Notiz erstellen"
               >
                 <MdiIcon path={mdiChartTimelineVariant} size={12} />
@@ -197,7 +212,7 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
               variant="outline"
               size="sm"
               onClick={onAddLink}
-              className="h-6 px-2.5 text-[11px] border-dashed hover:border-[var(--vscode-focusBorder,#007acc)]"
+              className="h-6 px-2.5 text-[11px] font-medium border-dashed opacity-95 hover:opacity-100 hover:border-[var(--vscode-focusBorder,#007acc)]"
               title="Notiz im Workspace suchen und verknüpfen"
             >
               <MdiIcon path={mdiPlus} size={13} />
@@ -208,103 +223,137 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
 
         {/* Collapsible Pills Body */}
         {!isCollapsed && (
-          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+          <div className="flex flex-wrap items-center gap-2 pt-0.5">
             {/* Companion Pills (Indigo/Purple accent) */}
             {tasksCompanion?.exists && (
-              <Badge
-                variant="outline"
-                role="button"
-                tabIndex={0}
-                onClick={() => onOpenLink(tasksCompanion.uri, 'janus.tasksEditor')}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onOpenLink(tasksCompanion.uri, 'janus.tasksEditor');
-                  }
-                }}
-                title={`Öffne ${tasksCompanion.label}`}
-                className="rounded-full px-2.5 py-0.5 font-medium bg-indigo-500/15 text-indigo-300 border-indigo-500/35 hover:bg-indigo-500/25 cursor-pointer"
+              <PillWithTooltip
+                category="Ordner-Aufgabenliste (Companion)"
+                description={`Gemeinsame Aufgabenliste (tasks.json) dieses Ordners: ${tasksCompanion.openCount} offen, ${tasksCompanion.completedCount} erledigt (${tasksCompanion.totalCount} gesamt).`}
+                actionHint="Klicken, um das Aufgaben-Board dieses Ordners zu öffnen"
               >
-                <MdiIcon path={mdiFormatListCheckbox} size={13} />
-                <span>{tasksCompanion.label}</span>
-              </Badge>
+                <Badge
+                  variant="outline"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onOpenLink(tasksCompanion.uri, 'janus.tasksEditor')}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onOpenLink(tasksCompanion.uri, 'janus.tasksEditor');
+                    }
+                  }}
+                  title={`Ordner-Aufgabenliste (${tasksCompanion.openCount} offen, ${tasksCompanion.totalCount} gesamt) – Klicken zum Öffnen`}
+                  className="janus-pill-tasks rounded-full px-3 py-1 text-xs font-medium cursor-pointer shadow-xs"
+                >
+                  <MdiIcon path={mdiFormatListCheckbox} size={13} />
+                  <span>{tasksCompanion.label}</span>
+                </Badge>
+              </PillWithTooltip>
             )}
 
             {chartCompanion?.exists && (
-              <Badge
-                variant="outline"
-                role="button"
-                tabIndex={0}
-                onClick={() => onOpenLink(chartCompanion.uri, 'janus.chartEditor')}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onOpenLink(chartCompanion.uri, 'janus.chartEditor');
-                  }
-                }}
-                title="Öffne Diagramm-Companion"
-                className="rounded-full px-2.5 py-0.5 font-medium bg-purple-500/15 text-purple-300 border-purple-500/35 hover:bg-purple-500/25 cursor-pointer"
+              <PillWithTooltip
+                category="Diagramm-Ansicht (Companion)"
+                description="Angehängtes visuelles Diagramm (*.chart.json) zu dieser Notiz."
+                actionHint="Klicken, um die Diagramm-Ansicht zu öffnen"
               >
-                <MdiIcon path={mdiChartTimelineVariant} size={13} />
-                <span>{chartCompanion.label}</span>
-              </Badge>
+                <Badge
+                  variant="outline"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onOpenLink(chartCompanion.uri, 'janus.chartEditor')}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onOpenLink(chartCompanion.uri, 'janus.chartEditor');
+                    }
+                  }}
+                  title="Angehängtes Diagramm (*.chart.json) zu dieser Notiz – Klicken zum Öffnen"
+                  className="janus-pill-chart rounded-full px-3 py-1 text-xs font-medium cursor-pointer shadow-xs"
+                >
+                  <MdiIcon path={mdiChartTimelineVariant} size={13} />
+                  <span>{chartCompanion.label}</span>
+                </Badge>
+              </PillWithTooltip>
             )}
 
             {/* Outgoing Link Pills (Blue accent, or dashed amber when target doesn't exist yet) */}
             {outgoingLinks.map((link) => (
-              <Badge
+              <PillWithTooltip
                 key={`out-${link.target}`}
-                variant="outline"
-                role="button"
-                tabIndex={0}
-                onClick={() => onOpenLink(link.uri, 'janus.markdownEditor')}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onOpenLink(link.uri, 'janus.markdownEditor');
-                  }
-                }}
-                title={
+                category={
                   link.exists
-                    ? `Verknüpfte Notiz öffnen: ${link.relativePath}`
-                    : `Notiz "${link.title}" existiert noch nicht – Klicken zum Erstellen & Öffnen`
+                    ? 'Ausgehende Verknüpfung (↗)'
+                    : 'Ausgehende Verknüpfung – Noch nicht erstellt (↗)'
                 }
-                className={`rounded-full px-2.5 py-0.5 font-normal cursor-pointer ${
+                description={
                   link.exists
-                    ? 'bg-sky-500/15 text-sky-300 border-sky-500/35 hover:bg-sky-500/25'
-                    : 'border-dashed bg-amber-500/10 text-amber-300 border-amber-500/35 hover:bg-amber-500/20'
-                }`}
+                    ? `Diese Notiz verweist im Text auf „${link.title}“ (${link.relativePath}).`
+                    : `Diese Notiz verweist auf „${link.title}“ (${link.relativePath}), aber die Zieldatei existiert noch nicht.`
+                }
+                actionHint={
+                  link.exists
+                    ? 'Klicken, um die verknüpfte Notiz zu öffnen'
+                    : 'Klicken, um die Notiz automatisch anzulegen und zu öffnen'
+                }
               >
-                <MdiIcon path={mdiFileDocumentOutline} size={12} />
-                <span>{link.title}</span>
-                <MdiIcon path={mdiArrowTopRight} size={11} className="opacity-70" />
-              </Badge>
+                <Badge
+                  variant="outline"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onOpenLink(link.uri, 'janus.markdownEditor')}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onOpenLink(link.uri, 'janus.markdownEditor');
+                    }
+                  }}
+                  title={
+                    link.exists
+                      ? `Ausgehende Verknüpfung (↗): Diese Notiz verweist auf "${link.title}" (${link.relativePath}) – Klicken zum Öffnen`
+                      : `Ausgehende Verknüpfung (↗): Notiz "${link.title}" existiert noch nicht – Klicken zum Erstellen & Öffnen`
+                  }
+                  className={`rounded-full px-3 py-1 text-xs font-medium cursor-pointer shadow-xs ${
+                    link.exists ? 'janus-pill-link' : 'border-dashed janus-pill-missing'
+                  }`}
+                >
+                  <MdiIcon path={mdiFileDocumentOutline} size={13} />
+                  <span>{link.title}</span>
+                  <MdiIcon path={mdiArrowTopRight} size={12} className="opacity-90" />
+                </Badge>
+              </PillWithTooltip>
             ))}
 
             {/* Backlink Pills (Teal/Emerald accent) */}
             {backlinks.map((backlink) => (
-              <Badge
+              <PillWithTooltip
                 key={`back-${backlink.uri}`}
-                variant="outline"
-                role="button"
-                tabIndex={0}
-                onClick={() => onOpenLink(backlink.uri, 'janus.markdownEditor')}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onOpenLink(backlink.uri, 'janus.markdownEditor');
-                  }
-                }}
-                title={`Referenziert von: ${backlink.relativePath}`}
-                className="rounded-full px-2.5 py-0.5 font-normal bg-emerald-500/15 text-emerald-300 border-emerald-500/35 hover:bg-emerald-500/25 cursor-pointer"
+                category="Eingehender Rückverweis / Backlink (↙)"
+                description={`Die Notiz „${backlink.title}“ (${backlink.relativePath}) enthält einen Verweis auf diese Notiz.`}
+                actionHint="Klicken, um die verweisende Notiz zu öffnen"
               >
-                <MdiIcon path={mdiArrowBottomLeft} size={12} className="opacity-80" />
-                <span>{backlink.title}</span>
-              </Badge>
+                <Badge
+                  variant="outline"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onOpenLink(backlink.uri, 'janus.markdownEditor')}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onOpenLink(backlink.uri, 'janus.markdownEditor');
+                    }
+                  }}
+                  title={`Eingehender Rückverweis / Backlink (↙): Referenz aus "${backlink.title}" (${backlink.relativePath}) – Klicken zum Öffnen`}
+                  className="janus-pill-backlink rounded-full px-3 py-1 text-xs font-medium cursor-pointer shadow-xs"
+                >
+                  <MdiIcon path={mdiArrowBottomLeft} size={13} className="opacity-90" />
+                  <span>{backlink.title}</span>
+                </Badge>
+              </PillWithTooltip>
             ))}
 
             {totalConnections === 0 && (
-              <span className="text-[11px] opacity-50 py-0.5">
+              <span className="text-xs opacity-75 py-0.5">
                 Keine Verknüpfungen oder Rückverweise. Nutze [[Notizname]] im Text oder klicke auf „+ Verknüpfen“.
               </span>
             )}
