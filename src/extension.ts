@@ -26,6 +26,8 @@ import {
   setNotesRootCommand,
   resetNotesRootCommand,
   initNotesRootCommand,
+  addLinkedFolderCommand,
+  removeLinkedFolderCommand,
   updateNotesContextKeys,
   checkNotesRootStatus,
 } from './commands/notesRootCommands';
@@ -446,13 +448,23 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('janus.initNotesRoot', async () => {
       await initNotesRootCommand(companionManager, notesTreeDataProvider);
     }),
+    vscode.commands.registerCommand('janus.addLinkedFolder', async (uri?: vscode.Uri) => {
+      await addLinkedFolderCommand(uri, notesTreeDataProvider, companionManager);
+    }),
+    vscode.commands.registerCommand('janus.removeLinkedFolder', async (item?: any) => {
+      await removeLinkedFolderCommand(item, notesTreeDataProvider, companionManager);
+    }),
     vscode.commands.registerCommand('janus.refreshNotesTree', () => {
       notesTreeDataProvider.refresh();
       updateNotesContextKeys(companionManager);
     }),
 
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('janus.notesRoot') || e.affectsConfiguration('janus.initialized')) {
+      if (
+        e.affectsConfiguration('janus.notesRoot') ||
+        e.affectsConfiguration('janus.initialized') ||
+        e.affectsConfiguration('janus.includeFolders')
+      ) {
         codeLensProvider.refresh();
         notesTreeDataProvider.refresh();
         updateNotesContextKeys(companionManager);

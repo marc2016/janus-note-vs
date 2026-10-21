@@ -67,7 +67,8 @@ export function createLinkCandidate(relPath: string): LinkCandidate {
 
 export async function findLinkCandidatesInRoot(
   notesRootUri: vscode.Uri,
-  maxDepth: number = 6
+  maxDepth: number = 6,
+  relativeToUri?: vscode.Uri
 ): Promise<LinkCandidate[]> {
   const candidates: LinkCandidate[] = [];
 
@@ -95,7 +96,8 @@ export async function findLinkCandidatesInRoot(
       if (fileType === vscode.FileType.Directory) {
         await scan(entryUri, depth + 1);
       } else if (fileType === vscode.FileType.File) {
-        const relPath = path.relative(notesRootUri.fsPath, entryUri.fsPath).replace(/\\/g, '/');
+        const base = relativeToUri || notesRootUri;
+        const relPath = path.relative(base.fsPath, entryUri.fsPath).replace(/\\/g, '/');
         candidates.push(createLinkCandidate(relPath));
       }
     }
@@ -111,5 +113,41 @@ export async function findLinkCandidatesInRoot(
   });
 
   return candidates;
+}
+
+export async function findLinkCandidatesAcrossRoots(
+  roots: vscode.Uri[],
+  maxDepth: number = 6,
+  primaryRootUri?: vscode.Uri
+): Promise<LinkCandidate[]> {
+  const allCandidates: LinkCandidate[] = [];
+  const seenRelPaths = new Set<string>();
+
+  for (const root of roots) {
+    const isPrimary = primaryRootUri && root.fsPath === primaryRootUri.fsPath;
+    let relativeTo: vscode.Uri | undefined;
+    if (!isPrimary) {
+      const wsFolder = vscode.workspace.getWorkspaceFolder(root);
+      if (wsFolder && wsFolder.uri.fsPath !== root.fsPath) {
+        relativeTo = wsFolder.uri;
+      }
+    }
+
+    const candidates = await findLinkCandidatesInRoot(root, maxDepth, relativeTo);
+    for (const cand of candidates) {
+      if (!seenRelPaths.has(cand.relPath)) {
+        seenRelPaths.add(cand.relPath);
+        allCandidates.push(cand);
+      }
+    }
+  }
+
+  allCandidates.sort((a, b) => {
+    if (a.fileType === 'note' && b.fileType !== 'note') return -1;
+    if (a.fileType !== 'note' && b.fileType === 'note') return 1;
+    return a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
+  });
+
+  return allCandidates;
 }
 

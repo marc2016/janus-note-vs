@@ -6,6 +6,7 @@ import {
   findMarkdownNotesInRoot,
   getNoteLinksData,
   resolveOutgoingLink,
+  findLinkCandidatesAcrossRoots,
 } from '../services/noteLinkService';
 import { findLinkCandidatesInRoot } from '../companion/noteLinking';
 import { AiModelService } from '../services/aiModelService';
@@ -111,9 +112,12 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
 
     const sendCandidatesUpdate = async () => {
       try {
-        const notesRoot = await this.companionManager.getNotesRootUri();
-        if (notesRoot) {
-          const candidates = await findLinkCandidatesInRoot(notesRoot);
+        const roots = this.companionManager.getAllNotesRoots
+          ? this.companionManager.getAllNotesRoots(document.uri)
+          : (this.companionManager.getNotesRootUri(document.uri) ? [this.companionManager.getNotesRootUri(document.uri)!] : []);
+        const primaryRoot = this.companionManager.getNotesRootUri(document.uri);
+        if (roots.length > 0) {
+          const candidates = await findLinkCandidatesAcrossRoots(roots, 6, primaryRoot);
           void webviewPanel.webview.postMessage({
             type: 'updateLinkCandidates',
             candidates,
@@ -223,9 +227,12 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       if (sendCandidatesUpdate) {
         void sendCandidatesUpdate();
       } else {
-        const notesRoot = await this.companionManager.getNotesRootUri();
-        if (notesRoot) {
-          const candidates = await findLinkCandidatesInRoot(notesRoot);
+        const roots = this.companionManager.getAllNotesRoots
+          ? this.companionManager.getAllNotesRoots(document.uri)
+          : (this.companionManager.getNotesRootUri(document.uri) ? [this.companionManager.getNotesRootUri(document.uri)!] : []);
+        const primaryRoot = this.companionManager.getNotesRootUri(document.uri);
+        if (roots.length > 0) {
+          const candidates = await findLinkCandidatesAcrossRoots(roots, 6, primaryRoot);
           void webviewPanel.webview.postMessage({
             type: 'updateLinkCandidates',
             candidates,

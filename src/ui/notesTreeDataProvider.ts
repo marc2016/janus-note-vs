@@ -18,7 +18,8 @@ export type NotesTreeItem =
   | FolderTasksTreeItem
   | FolderTreeItem
   | NoteTreeItem
-  | CompanionTreeItem;
+  | CompanionTreeItem
+  | LinkedFolderTreeItem;
 
 export class CalendarTreeItem extends vscode.TreeItem {
   public readonly uri: vscode.Uri;
@@ -91,21 +92,43 @@ export class FolderTasksTreeItem extends vscode.TreeItem {
 
 export class FolderTreeItem extends vscode.TreeItem {
   public readonly folderName: string;
+  public readonly isPureFolder: boolean;
 
   constructor(
     public readonly uri: vscode.Uri,
-    public readonly isRootChild: boolean = true
+    public readonly isRootChild: boolean = true,
+    isPureFolder: boolean = false
   ) {
     const rawName = path.basename(uri.fsPath);
     const displayLabel = isRootChild ? getLocalizedRootFolderLabel(rawName) : rawName;
     super(displayLabel, vscode.TreeItemCollapsibleState.Collapsed);
 
     this.folderName = rawName;
+    this.isPureFolder = isPureFolder;
     this.resourceUri = uri;
     this.id = `folder:${uri.toString()}`;
     this.contextValue = 'janusFolder';
     this.iconPath = new vscode.ThemeIcon('folder');
     this.tooltip = uri.fsPath;
+  }
+}
+
+export class LinkedFolderTreeItem extends vscode.TreeItem {
+  public readonly folderRelPath: string;
+
+  constructor(
+    public readonly uri: vscode.Uri,
+    folderRelPath?: string
+  ) {
+    const rawName = path.basename(uri.fsPath);
+    super(rawName, vscode.TreeItemCollapsibleState.Collapsed);
+
+    this.folderRelPath = folderRelPath || rawName;
+    this.resourceUri = uri;
+    this.id = `linkedFolder:${uri.toString()}`;
+    this.contextValue = 'linkedFolder';
+    this.iconPath = new vscode.ThemeIcon('folder-library');
+    this.tooltip = `Verknüpfter Ordner: ${uri.fsPath}`;
   }
 }
 
@@ -193,13 +216,35 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
       return undefined;
     }
 
-    if (element instanceof CalendarTreeItem || element instanceof AllTasksTreeItem) {
+    if (
+      element instanceof CalendarTreeItem ||
+      element instanceof AllTasksTreeItem ||
+      element instanceof LinkedFolderTreeItem
+    ) {
       return undefined;
     }
 
     if (element instanceof CompanionTreeItem) {
       const status = await this.companionManager.getCompanionStatus(element.noteUri);
       return new NoteTreeItem(element.noteUri, status);
+    }
+
+    const includedUris = this.companionManager.getIncludedFolderUris ? this.companionManager.getIncludedFolderUris() : [];
+    const parentDirFsPath = path.dirname(element.uri.fsPath);
+
+    // Check if parent directory matches any included folder root or is inside it
+    for (const incUri of includedUris) {
+      if (parentDirFsPath === incUri.fsPath) {
+        const wsFolder = vscode.workspace.getWorkspaceFolder(incUri);
+        const rel = wsFolder
+          ? path.relative(wsFolder.uri.fsPath, incUri.fsPath).split(path.sep).join('/')
+          : path.basename(incUri.fsPath);
+        return new LinkedFolderTreeItem(incUri, rel);
+      }
+      const relToInc = path.relative(incUri.fsPath, parentDirFsPath);
+      if (relToInc !== '' && !relToInc.startsWith('..') && !path.isAbsolute(relToInc)) {
+        return new FolderTreeItem(vscode.Uri.file(parentDirFsPath), false, true);
+      }
     }
 
     const status = await checkNotesRootStatus(this.companionManager);
@@ -219,7 +264,6 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
     }
 
     if (element instanceof NoteTreeItem) {
-      const parentDirFsPath = path.dirname(element.uri.fsPath);
       if (parentDirFsPath === notesRootFsPath) {
         return undefined;
       }
@@ -229,19 +273,36 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
     }
 
     if (element instanceof FolderTreeItem) {
-      const parentDirFsPath = path.dirname(element.uri.fsPath);
       if (element.uri.fsPath === notesRootFsPath || parentDirFsPath === notesRootFsPath) {
         return undefined;
       }
       const parentDirUri = vscode.Uri.file(parentDirFsPath);
       const isRootChild = path.dirname(parentDirFsPath) === notesRootFsPath;
-      return new FolderTreeItem(parentDirUri, isRootChild);
+      return new FolderTreeItem(parentDirUri, isRootChild, element.isPureFolder);
     }
 
     return undefined;
   }
 
   async getTreeItemForUri(uri: vscode.Uri): Promise<NotesTreeItem | undefined> {
+    const includedUris = this.companionManager.getIncludedFolderUris ? this.companionManager.getIncludedFolderUris() : [];
+    for (const incUri of includedUris) {
+      if (uri.fsPath === incUri.fsPath) {
+        const wsFolder = vscode.workspace.getWorkspaceFolder(incUri);
+        const rel = wsFolder
+          ? path.relative(wsFolder.uri.fsPath, incUri.fsPath).split(path.sep).join('/')
+          : path.basename(incUri.fsPath);
+        return new LinkedFolderTreeItem(incUri, rel);
+      }
+      const relToInc = path.relative(incUri.fsPath, uri.fsPath);
+      if (relToInc !== '' && !relToInc.startsWith('..') && !path.isAbsolute(relToInc)) {
+        if (isMarkdownNote(uri.fsPath)) {
+          return new NoteTreeItem(uri);
+        }
+        return new FolderTreeItem(uri, false, true);
+      }
+    }
+
     const status = await checkNotesRootStatus(this.companionManager);
     if (!status.isInitialized || !status.notesRootUri) {
       return undefined;
@@ -286,21 +347,37 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
 
   async getChildren(element?: NotesTreeItem): Promise<NotesTreeItem[]> {
     if (!element) {
-      // Root level: return empty if not initialized so VS Code displays viewsWelcome
       const status = await checkNotesRootStatus(this.companionManager);
-      if (!status.isInitialized || !status.notesRootUri) {
-        return [];
+      const includedUris = this.companionManager.getIncludedFolderUris ? this.companionManager.getIncludedFolderUris() : [];
+
+      const items: NotesTreeItem[] = [];
+
+      if (status.isInitialized && status.notesRootUri) {
+        const totalOpen = await this.folderTasksService.countTotalOpenTasks(status.notesRootUri);
+        const allTasksItem = new AllTasksTreeItem(totalOpen, status.notesRootUri);
+        const eventCount = await this.calendarService.countCalendarEntries(status.notesRootUri);
+        const calendarItem = new CalendarTreeItem(eventCount, status.notesRootUri);
+        const dirItems = await this.readDirectoryItems(status.notesRootUri, false, false);
+        items.push(allTasksItem, calendarItem, ...dirItems);
       }
-      const totalOpen = await this.folderTasksService.countTotalOpenTasks(status.notesRootUri);
-      const allTasksItem = new AllTasksTreeItem(totalOpen, status.notesRootUri);
-      const eventCount = await this.calendarService.countCalendarEntries(status.notesRootUri);
-      const calendarItem = new CalendarTreeItem(eventCount, status.notesRootUri);
-      const dirItems = await this.readDirectoryItems(status.notesRootUri, false);
-      return [allTasksItem, calendarItem, ...dirItems];
+
+      for (const incUri of includedUris) {
+        const wsFolder = vscode.workspace.getWorkspaceFolder(incUri);
+        const rel = wsFolder
+          ? path.relative(wsFolder.uri.fsPath, incUri.fsPath).split(path.sep).join('/')
+          : path.basename(incUri.fsPath);
+        items.push(new LinkedFolderTreeItem(incUri, rel));
+      }
+
+      return items;
+    }
+
+    if (element instanceof LinkedFolderTreeItem) {
+      return this.readDirectoryItems(element.uri, false, true);
     }
 
     if (element instanceof FolderTreeItem) {
-      return this.readDirectoryItems(element.uri, true);
+      return this.readDirectoryItems(element.uri, true, Boolean(element.isPureFolder));
     }
 
     if (element instanceof NoteTreeItem) {
@@ -313,7 +390,8 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
 
   private async readDirectoryItems(
     dirUri: vscode.Uri,
-    isSubfolder: boolean
+    isSubfolder: boolean,
+    isPureFolder: boolean = false
   ): Promise<NotesTreeItem[]> {
     try {
       const entries = await vscode.workspace.fs.readDirectory(dirUri);
@@ -329,12 +407,16 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
         const entryUri = vscode.Uri.joinPath(dirUri, name);
 
         if (fileType === vscode.FileType.Directory) {
-          folders.push(new FolderTreeItem(entryUri, !isSubfolder));
-        } else if (fileType === vscode.FileType.File && name === 'tasks.json') {
+          folders.push(new FolderTreeItem(entryUri, !isSubfolder && !isPureFolder, isPureFolder));
+        } else if (fileType === vscode.FileType.File && name === 'tasks.json' && !isPureFolder) {
           hasTasksJson = true;
         } else if (fileType === vscode.FileType.File && isMarkdownNote(name)) {
-          const status = await this.companionManager.getCompanionStatus(entryUri);
-          notes.push(new NoteTreeItem(entryUri, status));
+          if (isPureFolder) {
+            notes.push(new NoteTreeItem(entryUri));
+          } else {
+            const status = await this.companionManager.getCompanionStatus(entryUri);
+            notes.push(new NoteTreeItem(entryUri, status));
+          }
         }
       }
 
@@ -344,7 +426,7 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
 
       // Only subfolders get an individual FolderTasksTreeItem (root level uses the global AllTasksTreeItem)
       let folderTasksItem: FolderTasksTreeItem | undefined;
-      if (isSubfolder) {
+      if (isSubfolder && !isPureFolder) {
         const tasksUri = vscode.Uri.joinPath(dirUri, 'tasks.json');
         const openCount = hasTasksJson
           ? await this.folderTasksService.countOpenTasksInFile(tasksUri)

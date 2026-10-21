@@ -134,16 +134,78 @@ export class CompanionManager {
   }
 
   /**
-   * Checks whether the given URI is located within the active notes root.
+   * Resolves the configured additional linked folders (janus.includeFolders) as Uris.
+   */
+  getIncludedFolderUris(scopeUri?: vscode.Uri): vscode.Uri[] {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length === 0) {
+      return [];
+    }
+
+    const folder = (scopeUri ? vscode.workspace.getWorkspaceFolder(scopeUri) : undefined) || folders[0];
+    const config = vscode.workspace.getConfiguration('janus', folder.uri);
+    const includeFolders = config.get<string[]>('includeFolders', []) || [];
+
+    const uris: vscode.Uri[] = [];
+    const seenPaths = new Set<string>();
+
+    for (const rel of includeFolders) {
+      if (!rel || typeof rel !== 'string') continue;
+      const normalized = rel.replace(/^(\.\/|\/)+/, '').replace(/[\/\\]+$/, '').trim();
+      if (!normalized) continue;
+      const uri = vscode.Uri.joinPath(folder.uri, normalized);
+      if (!seenPaths.has(uri.fsPath)) {
+        seenPaths.add(uri.fsPath);
+        uris.push(uri);
+      }
+    }
+
+    return uris;
+  }
+
+  /**
+   * Returns a deduplicated array of all active roots:
+   * [notesRootUri (if resolved), ...getIncludedFolderUris()]
+   */
+  getAllNotesRoots(scopeUri?: vscode.Uri): vscode.Uri[] {
+    const roots: vscode.Uri[] = [];
+    const seenPaths = new Set<string>();
+
+    const primaryRoot = this.getNotesRootUri(scopeUri);
+    if (primaryRoot) {
+      seenPaths.add(primaryRoot.fsPath);
+      roots.push(primaryRoot);
+    }
+
+    const included = this.getIncludedFolderUris(scopeUri);
+    for (const inc of included) {
+      if (!seenPaths.has(inc.fsPath)) {
+        seenPaths.add(inc.fsPath);
+        roots.push(inc);
+      }
+    }
+
+    return roots;
+  }
+
+  /**
+   * Checks whether the given URI is located within the active notes root
+   * or any of the configured included folders.
    */
   isUnderNotesRoot(uri: vscode.Uri): boolean {
-    const root = this.getNotesRootUri(uri);
-    if (!root) {
+    const allRoots = this.getAllNotesRoots(uri);
+    if (allRoots.length === 0) {
       return false;
     }
 
-    const rel = path.relative(root.fsPath, uri.fsPath);
-    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+    for (const root of allRoots) {
+      const rel = path.relative(root.fsPath, uri.fsPath);
+      if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**

@@ -14,11 +14,19 @@ The system SHALL parse outgoing references from Markdown document text, recogniz
 - **THEN** system extracts both references as outgoing links associated with the source note
 
 ### Requirement: Bi-directional Backlink Indexing
-The system SHALL identify all notes in the active notes root that reference the current note and expose them as backlinks.
+The system SHALL identify all notes across the active `notesRoot` and all directories configured in `janus.includeFolders` that reference the current note and expose them as backlinks.
 
 #### Scenario: Discovering backlinks to active note
 - **WHEN** Note B contains a link to Note A (`[[Note A]]`) and user opens Note A
 - **THEN** system identifies Note B as an incoming backlink for Note A
+
+#### Scenario: Backlink discovery from linked folder to vault note
+- **WHEN** a note in a linked folder (e.g. `docs/api.md`) contains a link `[[Meeting-Notes]]` to a note in the vault
+- **THEN** opening `Meeting-Notes.md` lists `docs/api.md` as an incoming backlink
+
+#### Scenario: Backlink discovery between two linked folders
+- **WHEN** a note in `docs/` references a note in `specs/`
+- **THEN** the system exposes the cross-folder reference in the backlinks list
 
 ### Requirement: Companion Status and Task Summary Resolution
 The system SHALL query the containing folder's `tasks.json` and the active note's `*.chart.json` companion file, determine their existence, and summarize open vs. completed task counts when a folder task list exists.
@@ -28,7 +36,7 @@ The system SHALL query the containing folder's `tasks.json` and the active note'
 - **THEN** system reports companion status with folder task list existence and summary counts (3 open, 5 total)
 
 ### Requirement: Inline File and Note Link Autocomplete and Insertion
-The system SHALL provide an inline autocompletion dropdown in the Markdown editor triggered by typing `[[`, executing slash commands (`/link`, `/verlinken`, `/note`), invoking the `Cmd+K` / `Ctrl+K` shortcut, or clicking the toolbar link button, allowing users to search and insert wiki-links to Markdown notes and workspace files at the cursor.
+The system SHALL provide an inline autocompletion dropdown in the Markdown editor triggered by typing `[[`, executing slash commands (`/link`, `/verlinken`, `/note`), invoking the `Cmd+K` / `Ctrl+K` shortcut, or clicking the toolbar link button, allowing users to search and insert wiki-links to Markdown notes and workspace files discovered across `janus.notesRoot` and all directories listed in `janus.includeFolders`.
 
 #### Scenario: Typing [[ triggers inline file autocompletion
 - **WHEN** user types `[[` in the Markdown editor
@@ -53,5 +61,13 @@ The system SHALL provide an inline autocompletion dropdown in the Markdown edito
 #### Scenario: Filtering and selecting a file from the list
 - **WHEN** user types search terms while the autocompletion is open and selects a candidate item
 - **THEN** the query is replaced with the complete wiki-link (e.g. `[[Meeting-Notes]]` or `[[assets/schema.png]]`) and closed with `]]`
+
+#### Scenario: Autocompleting notes from linked folders
+- **WHEN** user types `[[` in any Markdown editor
+- **THEN** the autocomplete popup includes candidates from both `notesRoot` and all directories in `janus.includeFolders`
+
+#### Scenario: Inserting link to note in linked folder
+- **WHEN** user selects a candidate located in a linked folder (e.g. `docs/architecture.md`)
+- **THEN** the system inserts the clean target path (e.g. `[[docs/architecture]]`) at the cursor
 
 

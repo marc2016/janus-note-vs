@@ -139,15 +139,25 @@ export function formatRelativePathWithLocalizedRoot(
 export interface NotesRootStatus {
   isInitialized: boolean;
   hasNonNoteFiles: boolean;
+  hasLinkedFolders: boolean;
   notesRootUri?: vscode.Uri;
+  includedFolderUris: vscode.Uri[];
 }
 
 export async function checkNotesRootStatus(
   companionManager: CompanionManager = new CompanionManager()
 ): Promise<NotesRootStatus> {
   const rootUri = companionManager.getNotesRootUri();
+  const includedFolderUris = companionManager.getIncludedFolderUris ? companionManager.getIncludedFolderUris() : [];
+  const hasLinkedFolders = includedFolderUris.length > 0;
+
   if (!rootUri) {
-    return { isInitialized: false, hasNonNoteFiles: false };
+    return {
+      isInitialized: false,
+      hasNonNoteFiles: false,
+      hasLinkedFolders,
+      includedFolderUris,
+    };
   }
 
   const workspaceFolder =
@@ -183,7 +193,9 @@ export async function checkNotesRootStatus(
   return {
     isInitialized,
     hasNonNoteFiles: hasOtherFiles,
+    hasLinkedFolders,
     notesRootUri: rootUri,
+    includedFolderUris,
   };
 }
 
@@ -193,7 +205,117 @@ export async function updateNotesContextKeys(
   const status = await checkNotesRootStatus(companionManager);
   await vscode.commands.executeCommand('setContext', 'janus.isInitialized', status.isInitialized);
   await vscode.commands.executeCommand('setContext', 'janus.hasNonNoteFiles', status.hasNonNoteFiles);
+  await vscode.commands.executeCommand('setContext', 'janus.hasLinkedFolders', status.hasLinkedFolders);
   return status;
+}
+
+export async function addLinkedFolderCommand(
+  folderUri?: vscode.Uri,
+  treeProvider?: { refresh: () => void },
+  companionManager: CompanionManager = new CompanionManager()
+): Promise<void> {
+  let targetUri = folderUri;
+
+  if (!targetUri) {
+    const selected = await vscode.window.showOpenDialog({
+      canSelectFiles: false,
+      canSelectFolders: true,
+      canSelectMany: false,
+      openLabel: 'Ordner verknüpfen',
+    });
+    if (selected && selected.length > 0) {
+      targetUri = selected[0];
+    }
+  }
+
+  if (!targetUri) {
+    return;
+  }
+
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(targetUri);
+  if (!workspaceFolder) {
+    vscode.window.showErrorMessage('Der ausgewählte Ordner befindet sich nicht im aktuellen Workspace.');
+    return;
+  }
+
+  const relPath = path.relative(workspaceFolder.uri.fsPath, targetUri.fsPath);
+  const normalized = relPath === '' ? '' : relPath.split(path.sep).join('/');
+
+  if (!normalized) {
+    vscode.window.showWarningMessage('Der gesamte Workspace-Root kann nicht als Unterordner verknüpft werden.');
+    return;
+  }
+
+  const config = vscode.workspace.getConfiguration('janus', workspaceFolder.uri);
+  const currentFolders = config.get<string[]>('includeFolders', []) || [];
+
+  if (currentFolders.includes(normalized)) {
+    vscode.window.showInformationMessage(`Der Ordner "${normalized}" ist bereits verknüpft.`);
+    return;
+  }
+
+  const updatedFolders = [...currentFolders, normalized];
+  await config.update('includeFolders', updatedFolders, vscode.ConfigurationTarget.Workspace);
+
+  await updateNotesContextKeys(companionManager);
+  if (treeProvider) {
+    treeProvider.refresh();
+  }
+
+  vscode.window.showInformationMessage(`Ordner "${normalized}" zu Janus Notizen hinzugefügt.`);
+}
+
+export async function removeLinkedFolderCommand(
+  itemOrUri?: any,
+  treeProvider?: { refresh: () => void },
+  companionManager: CompanionManager = new CompanionManager()
+): Promise<void> {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || folders.length === 0) {
+    return;
+  }
+
+  const workspaceFolder = folders[0];
+  const config = vscode.workspace.getConfiguration('janus', workspaceFolder.uri);
+  const currentFolders = config.get<string[]>('includeFolders', []) || [];
+
+  if (currentFolders.length === 0) {
+    vscode.window.showInformationMessage('Keine verknüpften Ordner vorhanden.');
+    return;
+  }
+
+  let folderToRemove: string | undefined;
+
+  if (itemOrUri && typeof itemOrUri.folderRelPath === 'string') {
+    folderToRemove = itemOrUri.folderRelPath;
+  } else if (itemOrUri && itemOrUri.uri instanceof vscode.Uri) {
+    const wsFolder = vscode.workspace.getWorkspaceFolder(itemOrUri.uri) || workspaceFolder;
+    const rel = path.relative(wsFolder.uri.fsPath, itemOrUri.uri.fsPath).split(path.sep).join('/');
+    folderToRemove = rel;
+  } else if (itemOrUri instanceof vscode.Uri) {
+    const wsFolder = vscode.workspace.getWorkspaceFolder(itemOrUri) || workspaceFolder;
+    const rel = path.relative(wsFolder.uri.fsPath, itemOrUri.fsPath).split(path.sep).join('/');
+    folderToRemove = rel;
+  } else {
+    // QuickPick when invoked without context
+    folderToRemove = await vscode.window.showQuickPick(currentFolders, {
+      placeHolder: 'Verknüpften Ordner zum Entfernen auswählen',
+    });
+  }
+
+  if (!folderToRemove) {
+    return;
+  }
+
+  const updatedFolders = currentFolders.filter((f) => f !== folderToRemove);
+  await config.update('includeFolders', updatedFolders, vscode.ConfigurationTarget.Workspace);
+
+  await updateNotesContextKeys(companionManager);
+  if (treeProvider) {
+    treeProvider.refresh();
+  }
+
+  vscode.window.showInformationMessage(`Ordner "${folderToRemove}" aus verknüpften Notizen entfernt.`);
 }
 
 export async function initNotesRootCommand(

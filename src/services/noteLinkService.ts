@@ -8,6 +8,7 @@ import {
   determineFileType,
   createLinkCandidate,
   findLinkCandidatesInRoot,
+  findLinkCandidatesAcrossRoots,
 } from '../companion/noteLinking';
 
 export {
@@ -15,6 +16,7 @@ export {
   determineFileType,
   createLinkCandidate,
   findLinkCandidatesInRoot,
+  findLinkCandidatesAcrossRoots,
 };
 
 export interface ExtractedLink {
@@ -180,6 +182,26 @@ export async function findMarkdownNotesInRoot(
   return notes;
 }
 
+export async function findMarkdownNotesInRoots(
+  roots: vscode.Uri[],
+  maxDepth: number = 6
+): Promise<vscode.Uri[]> {
+  const allNotes: vscode.Uri[] = [];
+  const seenPaths = new Set<string>();
+
+  for (const root of roots) {
+    const notes = await findMarkdownNotesInRoot(root, maxDepth);
+    for (const note of notes) {
+      if (!seenPaths.has(note.fsPath)) {
+        seenPaths.add(note.fsPath);
+        allNotes.push(note);
+      }
+    }
+  }
+
+  return allNotes;
+}
+
 async function fileExists(uri: vscode.Uri): Promise<boolean> {
   try {
     await vscode.workspace.fs.stat(uri);
@@ -231,6 +253,22 @@ export async function resolveOutgoingLink(
     }
   }
 
+  // Candidate 2b: relative to workspace folder (supports cross-folder references like docs/architecture.md)
+  const wsFolder = vscode.workspace.getWorkspaceFolder(sourceNoteUri);
+  if (wsFolder) {
+    const wsCandidate = vscode.Uri.joinPath(wsFolder.uri, normalizedTarget);
+    if (await fileExists(wsCandidate)) {
+      const relPath = path.relative(wsFolder.uri.fsPath, wsCandidate.fsPath).replace(/\\/g, '/');
+      return {
+        title: link.label || stripExtension(path.basename(wsCandidate.fsPath)),
+        target: link.target,
+        uri: wsCandidate.toString(),
+        relativePath: relPath,
+        exists: true,
+      };
+    }
+  }
+
   // Candidate 3: match by basename across workspaceNotes
   if (workspaceNotes && workspaceNotes.length > 0) {
     const targetBaseLower = stripExtension(path.basename(normalizedTarget)).toLowerCase();
@@ -273,7 +311,7 @@ export function doesLinkMatchTarget(
   link: ExtractedLink,
   sourceNoteUri: vscode.Uri,
   targetNoteUri: vscode.Uri,
-  notesRootUri?: vscode.Uri
+  notesRoots?: vscode.Uri | vscode.Uri[]
 ): boolean {
   const targetFsPath = targetNoteUri.fsPath;
   const targetBaseName = stripExtension(path.basename(targetFsPath)).toLowerCase();
@@ -285,10 +323,22 @@ export function doesLinkMatchTarget(
     return true;
   }
 
-  // 2. Direct resolved path from notesRootUri
-  if (notesRootUri) {
-    const resolvedFromRoot = path.resolve(notesRootUri.fsPath, normalizedLinkTarget);
+  // 2. Direct resolved path from notesRoots
+  const roots = notesRoots ? (Array.isArray(notesRoots) ? notesRoots : [notesRoots]) : [];
+  for (const root of roots) {
+    const resolvedFromRoot = path.resolve(root.fsPath, normalizedLinkTarget);
     if (resolvedFromRoot.toLowerCase() === targetFsPath.toLowerCase()) {
+      return true;
+    }
+  }
+
+  // 2b. Direct resolved path from workspace folder
+  const wsFolder =
+    vscode.workspace.getWorkspaceFolder(sourceNoteUri) ||
+    vscode.workspace.getWorkspaceFolder(targetNoteUri);
+  if (wsFolder) {
+    const resolvedFromWs = path.resolve(wsFolder.uri.fsPath, normalizedLinkTarget);
+    if (resolvedFromWs.toLowerCase() === targetFsPath.toLowerCase()) {
       return true;
     }
   }
@@ -305,14 +355,16 @@ export function doesLinkMatchTarget(
 }
 
 /**
- * Finds all Markdown notes in `notesRootUri` that contain an outgoing link to `targetNoteUri`.
+ * Finds all Markdown notes in `notesRoots` that contain an outgoing link to `targetNoteUri`.
  */
 export async function findBacklinks(
   targetNoteUri: vscode.Uri,
-  notesRootUri: vscode.Uri
+  notesRoots: vscode.Uri | vscode.Uri[]
 ): Promise<NoteLinkItem[]> {
-  const allNotes = await findMarkdownNotesInRoot(notesRootUri);
+  const roots = Array.isArray(notesRoots) ? notesRoots : [notesRoots];
+  const allNotes = await findMarkdownNotesInRoots(roots);
   const backlinks: NoteLinkItem[] = [];
+  const primaryRoot = roots[0];
 
   for (const candidateUri of allNotes) {
     if (candidateUri.fsPath === targetNoteUri.fsPath) {
@@ -329,13 +381,22 @@ export async function findBacklinks(
 
     const extracted = extractDocumentLinks(text);
     const linksToTarget = extracted.some((link) =>
-      doesLinkMatchTarget(link, candidateUri, targetNoteUri, notesRootUri)
+      doesLinkMatchTarget(link, candidateUri, targetNoteUri, roots)
     );
 
     if (linksToTarget) {
-      const relPath = path
-        .relative(notesRootUri.fsPath, candidateUri.fsPath)
-        .replace(/\\/g, '/');
+      let relPath: string;
+      const relToPrimary = primaryRoot
+        ? path.relative(primaryRoot.fsPath, candidateUri.fsPath).replace(/\\/g, '/')
+        : '';
+      if (primaryRoot && !relToPrimary.startsWith('..') && !path.isAbsolute(relToPrimary)) {
+        relPath = relToPrimary;
+      } else {
+        const wsFolder = vscode.workspace.getWorkspaceFolder(candidateUri);
+        relPath = wsFolder
+          ? path.relative(wsFolder.uri.fsPath, candidateUri.fsPath).replace(/\\/g, '/')
+          : path.basename(candidateUri.fsPath);
+      }
       const baseTitle = stripExtension(path.basename(candidateUri.fsPath));
       backlinks.push({
         title: baseTitle,
@@ -406,17 +467,20 @@ export async function getNoteLinksData(
   documentText: string,
   companionManager: CompanionManager
 ): Promise<NoteLinksData> {
-  const notesRootUri = companionManager.getNotesRootUri(noteUri);
-  const workspaceNotes = notesRootUri ? await findMarkdownNotesInRoot(notesRootUri) : [];
+  const allRoots = companionManager.getAllNotesRoots
+    ? companionManager.getAllNotesRoots(noteUri)
+    : (companionManager.getNotesRootUri(noteUri) ? [companionManager.getNotesRootUri(noteUri)!] : []);
+  const primaryRoot = companionManager.getNotesRootUri(noteUri);
+  const workspaceNotes = allRoots.length > 0 ? await findMarkdownNotesInRoots(allRoots) : [];
 
   const extracted = extractDocumentLinks(documentText);
   const outgoingLinks: NoteLinkItem[] = [];
   for (const link of extracted) {
-    const resolved = await resolveOutgoingLink(link, noteUri, notesRootUri, workspaceNotes);
+    const resolved = await resolveOutgoingLink(link, noteUri, primaryRoot, workspaceNotes);
     outgoingLinks.push(resolved);
   }
 
-  const backlinks = notesRootUri ? await findBacklinks(noteUri, notesRootUri) : [];
+  const backlinks = allRoots.length > 0 ? await findBacklinks(noteUri, allRoots) : [];
   const companions = await resolveCompanionSummary(noteUri, companionManager);
 
   return {

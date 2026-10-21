@@ -38,6 +38,15 @@
           "scope": "resource",
           "description": "Indicates whether the Janus notes root has been initialized."
         },
+        "janus.includeFolders": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "resource",
+          "description": "Additional workspace folders to display as pure Markdown notes directories in the Janus Notes sidebar."
+        },
         "janus.ai.provider": {
           "type": "string",
           "enum": [
@@ -98,16 +107,26 @@
     "viewsWelcome": [
       {
         "view": "janus.notesView",
-        "contents": "Dieser Ordner enthält Projektdateien (z. B. Quellcode).\nWir empfehlen, einen separaten Notizen-Ordner zu konfigurieren.\n[Notizen-Ordner festlegen](command:janus.setNotesRoot)\n[Trotzdem hier initialisieren](command:janus.initNotesRoot)",
-        "when": "!janus.isInitialized && janus.hasNonNoteFiles"
+        "contents": "Dieser Ordner enthält Projektdateien (z. B. Quellcode).\nWir empfehlen, einen separaten Notizen-Ordner zu konfigurieren oder bestehende Ordner zu verknüpfen.\n[Notizen-Ordner festlegen](command:janus.setNotesRoot)\n[Vorhandenen Ordner verknüpfen](command:janus.addLinkedFolder)\n[Trotzdem hier initialisieren](command:janus.initNotesRoot)",
+        "when": "!janus.isInitialized && janus.hasNonNoteFiles && !janus.hasLinkedFolders"
       },
       {
         "view": "janus.notesView",
-        "contents": "Janus Notizen sind noch nicht initialisiert.\nErstelle jetzt deinen Notizen-Ordner mit einer initialen inbox.md.\n[Notizen initialisieren](command:janus.initNotesRoot)",
-        "when": "!janus.isInitialized && !janus.hasNonNoteFiles"
+        "contents": "Janus Notizen sind noch nicht initialisiert.\nErstelle jetzt deinen Notizen-Ordner mit einer initialen inbox.md oder verknüpfe einen bestehenden Ordner.\n[Notizen initialisieren](command:janus.initNotesRoot)\n[Vorhandenen Ordner verknüpfen](command:janus.addLinkedFolder)",
+        "when": "!janus.isInitialized && !janus.hasNonNoteFiles && !janus.hasLinkedFolders"
       }
     ],
     "commands": [
+      {
+        "command": "janus.addLinkedFolder",
+        "title": "Janus: Ordner verknüpfen...",
+        "icon": "$(folder-library)"
+      },
+      {
+        "command": "janus.removeLinkedFolder",
+        "title": "Janus: Aus verknüpften Notizen entfernen",
+        "icon": "$(close)"
+      },
       {
         "command": "janus.openCompanion",
         "title": "Janus: Open Companion File"
@@ -200,6 +219,11 @@
     "menus": {
       "view/title": [
         {
+          "command": "janus.addLinkedFolder",
+          "when": "view == janus.notesView",
+          "group": "navigation@0"
+        },
+        {
           "command": "janus.createNote",
           "when": "view == janus.notesView && janus.isInitialized",
           "group": "navigation@1"
@@ -255,6 +279,11 @@
           "command": "janus.deleteItem",
           "when": "view == janus.notesView && (viewItem == janusFolder || viewItem == janusNote)",
           "group": "modify@2"
+        },
+        {
+          "command": "janus.removeLinkedFolder",
+          "when": "view == janus.notesView && viewItem == linkedFolder",
+          "group": "modify@3"
         }
       ],
       "explorer/context": [
@@ -262,6 +291,11 @@
           "command": "janus.setNotesRoot",
           "when": "explorerResourceIsFolder",
           "group": "navigation@10"
+        },
+        {
+          "command": "janus.addLinkedFolder",
+          "when": "explorerResourceIsFolder",
+          "group": "navigation@11"
         }
       ]
     },
