@@ -184,8 +184,25 @@ export enum ViewColumn {
   Three = 3,
 }
 
+export class TabInputText {
+  constructor(public readonly uri: Uri) {}
+}
+
+export class TabInputCustom {
+  constructor(public readonly uri: Uri, public readonly viewType: string) {}
+}
+
+export class TabInputWebview {
+  constructor(public readonly viewType: string) {}
+}
+
 export const window = {
-  activeTextEditor: undefined,
+  activeTextEditor: undefined as any,
+  tabGroups: {
+    activeTabGroup: undefined as any,
+    onDidChangeTabs: (_listener: () => any) => ({ dispose: () => {} }),
+  },
+  onDidChangeActiveTextEditor: (_listener: (e: any) => any) => ({ dispose: () => {} }),
   showInformationMessage: async (..._args: any[]): Promise<any> => undefined,
   showWarningMessage: async (..._args: any[]): Promise<any> => undefined,
   showErrorMessage: async (..._args: any[]): Promise<any> => undefined,
@@ -209,6 +226,7 @@ export const window = {
       onDidReceiveMessage: (_listener: (msg: any) => any) => ({ dispose: () => {} }),
     },
     reveal: () => {},
+    onDidChangeViewState: (_listener: (e: any) => any) => ({ dispose: () => {} }),
     onDidDispose: (_listener: () => any) => ({ dispose: () => {} }),
     dispose: () => {},
   }),

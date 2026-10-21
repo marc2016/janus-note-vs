@@ -30,6 +30,7 @@ export class CalendarTreeItem extends vscode.TreeItem {
     super('Kalender', vscode.TreeItemCollapsibleState.None);
 
     this.uri = notesRootUri || vscode.Uri.parse('janus-calendar:///all');
+    this.id = 'janus:calendar';
     this.contextValue = 'janusCalendar';
     this.iconPath = new vscode.ThemeIcon('calendar');
     this.description = `(${eventCount} Termine)`;
@@ -51,6 +52,7 @@ export class AllTasksTreeItem extends vscode.TreeItem {
     super('Alle Aufgaben', vscode.TreeItemCollapsibleState.None);
 
     this.uri = notesRootUri || vscode.Uri.parse('janus-tasks:///all');
+    this.id = 'janus:allTasks';
     this.contextValue = 'janusAllTasks';
     this.iconPath = new vscode.ThemeIcon('checklist');
     this.description = `(${openCount} offen)`;
@@ -74,6 +76,7 @@ export class FolderTasksTreeItem extends vscode.TreeItem {
 
     this.folderUri = folderUri || vscode.Uri.file(path.dirname(uri.fsPath));
     this.resourceUri = uri;
+    this.id = `folderTasks:${this.folderUri.toString()}`;
     this.contextValue = 'janusFolderTasks';
     this.iconPath = new vscode.ThemeIcon('checklist');
     this.description = `(${openCount} offen)`;
@@ -99,6 +102,7 @@ export class FolderTreeItem extends vscode.TreeItem {
 
     this.folderName = rawName;
     this.resourceUri = uri;
+    this.id = `folder:${uri.toString()}`;
     this.contextValue = 'janusFolder';
     this.iconPath = new vscode.ThemeIcon('folder');
     this.tooltip = uri.fsPath;
@@ -121,6 +125,7 @@ export class NoteTreeItem extends vscode.TreeItem {
     );
 
     this.resourceUri = uri;
+    this.id = `note:${uri.toString()}`;
     this.contextValue = 'janusNote';
     this.iconPath = new vscode.ThemeIcon('markdown');
     this.tooltip = uri.fsPath;
@@ -148,6 +153,7 @@ export class CompanionTreeItem extends vscode.TreeItem {
     super(label, vscode.TreeItemCollapsibleState.None);
 
     this.resourceUri = uri;
+    this.id = `companion:${companionType}:${uri.toString()}`;
     this.contextValue = isTasks ? 'janusCompanionTasks' : 'janusCompanionChart';
     this.iconPath = new vscode.ThemeIcon(isTasks ? 'checklist' : 'graph');
     this.description = path.basename(uri.fsPath);
@@ -180,6 +186,102 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
 
   getTreeItem(element: NotesTreeItem): vscode.TreeItem {
     return element;
+  }
+
+  async getParent(element: NotesTreeItem): Promise<NotesTreeItem | undefined> {
+    if (!element) {
+      return undefined;
+    }
+
+    if (element instanceof CalendarTreeItem || element instanceof AllTasksTreeItem) {
+      return undefined;
+    }
+
+    if (element instanceof CompanionTreeItem) {
+      const status = await this.companionManager.getCompanionStatus(element.noteUri);
+      return new NoteTreeItem(element.noteUri, status);
+    }
+
+    const status = await checkNotesRootStatus(this.companionManager);
+    if (!status.isInitialized || !status.notesRootUri) {
+      return undefined;
+    }
+
+    const notesRootFsPath = status.notesRootUri.fsPath;
+
+    if (element instanceof FolderTasksTreeItem) {
+      const parentDirFsPath = element.folderUri.fsPath;
+      if (parentDirFsPath === notesRootFsPath) {
+        return undefined;
+      }
+      const isRootChild = path.dirname(parentDirFsPath) === notesRootFsPath;
+      return new FolderTreeItem(element.folderUri, isRootChild);
+    }
+
+    if (element instanceof NoteTreeItem) {
+      const parentDirFsPath = path.dirname(element.uri.fsPath);
+      if (parentDirFsPath === notesRootFsPath) {
+        return undefined;
+      }
+      const parentDirUri = vscode.Uri.file(parentDirFsPath);
+      const isRootChild = path.dirname(parentDirFsPath) === notesRootFsPath;
+      return new FolderTreeItem(parentDirUri, isRootChild);
+    }
+
+    if (element instanceof FolderTreeItem) {
+      const parentDirFsPath = path.dirname(element.uri.fsPath);
+      if (element.uri.fsPath === notesRootFsPath || parentDirFsPath === notesRootFsPath) {
+        return undefined;
+      }
+      const parentDirUri = vscode.Uri.file(parentDirFsPath);
+      const isRootChild = path.dirname(parentDirFsPath) === notesRootFsPath;
+      return new FolderTreeItem(parentDirUri, isRootChild);
+    }
+
+    return undefined;
+  }
+
+  async getTreeItemForUri(uri: vscode.Uri): Promise<NotesTreeItem | undefined> {
+    const status = await checkNotesRootStatus(this.companionManager);
+    if (!status.isInitialized || !status.notesRootUri) {
+      return undefined;
+    }
+
+    if (uri.scheme === 'janus-calendar') {
+      const eventCount = await this.calendarService.countCalendarEntries(status.notesRootUri);
+      return new CalendarTreeItem(eventCount, status.notesRootUri);
+    }
+
+    if (uri.scheme === 'janus-tasks') {
+      const totalOpen = await this.folderTasksService.countTotalOpenTasks(status.notesRootUri);
+      return new AllTasksTreeItem(totalOpen, status.notesRootUri);
+    }
+
+    const relPath = path.relative(status.notesRootUri.fsPath, uri.fsPath);
+    if (relPath.startsWith('..') || path.isAbsolute(relPath)) {
+      return undefined;
+    }
+
+    const fileName = path.basename(uri.fsPath);
+
+    if (isMarkdownNote(uri.fsPath)) {
+      const companionStatus = await this.companionManager.getCompanionStatus(uri);
+      return new NoteTreeItem(uri, companionStatus);
+    }
+
+    if (fileName === 'tasks.json') {
+      const folderUri = vscode.Uri.file(path.dirname(uri.fsPath));
+      const openCount = await this.folderTasksService.countOpenTasksInFile(uri);
+      return new FolderTasksTreeItem(uri, openCount, folderUri);
+    }
+
+    if (fileName.endsWith('.chart.json')) {
+      const noteName = fileName.replace(/\.chart\.json$/i, '.md');
+      const noteUri = vscode.Uri.joinPath(vscode.Uri.file(path.dirname(uri.fsPath)), noteName);
+      return new CompanionTreeItem('chart', uri, noteUri);
+    }
+
+    return undefined;
   }
 
   async getChildren(element?: NotesTreeItem): Promise<NotesTreeItem[]> {

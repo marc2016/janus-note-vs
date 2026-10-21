@@ -11,7 +11,8 @@ export class GlobalTasksViewProvider {
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly folderTasksService: FolderTasksService = new FolderTasksService(),
-    private readonly onDidMutate?: () => void
+    private readonly onDidMutate?: () => void,
+    private readonly onActiveChange?: () => void
   ) {}
 
   async open(notesRootUri: vscode.Uri): Promise<void> {
@@ -19,6 +20,7 @@ export class GlobalTasksViewProvider {
 
     if (this.panel) {
       this.panel.reveal(vscode.ViewColumn.One);
+      this.onActiveChange?.();
       await this.refresh();
       return;
     }
@@ -46,6 +48,14 @@ export class GlobalTasksViewProvider {
     this.panel.webview.onDidReceiveMessage(async (message) => {
       await this.handleMessage(message);
     });
+
+    this.panel.onDidChangeViewState?.((e) => {
+      if (e.webviewPanel.active) {
+        this.onActiveChange?.();
+      }
+    });
+
+    this.onActiveChange?.();
 
     this.panel.onDidDispose(() => {
       this.panel = undefined;

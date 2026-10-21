@@ -37,6 +37,35 @@ import {
 } from './commands/notesFileCommands';
 import { NotesTreeDataProvider, NotesTreeItem, FolderTreeItem } from './ui/notesTreeDataProvider';
 
+export function getActiveNoteUri(): vscode.Uri | undefined {
+  const tabGroups = vscode.window.tabGroups;
+  const activeTab = tabGroups?.activeTabGroup?.activeTab;
+  if (activeTab?.input) {
+    const input: any = activeTab.input;
+
+    if (input instanceof vscode.TabInputWebview || (input && typeof input.viewType === 'string')) {
+      if (input.viewType === CalendarViewProvider.monthViewType) {
+        return vscode.Uri.parse('janus-calendar:///all');
+      }
+      if (input.viewType === GlobalTasksViewProvider.viewType) {
+        return vscode.Uri.parse('janus-tasks:///all');
+      }
+    }
+
+    if (input instanceof vscode.TabInputText && input.uri) {
+      return input.uri;
+    }
+    if (input instanceof vscode.TabInputCustom && input.uri) {
+      return input.uri;
+    }
+    if (input && typeof input === 'object' && input.uri instanceof vscode.Uri) {
+      return input.uri;
+    }
+  }
+
+  return vscode.window.activeTextEditor?.document?.uri;
+}
+
 export function activate(context: vscode.ExtensionContext) {
   // 1. Core Services
   const companionManager = new CompanionManager();
@@ -53,10 +82,45 @@ export function activate(context: vscode.ExtensionContext) {
     folderTasksService,
     calendarService
   );
+  const notesTreeView = vscode.window.createTreeView('janus.notesView', {
+    treeDataProvider: notesTreeDataProvider,
+    showCollapseAll: true,
+  });
+
+  // Active editor synchronization with sidebar selection
+  let syncDebounceTimer: NodeJS.Timeout | undefined;
+
+  const syncSidebarSelectionWithActiveEditor = async (targetUri?: vscode.Uri) => {
+    const uri = targetUri || getActiveNoteUri();
+    if (!uri) {
+      return;
+    }
+
+    try {
+      const item = await notesTreeDataProvider.getTreeItemForUri(uri);
+      if (!item) {
+        return;
+      }
+      await notesTreeView.reveal(item, { select: true, focus: false, expand: true });
+    } catch {
+      // Gracefully ignore when view is not visible or reveal is not possible
+    }
+  };
+
+  const scheduleSyncSidebarSelection = (targetUri?: vscode.Uri) => {
+    if (syncDebounceTimer) {
+      clearTimeout(syncDebounceTimer);
+    }
+    syncDebounceTimer = setTimeout(() => {
+      void syncSidebarSelectionWithActiveEditor(targetUri);
+    }, 150);
+  };
+
   const globalTasksViewProvider = new GlobalTasksViewProvider(
     context,
     folderTasksService,
-    () => notesTreeDataProvider.refresh()
+    () => notesTreeDataProvider.refresh(),
+    () => scheduleSyncSidebarSelection(vscode.Uri.parse('janus-tasks:///all'))
   );
   const calendarDayDetailsViewProvider = new CalendarDayDetailsViewProvider(
     context,
@@ -69,13 +133,10 @@ export function activate(context: vscode.ExtensionContext) {
     calendarService,
     folderTasksService,
     () => notesTreeDataProvider.refresh(),
-    calendarDayDetailsViewProvider
+    calendarDayDetailsViewProvider,
+    () => scheduleSyncSidebarSelection(vscode.Uri.parse('janus-calendar:///all'))
   );
   const settingsViewProvider = new SettingsViewProvider(context, aiModelService);
-  const notesTreeView = vscode.window.createTreeView('janus.notesView', {
-    treeDataProvider: notesTreeDataProvider,
-    showCollapseAll: true,
-  });
 
   // 2. Diff and Review Services
   const diffContentProvider = new DiffContentProvider();
@@ -86,18 +147,38 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.languages.registerCodeLensProvider({ language: 'markdown' }, codeLensProvider),
     vscode.workspace.registerTextDocumentContentProvider(DiffContentProvider.scheme, diffContentProvider),
     notesTreeView,
+    {
+      dispose: () => {
+        if (syncDebounceTimer) {
+          clearTimeout(syncDebounceTimer);
+        }
+      },
+    },
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (editor?.document?.uri) {
+        scheduleSyncSidebarSelection(editor.document.uri);
+      }
+    }),
+    ...(vscode.window.tabGroups?.onDidChangeTabs
+      ? [
+          vscode.window.tabGroups.onDidChangeTabs(() => {
+            scheduleSyncSidebarSelection();
+          }),
+        ]
+      : []),
     vscode.window.registerWebviewViewProvider(
       CalendarDayDetailsViewProvider.viewType,
       calendarDayDetailsViewProvider
     ),
-    TasksEditorProvider.register(context),
-    ChartEditorProvider.register(context),
+    TasksEditorProvider.register(context, (uri) => scheduleSyncSidebarSelection(uri)),
+    ChartEditorProvider.register(context, (uri) => scheduleSyncSidebarSelection(uri)),
     MarkdownEditorProvider.register(
       context,
       companionManager,
       aiModelService,
       aiTaskGeneratorService,
-      aiInboxSorterService
+      aiInboxSorterService,
+      (uri) => scheduleSyncSidebarSelection(uri)
     )
   );
 
@@ -118,6 +199,7 @@ export function activate(context: vscode.ExtensionContext) {
     if (st.notesRootUri) {
       calendarDayDetailsViewProvider.setNotesRootUri(st.notesRootUri);
     }
+    scheduleSyncSidebarSelection();
   });
 
   // 3. Register Language Model Tools
@@ -244,6 +326,7 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
       await globalTasksViewProvider.open(rootUri);
+      scheduleSyncSidebarSelection(vscode.Uri.parse('janus-tasks:///all'));
     }),
     vscode.commands.registerCommand('janus.openCalendar', async () => {
       const status = await checkNotesRootStatus(companionManager);
@@ -253,6 +336,7 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
       await calendarViewProvider.open(rootUri);
+      scheduleSyncSidebarSelection(vscode.Uri.parse('janus-calendar:///all'));
     }),
     vscode.commands.registerCommand('janus.openFolderTasks', async (item?: NotesTreeItem | vscode.Uri) => {
       let folderUri: vscode.Uri | undefined;
@@ -279,6 +363,7 @@ export function activate(context: vscode.ExtensionContext) {
         notesTreeDataProvider.refresh();
       }
       await vscode.commands.executeCommand('vscode.openWith', tasksUri, TasksEditorProvider.viewType);
+      scheduleSyncSidebarSelection(tasksUri);
     }),
     vscode.commands.registerCommand('janus.openSettings', async () => {
       await settingsViewProvider.open();

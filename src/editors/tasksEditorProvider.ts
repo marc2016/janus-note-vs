@@ -5,11 +5,19 @@ import { MarkdownEditorProvider } from './markdownEditorProvider';
 
 export class TasksEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'janus.tasksEditor';
+  private readonly _onDidChangeActiveCustomEditor = new vscode.EventEmitter<vscode.Uri>();
+  public readonly onDidChangeActiveCustomEditor = this._onDidChangeActiveCustomEditor.event;
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
-  public static register(context: vscode.ExtensionContext): vscode.Disposable {
+  public static register(
+    context: vscode.ExtensionContext,
+    onActiveChange?: (uri: vscode.Uri) => void
+  ): vscode.Disposable {
     const provider = new TasksEditorProvider(context);
+    if (onActiveChange) {
+      provider.onDidChangeActiveCustomEditor(onActiveChange);
+    }
     return vscode.window.registerCustomEditorProvider(TasksEditorProvider.viewType, provider, {
       webviewOptions: {
         retainContextWhenHidden: true,
@@ -121,7 +129,18 @@ export class TasksEditorProvider implements vscode.CustomTextEditorProvider {
       }
     });
 
+    const viewStateSubscription = webviewPanel.onDidChangeViewState((e) => {
+      if (e.webviewPanel.active) {
+        this._onDidChangeActiveCustomEditor.fire(document.uri);
+      }
+    });
+
+    if (webviewPanel.active) {
+      this._onDidChangeActiveCustomEditor.fire(document.uri);
+    }
+
     webviewPanel.onDidDispose(() => {
+      viewStateSubscription.dispose();
       changeDocumentSubscription.dispose();
     });
 

@@ -10,6 +10,7 @@ import {
   NoteTreeItem,
   CompanionTreeItem,
 } from '../src/ui/notesTreeDataProvider';
+import { getActiveNoteUri } from '../src/extension';
 import { __setConfigStore } from './__mocks__/vscode';
 
 describe('NotesTreeDataProvider', () => {
@@ -241,5 +242,197 @@ describe('NotesTreeDataProvider', () => {
       'Knowledge Base'
     );
     (vscode.env as any).language = 'de';
+  });
+
+  describe('Item IDs and getParent resolution', () => {
+    beforeEach(() => {
+      __setConfigStore({
+        'janus.notesRoot': 'notes',
+        'janus.initialized': true,
+      });
+    });
+
+    it('assigns stable IDs to all tree item types', () => {
+      const notesRootUri = vscode.Uri.file('/workspace/project/notes');
+      const calendarItem = new CalendarTreeItem(5, notesRootUri);
+      expect(calendarItem.id).toBe('janus:calendar');
+
+      const allTasksItem = new AllTasksTreeItem(3, notesRootUri);
+      expect(allTasksItem.id).toBe('janus:allTasks');
+
+      const folderTasksItem = new FolderTasksTreeItem(
+        vscode.Uri.file('/workspace/project/notes/projects/tasks.json'),
+        2
+      );
+      expect(folderTasksItem.id).toBe(
+        `folderTasks:${vscode.Uri.file('/workspace/project/notes/projects').toString()}`
+      );
+
+      const folderItem = new FolderTreeItem(vscode.Uri.file('/workspace/project/notes/projects'));
+      expect(folderItem.id).toBe(
+        `folder:${vscode.Uri.file('/workspace/project/notes/projects').toString()}`
+      );
+
+      const noteItem = new NoteTreeItem(vscode.Uri.file('/workspace/project/notes/meeting.md'));
+      expect(noteItem.id).toBe(
+        `note:${vscode.Uri.file('/workspace/project/notes/meeting.md').toString()}`
+      );
+
+      const companionItem = new CompanionTreeItem(
+        'chart',
+        vscode.Uri.file('/workspace/project/notes/meeting.chart.json'),
+        vscode.Uri.file('/workspace/project/notes/meeting.md')
+      );
+      expect(companionItem.id).toBe(
+        `companion:chart:${vscode.Uri.file('/workspace/project/notes/meeting.chart.json').toString()}`
+      );
+    });
+
+    it('resolves getParent correctly for top-level and nested tree elements', async () => {
+      const notesRootUri = vscode.Uri.file('/workspace/project/notes');
+
+      // Top-level pinned items have undefined parent
+      const calendarItem = new CalendarTreeItem(0, notesRootUri);
+      expect(await provider.getParent(calendarItem)).toBeUndefined();
+
+      const allTasksItem = new AllTasksTreeItem(0, notesRootUri);
+      expect(await provider.getParent(allTasksItem)).toBeUndefined();
+
+      // Top-level note directly under notes root has undefined parent
+      const topLevelNote = new NoteTreeItem(vscode.Uri.file('/workspace/project/notes/inbox.md'));
+      expect(await provider.getParent(topLevelNote)).toBeUndefined();
+
+      // Top-level folder directly under notes root has undefined parent
+      const topLevelFolder = new FolderTreeItem(vscode.Uri.file('/workspace/project/notes/projects'));
+      expect(await provider.getParent(topLevelFolder)).toBeUndefined();
+
+      // Nested note has parent FolderTreeItem
+      const nestedNote = new NoteTreeItem(
+        vscode.Uri.file('/workspace/project/notes/projects/alpha.md')
+      );
+      const noteParent = await provider.getParent(nestedNote);
+      expect(noteParent instanceof FolderTreeItem).toBe(true);
+      expect((noteParent as FolderTreeItem).uri.fsPath).toBe('/workspace/project/notes/projects');
+      expect((noteParent as FolderTreeItem).isRootChild).toBe(true);
+
+      // Deeply nested subfolder has parent FolderTreeItem
+      const deepFolder = new FolderTreeItem(
+        vscode.Uri.file('/workspace/project/notes/projects/sub/deep')
+      );
+      const folderParent = await provider.getParent(deepFolder);
+      expect(folderParent instanceof FolderTreeItem).toBe(true);
+      expect((folderParent as FolderTreeItem).uri.fsPath).toBe(
+        '/workspace/project/notes/projects/sub'
+      );
+      expect((folderParent as FolderTreeItem).isRootChild).toBe(false);
+
+      // Companion item returns its NoteTreeItem
+      const companion = new CompanionTreeItem(
+        'chart',
+        vscode.Uri.file('/workspace/project/notes/projects/alpha.chart.json'),
+        vscode.Uri.file('/workspace/project/notes/projects/alpha.md')
+      );
+      const companionParent = await provider.getParent(companion);
+      expect(companionParent instanceof NoteTreeItem).toBe(true);
+      expect((companionParent as NoteTreeItem).uri.fsPath).toBe(
+        '/workspace/project/notes/projects/alpha.md'
+      );
+
+      // FolderTasksTreeItem returns its FolderTreeItem
+      const folderTasks = new FolderTasksTreeItem(
+        vscode.Uri.file('/workspace/project/notes/projects/tasks.json'),
+        1,
+        vscode.Uri.file('/workspace/project/notes/projects')
+      );
+      const folderTasksParent = await provider.getParent(folderTasks);
+      expect(folderTasksParent instanceof FolderTreeItem).toBe(true);
+      expect((folderTasksParent as FolderTreeItem).uri.fsPath).toBe(
+        '/workspace/project/notes/projects'
+      );
+    });
+
+    it('resolves getTreeItemForUri for notes within notesRoot and rejects external/non-markdown files', async () => {
+      // Valid markdown note under notesRoot
+      const validNoteUri = vscode.Uri.file('/workspace/project/notes/projects/alpha.md');
+      const item = await provider.getTreeItemForUri(validNoteUri);
+      expect(item instanceof NoteTreeItem).toBe(true);
+      expect(item?.uri.fsPath).toBe('/workspace/project/notes/projects/alpha.md');
+
+      // Non-markdown file under notesRoot
+      const nonMdUri = vscode.Uri.file('/workspace/project/notes/projects/alpha.txt');
+      expect(await provider.getTreeItemForUri(nonMdUri)).toBeUndefined();
+
+      // Markdown file outside notesRoot
+      const externalUri = vscode.Uri.file('/workspace/other/external.md');
+      expect(await provider.getTreeItemForUri(externalUri)).toBeUndefined();
+
+      // Calendar URI scheme
+      const calendarItem = await provider.getTreeItemForUri(vscode.Uri.parse('janus-calendar:///all'));
+      expect(calendarItem instanceof CalendarTreeItem).toBe(true);
+
+      // Tasks URI scheme
+      const allTasksItem = await provider.getTreeItemForUri(vscode.Uri.parse('janus-tasks:///all'));
+      expect(allTasksItem instanceof AllTasksTreeItem).toBe(true);
+
+      // Folder tasks.json
+      const folderTasksUri = vscode.Uri.file('/workspace/project/notes/projects/tasks.json');
+      const folderTasksItem = await provider.getTreeItemForUri(folderTasksUri);
+      expect(folderTasksItem instanceof FolderTasksTreeItem).toBe(true);
+      expect((folderTasksItem as FolderTasksTreeItem).folderUri.fsPath).toBe(
+        '/workspace/project/notes/projects'
+      );
+    });
+
+    it('extracts active note URI from tabGroups or activeTextEditor', () => {
+      // 1. None active
+      (vscode.window as any).activeTextEditor = undefined;
+      (vscode.window as any).tabGroups.activeTabGroup = undefined;
+      expect(getActiveNoteUri()).toBeUndefined();
+
+      // 2. Fallback to activeTextEditor
+      (vscode.window as any).activeTextEditor = {
+        document: { uri: vscode.Uri.file('/workspace/project/notes/active.md') },
+      };
+      expect(getActiveNoteUri()?.fsPath).toBe('/workspace/project/notes/active.md');
+
+      // 3. Prefer tabGroups activeTab with TabInputText
+      (vscode.window as any).tabGroups.activeTabGroup = {
+        activeTab: {
+          input: new vscode.TabInputText(vscode.Uri.file('/workspace/project/notes/tab.md')),
+        },
+      };
+      expect(getActiveNoteUri()?.fsPath).toBe('/workspace/project/notes/tab.md');
+
+      // 4. TabGroups activeTab with TabInputCustom
+      (vscode.window as any).tabGroups.activeTabGroup = {
+        activeTab: {
+          input: new vscode.TabInputCustom(
+            vscode.Uri.file('/workspace/project/notes/custom.md'),
+            'janus.markdownEditor'
+          ),
+        },
+      };
+      expect(getActiveNoteUri()?.fsPath).toBe('/workspace/project/notes/custom.md');
+
+      // 5. TabGroups activeTab with TabInputWebview for Calendar
+      (vscode.window as any).tabGroups.activeTabGroup = {
+        activeTab: {
+          input: new vscode.TabInputWebview('janus.calendarView'),
+        },
+      };
+      expect(getActiveNoteUri()?.toString()).toBe('janus-calendar:///all');
+
+      // 6. TabGroups activeTab with TabInputWebview for Global Tasks
+      (vscode.window as any).tabGroups.activeTabGroup = {
+        activeTab: {
+          input: new vscode.TabInputWebview('janus.globalTasksView'),
+        },
+      };
+      expect(getActiveNoteUri()?.toString()).toBe('janus-tasks:///all');
+
+      // Cleanup
+      (vscode.window as any).activeTextEditor = undefined;
+      (vscode.window as any).tabGroups.activeTabGroup = undefined;
+    });
   });
 });

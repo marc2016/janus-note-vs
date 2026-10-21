@@ -19,7 +19,8 @@ export class CalendarViewProvider {
     private readonly calendarService: CalendarService = new CalendarService(),
     private readonly folderTasksService: FolderTasksService = new FolderTasksService(),
     private readonly onDidMutate?: () => void,
-    private readonly dayDetailsViewProvider?: CalendarDayDetailsViewProvider
+    private readonly dayDetailsViewProvider?: CalendarDayDetailsViewProvider,
+    private readonly onActiveChange?: () => void
   ) {}
 
   /**
@@ -31,6 +32,7 @@ export class CalendarViewProvider {
 
     if (this.monthPanel) {
       this.monthPanel.reveal(vscode.ViewColumn.One);
+      this.onActiveChange?.();
       await this.refresh();
       return;
     }
@@ -64,6 +66,14 @@ export class CalendarViewProvider {
     this.monthPanel.webview.onDidReceiveMessage(async (message) => {
       await this.handleMessage(message);
     });
+
+    this.monthPanel.onDidChangeViewState?.((e) => {
+      if (e.webviewPanel.active) {
+        this.onActiveChange?.();
+      }
+    });
+
+    this.onActiveChange?.();
 
     this.monthPanel.onDidDispose(() => {
       this.monthPanel = undefined;

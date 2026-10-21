@@ -17,6 +17,9 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   private readonly aiTaskGeneratorService: AiTaskGeneratorService;
   private readonly aiInboxSorterService: AiInboxSorterService;
 
+  private readonly _onDidChangeActiveCustomEditor = new vscode.EventEmitter<vscode.Uri>();
+  public readonly onDidChangeActiveCustomEditor = this._onDidChangeActiveCustomEditor.event;
+
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly companionManager: CompanionManager = new CompanionManager(),
@@ -37,7 +40,8 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     companionManager?: CompanionManager,
     aiModelService?: AiModelService,
     aiTaskGeneratorService?: AiTaskGeneratorService,
-    aiInboxSorterService?: AiInboxSorterService
+    aiInboxSorterService?: AiInboxSorterService,
+    onActiveChange?: (uri: vscode.Uri) => void
   ): vscode.Disposable {
     const provider = new MarkdownEditorProvider(
       context,
@@ -46,6 +50,9 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       aiTaskGeneratorService,
       aiInboxSorterService
     );
+    if (onActiveChange) {
+      provider.onDidChangeActiveCustomEditor(onActiveChange);
+    }
     return vscode.window.registerCustomEditorProvider(MarkdownEditorProvider.viewType, provider, {
       webviewOptions: {
         retainContextWhenHidden: true,
@@ -134,7 +141,18 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     const subChange = companionWatcher.onDidChange(refreshLinksOnFs);
     const subDelete = companionWatcher.onDidDelete(refreshLinksOnFs);
 
+    const viewStateSubscription = webviewPanel.onDidChangeViewState((e) => {
+      if (e.webviewPanel.active) {
+        this._onDidChangeActiveCustomEditor.fire(document.uri);
+      }
+    });
+
+    if (webviewPanel.active) {
+      this._onDidChangeActiveCustomEditor.fire(document.uri);
+    }
+
     webviewPanel.onDidDispose(() => {
+      viewStateSubscription.dispose();
       changeDocumentSubscription.dispose();
       aiModelChangeSubscription.dispose();
       configChangeSubscription.dispose();
