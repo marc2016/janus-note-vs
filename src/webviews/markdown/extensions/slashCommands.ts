@@ -1,5 +1,6 @@
 import {
   autocompletion,
+  startCompletion,
   CompletionContext,
   CompletionResult,
   Completion,
@@ -10,6 +11,7 @@ import { formatIsoDate } from '../lib/datePickerUtils';
 
 export interface SlashCommandsOptions {
   onOpenDatePicker?: (pos: number, coords: { top: number; left: number } | null) => void;
+  linkCompletionSource?: (context: CompletionContext) => CompletionResult | null;
 }
 
 export function getSlashCommands(options?: SlashCommandsOptions): Completion[] {
@@ -58,6 +60,42 @@ export function getSlashCommands(options?: SlashCommandsOptions): Completion[] {
         if (options?.onOpenDatePicker) {
           options.onOpenDatePicker(from, position);
         }
+      },
+    },
+    {
+      label: '/link',
+      detail: 'Link zu Notiz oder Datei einfügen ([[)',
+      type: 'keyword',
+      apply: (view: EditorView, _completion: Completion, from: number, to: number) => {
+        view.dispatch({
+          changes: { from, to, insert: '[[' },
+          selection: { anchor: from + 2 },
+        });
+        startCompletion(view);
+      },
+    },
+    {
+      label: '/verlinken',
+      detail: 'Link zu Notiz oder Datei einfügen ([[)',
+      type: 'keyword',
+      apply: (view: EditorView, _completion: Completion, from: number, to: number) => {
+        view.dispatch({
+          changes: { from, to, insert: '[[' },
+          selection: { anchor: from + 2 },
+        });
+        startCompletion(view);
+      },
+    },
+    {
+      label: '/note',
+      detail: 'Notiz verlinken ([[)',
+      type: 'keyword',
+      apply: (view: EditorView, _completion: Completion, from: number, to: number) => {
+        view.dispatch({
+          changes: { from, to, insert: '[[' },
+          selection: { anchor: from + 2 },
+        });
+        startCompletion(view);
       },
     },
     {
@@ -194,10 +232,15 @@ export const slashCommandTheme = EditorView.baseTheme({
 });
 
 export function slashCommands(options?: SlashCommandsOptions): Extension {
+  const sources = [createSlashCommandSource(options)];
+  if (options?.linkCompletionSource) {
+    sources.push(options.linkCompletionSource);
+  }
+
   return [
     slashCommandTheme,
     autocompletion({
-      override: [createSlashCommandSource(options)],
+      override: sources,
       icons: false,
     }),
   ];

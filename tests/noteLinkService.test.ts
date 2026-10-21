@@ -295,4 +295,82 @@ Ignore ![Diagram](diagram.png) and [Google](https://google.com) and [Mail](mailt
       expect(applyEditSpy).toHaveBeenCalled();
     });
   });
+
+  describe('findLinkCandidatesInRoot and candidate formatting', () => {
+    it('determines file types correctly', async () => {
+      const { determineFileType } = await import('../src/companion/noteLinking');
+      expect(determineFileType('note.md')).toBe('note');
+      expect(determineFileType('note.markdown')).toBe('note');
+      expect(determineFileType('todo.tasks.json')).toBe('task');
+      expect(determineFileType('tasks.json')).toBe('task');
+      expect(determineFileType('arch.chart.json')).toBe('chart');
+      expect(determineFileType('screenshot.png')).toBe('image');
+      expect(determineFileType('photo.JPG')).toBe('image');
+      expect(determineFileType('icon.svg')).toBe('image');
+      expect(determineFileType('spec.pdf')).toBe('pdf');
+      expect(determineFileType('data.csv')).toBe('file');
+    });
+
+    it('formats link candidates with clean label and insertText', async () => {
+      const { createLinkCandidate } = await import('../src/companion/noteLinking');
+      const noteCandidate = createLinkCandidate('projects/Alpha.md');
+      expect(noteCandidate).toEqual({
+        label: 'Alpha',
+        insertText: 'projects/Alpha',
+        relPath: 'projects/Alpha.md',
+        fileType: 'note',
+      });
+
+      const rootNote = createLinkCandidate('inbox.md');
+      expect(rootNote).toEqual({
+        label: 'inbox',
+        insertText: 'inbox',
+        relPath: 'inbox.md',
+        fileType: 'note',
+      });
+
+      const imgCandidate = createLinkCandidate('assets/diagram.png');
+      expect(imgCandidate).toEqual({
+        label: 'diagram.png',
+        insertText: 'assets/diagram.png',
+        relPath: 'assets/diagram.png',
+        fileType: 'image',
+      });
+    });
+
+    it('discovers files in root and subdirectories while skipping ignored directories', async () => {
+      const { findLinkCandidatesInRoot } = await import('../src/companion/noteLinking');
+
+      vi.spyOn(vscode.workspace.fs, 'readDirectory').mockImplementation(async (uri: vscode.Uri) => {
+        if (uri.path === '/workspace/notes') {
+          return [
+            ['inbox.md', vscode.FileType.File],
+            ['assets', vscode.FileType.Directory],
+            ['node_modules', vscode.FileType.Directory],
+            ['.git', vscode.FileType.Directory],
+          ];
+        }
+        if (uri.path === '/workspace/notes/assets') {
+          return [
+            ['diagram.png', vscode.FileType.File],
+            ['report.pdf', vscode.FileType.File],
+            ['board.tasks.json', vscode.FileType.File],
+          ];
+        }
+        return [];
+      });
+
+      const candidates = await findLinkCandidatesInRoot(notesRootUri);
+      expect(candidates.map((c) => c.relPath)).toEqual([
+        'inbox.md',
+        'assets/board.tasks.json',
+        'assets/diagram.png',
+        'assets/report.pdf',
+      ]);
+      expect(candidates[0].fileType).toBe('note');
+      expect(candidates[1].fileType).toBe('task');
+      expect(candidates[2].fileType).toBe('image');
+      expect(candidates[3].fileType).toBe('pdf');
+    });
+  });
 });

@@ -1,7 +1,7 @@
 import React from 'react';
 import { EditorView } from '@codemirror/view';
 import { undo, redo } from '@codemirror/commands';
-import { toggleInlineFormatting } from '../lib/formatting';
+import { toggleInlineFormatting, insertOrWrapLink } from '../lib/formatting';
 import { Button } from '../../components/ui/button';
 import { MdiIcon } from '../../components/ui/MdiIcon';
 import {
@@ -25,6 +25,7 @@ import {
   mdiEyeOutline,
   mdiEyeOffOutline,
   mdiCalendarMonthOutline,
+  mdiLinkVariant,
 } from '../../../ui/icons';
 import { SyntaxVisibilityMode } from '../extensions/livePreview';
 
@@ -272,6 +273,20 @@ export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
         title="Inline Code (`code`)"
       >
         <MdiIcon path={mdiCodeTags} size={16} />
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-8 w-8 p-0"
+        onClick={() => {
+          if (editorView) {
+            insertOrWrapLink(editorView);
+          }
+        }}
+        title="Link einfügen (Cmd+K / [[)"
+        aria-label="Link einfügen"
+      >
+        <MdiIcon path={mdiLinkVariant} size={17} />
       </Button>
 
       <div className="w-[1px] h-5 bg-border mx-1" />

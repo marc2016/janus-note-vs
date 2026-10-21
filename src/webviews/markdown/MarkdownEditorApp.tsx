@@ -14,6 +14,10 @@ import {
 } from './extensions/livePreview';
 import { taskCheckboxes } from './extensions/taskCheckboxes';
 import { slashCommands } from './extensions/slashCommands';
+import {
+  createLinkAutocompleteSource,
+} from './extensions/linkAutocomplete';
+import { LinkCandidate } from '../../companion/noteLinking';
 import { styledLists } from './extensions/styledLists';
 import { styledTables } from './extensions/styledTables';
 import {
@@ -195,6 +199,7 @@ export const MarkdownEditorApp: React.FC = () => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isUpdatingFromHostRef = useRef<boolean>(false);
   const debounceTimerRef = useRef<any>(null);
+  const linkCandidatesRef = useRef<LinkCandidate[]>([]);
   const datePickerHandlerRef = useRef<
     (pos: number, coords: { top: number; left: number } | null) => void
   >(() => {});
@@ -264,6 +269,7 @@ export const MarkdownEditorApp: React.FC = () => {
         styledTables(),
         slashCommands({
           onOpenDatePicker: (pos, coords) => datePickerHandlerRef.current(pos, coords),
+          linkCompletionSource: createLinkAutocompleteSource(() => linkCandidatesRef.current),
         }),
         EditorView.lineWrapping,
         themeCompartment.of(getEditorTheme(effectiveIsDark)),
@@ -327,6 +333,8 @@ export const MarkdownEditorApp: React.FC = () => {
         }
       } else if (message.type === 'updateLinks' && message.linksData) {
         setLinksData(message.linksData);
+      } else if (message.type === 'updateLinkCandidates' && Array.isArray(message.candidates)) {
+        linkCandidatesRef.current = message.candidates;
       } else if (message.type === 'aiTasksGenerating') {
         setIsGeneratingTasks(Boolean(message.isGenerating));
       } else if (message.type === 'aiInboxSorting') {

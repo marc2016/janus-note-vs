@@ -1,5 +1,6 @@
 import { EditorView, KeyBinding } from '@codemirror/view';
 import { syntaxTree, ensureSyntaxTree } from '@codemirror/language';
+import { startCompletion } from '@codemirror/autocomplete';
 
 export const formattingKeymap: readonly KeyBinding[] = [
   {
@@ -13,6 +14,10 @@ export const formattingKeymap: readonly KeyBinding[] = [
   {
     key: 'Mod-e',
     run: (view: EditorView) => toggleInlineFormatting(view, '`'),
+  },
+  {
+    key: 'Mod-k',
+    run: (view: EditorView) => insertOrWrapLink(view),
   },
 ];
 
@@ -154,4 +159,44 @@ export function toggleInlineFormatting(view: EditorView, marker: string): boolea
     view.focus();
     return true;
   }
+}
+
+/**
+ * Inserts [[ or wraps selected text in [[...]] and triggers link autocomplete.
+ */
+export function insertOrWrapLink(view: EditorView): boolean {
+  if (!view || view.state.readOnly) {
+    return false;
+  }
+
+  const sel = view.state.selection.main;
+  if (sel.from !== sel.to) {
+    const selectedText = view.state.sliceDoc(sel.from, sel.to);
+    if (selectedText.startsWith('[[') && selectedText.endsWith(']]') && selectedText.length >= 4) {
+      const unwrapped = selectedText.slice(2, -2);
+      view.dispatch({
+        changes: { from: sel.from, to: sel.to, insert: unwrapped },
+        selection: { anchor: sel.from, head: sel.from + unwrapped.length },
+      });
+      view.focus();
+      return true;
+    }
+
+    const wrapped = `[[${selectedText}]]`;
+    view.dispatch({
+      changes: { from: sel.from, to: sel.to, insert: wrapped },
+      selection: { anchor: sel.from, head: sel.from + wrapped.length },
+    });
+    view.focus();
+    return true;
+  }
+
+  // Collapsed cursor: insert [[ and trigger link completion
+  view.dispatch({
+    changes: { from: sel.from, insert: '[[' },
+    selection: { anchor: sel.from + 2 },
+  });
+  startCompletion(view);
+  view.focus();
+  return true;
 }

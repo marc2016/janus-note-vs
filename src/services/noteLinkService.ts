@@ -3,6 +3,19 @@ import * as path from 'path';
 import { CompanionManager } from '../companion/companionManager';
 import { isMarkdownNote } from '../companion/companionPaths';
 import { parseTasksCompanion } from '../models/tasks';
+import {
+  LinkCandidate,
+  determineFileType,
+  createLinkCandidate,
+  findLinkCandidatesInRoot,
+} from '../companion/noteLinking';
+
+export {
+  LinkCandidate,
+  determineFileType,
+  createLinkCandidate,
+  findLinkCandidatesInRoot,
+};
 
 export interface ExtractedLink {
   raw: string;

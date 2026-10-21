@@ -5,6 +5,7 @@ import {
   findMarkdownNotesInRoot,
   getNoteLinksData,
 } from '../services/noteLinkService';
+import { findLinkCandidatesInRoot } from '../companion/noteLinking';
 import { AiModelService } from '../services/aiModelService';
 import { AiTaskGeneratorService } from '../services/aiTaskGeneratorService';
 import { AiInboxSorterService } from '../services/aiInboxSorterService';
@@ -106,8 +107,30 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       }
     };
 
+    const sendCandidatesUpdate = async () => {
+      try {
+        const notesRoot = await this.companionManager.getNotesRootUri();
+        if (notesRoot) {
+          const candidates = await findLinkCandidatesInRoot(notesRoot);
+          void webviewPanel.webview.postMessage({
+            type: 'updateLinkCandidates',
+            candidates,
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to compute link candidates:', err);
+      }
+    };
+
     webviewPanel.webview.onDidReceiveMessage(async (message) => {
-      await this.handleWebviewMessage(message, document, webviewPanel, updateWebview, sendLinksUpdate);
+      await this.handleWebviewMessage(
+        message,
+        document,
+        webviewPanel,
+        updateWebview,
+        sendLinksUpdate,
+        sendCandidatesUpdate
+      );
     });
 
     const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument((e) => {
@@ -132,10 +155,11 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     });
 
     const companionWatcher = vscode.workspace.createFileSystemWatcher(
-      '**/{tasks.json,*.tasks.json,*.chart.json,*.md}'
+      '**/{tasks.json,*.tasks.json,*.chart.json,*.md,*.png,*.jpg,*.jpeg,*.svg,*.pdf}'
     );
     const refreshLinksOnFs = () => {
       void sendLinksUpdate();
+      void sendCandidatesUpdate();
     };
     const subCreate = companionWatcher.onDidCreate(refreshLinksOnFs);
     const subChange = companionWatcher.onDidChange(refreshLinksOnFs);
@@ -164,6 +188,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
 
     updateWebview();
     void sendLinksUpdate();
+    void sendCandidatesUpdate();
   }
 
   public async handleWebviewMessage(
@@ -171,7 +196,8 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     document: vscode.TextDocument,
     webviewPanel: vscode.WebviewPanel,
     updateWebview?: () => void,
-    sendLinksUpdate?: () => Promise<void>
+    sendLinksUpdate?: () => Promise<void>,
+    sendCandidatesUpdate?: () => Promise<void>
   ): Promise<void> {
     if (!message || typeof message.type !== 'string') {
       return;
@@ -191,6 +217,18 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
           type: 'updateLinks',
           linksData,
         });
+      }
+      if (sendCandidatesUpdate) {
+        void sendCandidatesUpdate();
+      } else {
+        const notesRoot = await this.companionManager.getNotesRootUri();
+        if (notesRoot) {
+          const candidates = await findLinkCandidatesInRoot(notesRoot);
+          void webviewPanel.webview.postMessage({
+            type: 'updateLinkCandidates',
+            candidates,
+          });
+        }
       }
       return;
     }
