@@ -24,6 +24,7 @@ import {
   mdiEye,
   mdiEyeOutline,
   mdiEyeOffOutline,
+  mdiCalendarMonthOutline,
 } from '../../../ui/icons';
 import { SyntaxVisibilityMode } from '../extensions/livePreview';
 
@@ -57,6 +58,7 @@ interface MarkdownToolbarProps {
   onOpenSource?: () => void;
   syntaxMode?: SyntaxVisibilityMode;
   onToggleSyntaxVisibility?: () => void;
+  onOpenDatePicker?: () => void;
 }
 
 export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
@@ -65,6 +67,7 @@ export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
   onOpenSource,
   syntaxMode = 'auto',
   onToggleSyntaxVisibility,
+  onOpenDatePicker,
 }) => {
   const handleUndo = () => {
     if (editorView) {
@@ -334,6 +337,19 @@ export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
       >
         <MdiIcon path={mdiCodeTags} size={15} />
         <span>Block</span>
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-8 w-8 p-0"
+        onClick={() => {
+          if (onOpenDatePicker) {
+            onOpenDatePicker();
+          }
+        }}
+        title="Datum einfügen (DatePicker)"
+      >
+        <MdiIcon path={mdiCalendarMonthOutline} size={17} />
       </Button>
       <Button
         variant="ghost"

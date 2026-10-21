@@ -21,6 +21,7 @@ import {
   ActiveToolbarState,
   defaultActiveToolbarState,
 } from './components/MarkdownToolbar';
+import { DatePickerPopover } from './components/DatePickerPopover';
 import {
   NotesLinksFooter,
   NoteLinksData,
@@ -185,10 +186,26 @@ export const MarkdownEditorApp: React.FC = () => {
   const [linksData, setLinksData] = useState<NoteLinksData | null>(null);
   const [isGeneratingTasks, setIsGeneratingTasks] = useState<boolean>(false);
   const [isSortingInbox, setIsSortingInbox] = useState<boolean>(false);
+  const [datePickerState, setDatePickerState] = useState<{
+    isOpen: boolean;
+    position: { top: number; left: number };
+    insertPos: number;
+  } | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isUpdatingFromHostRef = useRef<boolean>(false);
   const debounceTimerRef = useRef<any>(null);
+  const datePickerHandlerRef = useRef<
+    (pos: number, coords: { top: number; left: number } | null) => void
+  >(() => {});
+
+  datePickerHandlerRef.current = (pos: number, coords: { top: number; left: number } | null) => {
+    setDatePickerState({
+      isOpen: true,
+      position: coords ? { top: coords.top, left: coords.left } : { top: 80, left: 100 },
+      insertPos: pos,
+    });
+  };
 
   const effectiveIsDark = isSystemDark;
 
@@ -245,7 +262,9 @@ export const MarkdownEditorApp: React.FC = () => {
         styledLists(),
         taskCheckboxes(),
         styledTables(),
-        slashCommands(),
+        slashCommands({
+          onOpenDatePicker: (pos, coords) => datePickerHandlerRef.current(pos, coords),
+        }),
         EditorView.lineWrapping,
         themeCompartment.of(getEditorTheme(effectiveIsDark)),
         EditorView.updateListener.of((update) => {
@@ -387,6 +406,40 @@ export const MarkdownEditorApp: React.FC = () => {
     });
   };
 
+  const handleOpenDatePickerFromToolbar = () => {
+    if (!editorView) return;
+    const sel = editorView.state.selection.main;
+    const pos = sel.head;
+    const coords = editorView.coordsAtPos(pos);
+    const position = coords
+      ? { top: coords.bottom, left: coords.left }
+      : { top: 80, left: 100 };
+    setDatePickerState({
+      isOpen: true,
+      position,
+      insertPos: pos,
+    });
+  };
+
+  const handleDateSelected = (dateStr: string) => {
+    if (editorView && datePickerState) {
+      const { insertPos } = datePickerState;
+      editorView.dispatch({
+        changes: { from: insertPos, insert: dateStr },
+        selection: { anchor: insertPos + dateStr.length },
+      });
+      editorView.focus();
+    }
+    setDatePickerState(null);
+  };
+
+  const handleDatePickerClose = () => {
+    setDatePickerState(null);
+    if (editorView) {
+      editorView.focus();
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen overflow-hidden box-border bg-[var(--vscode-editor-background,#1e1e1e)] text-[var(--vscode-editor-foreground,#d4d4d4)] font-sans">
       {/* Formatting Toolbar with Active States and Open Source Action */}
@@ -397,6 +450,7 @@ export const MarkdownEditorApp: React.FC = () => {
           onOpenSource={handleOpenSource}
           syntaxMode={syntaxMode}
           onToggleSyntaxVisibility={handleToggleSyntaxVisibility}
+          onOpenDatePicker={handleOpenDatePickerFromToolbar}
         />
       </div>
 
@@ -405,6 +459,16 @@ export const MarkdownEditorApp: React.FC = () => {
         ref={containerRef}
         className="flex-1 min-h-0 overflow-hidden outline-none w-full"
       />
+
+      {/* DatePicker Popover */}
+      {datePickerState?.isOpen && (
+        <DatePickerPopover
+          isOpen={datePickerState.isOpen}
+          position={datePickerState.position}
+          onSelect={handleDateSelected}
+          onClose={handleDatePickerClose}
+        />
+      )}
 
       {/* Interactive Links & Companions Footer Bar */}
       <NotesLinksFooter
