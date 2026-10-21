@@ -6,8 +6,11 @@ import { TasksEditorProvider } from './editors/tasksEditorProvider';
 import { ChartEditorProvider } from './editors/chartEditorProvider';
 import { MarkdownEditorProvider } from './editors/markdownEditorProvider';
 import { GlobalTasksViewProvider } from './editors/globalTasksViewProvider';
+import { CalendarViewProvider } from './editors/calendarViewProvider';
+import { CalendarDayDetailsViewProvider } from './editors/calendarDayDetailsViewProvider';
 import { SettingsViewProvider } from './editors/settingsViewProvider';
 import { FolderTasksService } from './services/folderTasksService';
+import { CalendarService } from './services/calendarService';
 import { AiModelService } from './services/aiModelService';
 import { AiTaskGeneratorService } from './services/aiTaskGeneratorService';
 import { AiInboxSorterService } from './services/aiInboxSorterService';
@@ -44,11 +47,29 @@ export function activate(context: vscode.ExtensionContext) {
   const janusSearchService = new JanusSearchService(companionManager, folderTasksService);
   const codeLensProvider = new CompanionCodeLensProvider(companionManager);
   const companionWatcher = new CompanionWatcher(codeLensProvider);
-  const notesTreeDataProvider = new NotesTreeDataProvider(companionManager, folderTasksService);
+  const calendarService = new CalendarService(folderTasksService);
+  const notesTreeDataProvider = new NotesTreeDataProvider(
+    companionManager,
+    folderTasksService,
+    calendarService
+  );
   const globalTasksViewProvider = new GlobalTasksViewProvider(
     context,
     folderTasksService,
     () => notesTreeDataProvider.refresh()
+  );
+  const calendarDayDetailsViewProvider = new CalendarDayDetailsViewProvider(
+    context,
+    calendarService,
+    folderTasksService,
+    () => notesTreeDataProvider.refresh()
+  );
+  const calendarViewProvider = new CalendarViewProvider(
+    context,
+    calendarService,
+    folderTasksService,
+    () => notesTreeDataProvider.refresh(),
+    calendarDayDetailsViewProvider
   );
   const settingsViewProvider = new SettingsViewProvider(context, aiModelService);
   const notesTreeView = vscode.window.createTreeView('janus.notesView', {
@@ -65,6 +86,10 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.languages.registerCodeLensProvider({ language: 'markdown' }, codeLensProvider),
     vscode.workspace.registerTextDocumentContentProvider(DiffContentProvider.scheme, diffContentProvider),
     notesTreeView,
+    vscode.window.registerWebviewViewProvider(
+      CalendarDayDetailsViewProvider.viewType,
+      calendarDayDetailsViewProvider
+    ),
     TasksEditorProvider.register(context),
     ChartEditorProvider.register(context),
     MarkdownEditorProvider.register(
@@ -81,12 +106,19 @@ export function activate(context: vscode.ExtensionContext) {
     companionWatcher.onDidChangeCompanion(() => {
       notesTreeDataProvider.refresh();
       globalTasksViewProvider.refresh();
+      calendarViewProvider.refresh();
+      calendarDayDetailsViewProvider.refresh();
       updateNotesContextKeys(companionManager);
     })
   );
 
   // Initial context keys update on activation
   updateNotesContextKeys(companionManager);
+  void checkNotesRootStatus(companionManager).then((st) => {
+    if (st.notesRootUri) {
+      calendarDayDetailsViewProvider.setNotesRootUri(st.notesRootUri);
+    }
+  });
 
   // 3. Register Language Model Tools
   if (vscode.lm && typeof vscode.lm.registerTool === 'function') {
@@ -212,6 +244,15 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
       await globalTasksViewProvider.open(rootUri);
+    }),
+    vscode.commands.registerCommand('janus.openCalendar', async () => {
+      const status = await checkNotesRootStatus(companionManager);
+      const rootUri = status.notesRootUri;
+      if (!rootUri) {
+        vscode.window.showErrorMessage('Kein Notizen-Ordner im Workspace gefunden.');
+        return;
+      }
+      await calendarViewProvider.open(rootUri);
     }),
     vscode.commands.registerCommand('janus.openFolderTasks', async (item?: NotesTreeItem | vscode.Uri) => {
       let folderUri: vscode.Uri | undefined;

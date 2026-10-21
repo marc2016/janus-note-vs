@@ -4,6 +4,7 @@ import { CompanionManager } from '../src/companion/companionManager';
 import {
   NotesTreeDataProvider,
   AllTasksTreeItem,
+  CalendarTreeItem,
   FolderTasksTreeItem,
   FolderTreeItem,
   NoteTreeItem,
@@ -100,8 +101,8 @@ describe('NotesTreeDataProvider', () => {
 
     const items = await provider.getChildren();
 
-    // Should contain: AllTasksTreeItem, subfolder (FolderTreeItem), architecture.markdown (NoteTreeItem), meeting.md (NoteTreeItem)
-    expect(items.length).toBe(4);
+    // Should contain: AllTasksTreeItem, CalendarTreeItem, subfolder (FolderTreeItem), architecture.markdown (NoteTreeItem), meeting.md (NoteTreeItem)
+    expect(items.length).toBe(5);
 
     const allTasksItem = items[0] as AllTasksTreeItem;
     expect(allTasksItem instanceof AllTasksTreeItem).toBe(true);
@@ -109,19 +110,24 @@ describe('NotesTreeDataProvider', () => {
     expect(allTasksItem.description).toBe('(2 offen)');
     expect(allTasksItem.command?.command).toBe('janus.openAllTasks');
 
-    const folderItem = items[1] as FolderTreeItem;
+    const calendarItem = items[1] as CalendarTreeItem;
+    expect(calendarItem instanceof CalendarTreeItem).toBe(true);
+    expect(calendarItem.label).toBe('Kalender');
+    expect(calendarItem.command?.command).toBe('janus.openCalendar');
+
+    const folderItem = items[2] as FolderTreeItem;
     expect(folderItem instanceof FolderTreeItem).toBe(true);
     expect(folderItem.label).toBe('subfolder');
     expect(folderItem.collapsibleState).toBe(vscode.TreeItemCollapsibleState.Collapsed);
 
-    const note1 = items[2] as NoteTreeItem;
+    const note1 = items[3] as NoteTreeItem;
     expect(note1 instanceof NoteTreeItem).toBe(true);
     expect(note1.label).toBe('architecture.markdown');
     expect(note1.collapsibleState).toBe(vscode.TreeItemCollapsibleState.None);
     expect(note1.command?.command).toBe('vscode.openWith');
     expect(note1.command?.arguments).toEqual([note1.uri, 'janus.markdownEditor']);
 
-    const note2 = items[3] as NoteTreeItem;
+    const note2 = items[4] as NoteTreeItem;
     expect(note2 instanceof NoteTreeItem).toBe(true);
     expect(note2.label).toBe('meeting.md');
     expect(note2.collapsibleState).toBe(vscode.TreeItemCollapsibleState.Collapsed);

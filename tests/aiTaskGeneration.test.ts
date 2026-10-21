@@ -94,20 +94,20 @@ describe('aiTaskGeneration', () => {
   });
 
   describe('parseAiExtractedTasks & AiTaskGeneratorService', () => {
-    it('parses JSON tasks even when wrapped in markdown code fences', () => {
+    it('parses JSON tasks even when wrapped in markdown code fences and normalizes dueDate', () => {
       const raw = `Hier sind die Aufgaben:
 \`\`\`json
 {
   "tasks": [
-    { "title": "Datenbank-Migration schreiben", "priority": "high" },
-    { "title": "Dokumentation aktualisieren", "priority": "low" }
+    { "title": "Datenbank-Migration schreiben", "priority": "high", "dueDate": "2026-10-24" },
+    { "title": "Dokumentation aktualisieren", "priority": "low", "dueDate": "28.10.2026" }
   ]
 }
 \`\`\``;
       const tasks = parseAiExtractedTasks(raw);
       expect(tasks).toEqual([
-        { title: 'Datenbank-Migration schreiben', priority: 'high' },
-        { title: 'Dokumentation aktualisieren', priority: 'low' },
+        { title: 'Datenbank-Migration schreiben', priority: 'high', dueDate: '2026-10-24' },
+        { title: 'Dokumentation aktualisieren', priority: 'low', dueDate: '2026-10-28' },
       ]);
     });
 

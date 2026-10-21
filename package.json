@@ -19,7 +19,8 @@
   "main": "./dist/extension.js",
   "activationEvents": [
     "onStartupFinished",
-    "onView:janus.notesView"
+    "onView:janus.notesView",
+    "onView:janus.calendarDayDetailsView"
   ],
   "contributes": {
     "configuration": {
@@ -86,6 +87,11 @@
         {
           "id": "janus.notesView",
           "name": "Notes"
+        },
+        {
+          "id": "janus.calendarDayDetailsView",
+          "name": "Tagesdetails",
+          "type": "webview"
         }
       ]
     },
@@ -159,6 +165,11 @@
         "command": "janus.openAllTasks",
         "title": "Janus: Alle Aufgaben öffnen",
         "icon": "$(checklist)"
+      },
+      {
+        "command": "janus.openCalendar",
+        "title": "Janus: Kalender öffnen",
+        "icon": "$(calendar)"
       },
       {
         "command": "janus.openFolderTasks",

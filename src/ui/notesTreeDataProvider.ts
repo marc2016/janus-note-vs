@@ -10,13 +10,36 @@ import {
   getLocalizedRootFolderLabel,
 } from '../commands/notesRootCommands';
 import { FolderTasksService } from '../services/folderTasksService';
+import { CalendarService } from '../services/calendarService';
 
 export type NotesTreeItem =
   | AllTasksTreeItem
+  | CalendarTreeItem
   | FolderTasksTreeItem
   | FolderTreeItem
   | NoteTreeItem
   | CompanionTreeItem;
+
+export class CalendarTreeItem extends vscode.TreeItem {
+  public readonly uri: vscode.Uri;
+
+  constructor(
+    public readonly eventCount: number = 0,
+    notesRootUri?: vscode.Uri
+  ) {
+    super('Kalender', vscode.TreeItemCollapsibleState.None);
+
+    this.uri = notesRootUri || vscode.Uri.parse('janus-calendar:///all');
+    this.contextValue = 'janusCalendar';
+    this.iconPath = new vscode.ThemeIcon('calendar');
+    this.description = `(${eventCount} Termine)`;
+    this.tooltip = `Kalender (Monatsansicht & Termine, ${eventCount} Einträge)`;
+    this.command = {
+      command: 'janus.openCalendar',
+      title: 'Kalender öffnen',
+    };
+  }
+}
 
 export class AllTasksTreeItem extends vscode.TreeItem {
   public readonly uri: vscode.Uri;
@@ -147,7 +170,8 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
 
   constructor(
     private readonly companionManager: CompanionManager,
-    private readonly folderTasksService: FolderTasksService = new FolderTasksService()
+    private readonly folderTasksService: FolderTasksService = new FolderTasksService(),
+    private readonly calendarService: CalendarService = new CalendarService(folderTasksService)
   ) {}
 
   refresh(): void {
@@ -167,8 +191,10 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
       }
       const totalOpen = await this.folderTasksService.countTotalOpenTasks(status.notesRootUri);
       const allTasksItem = new AllTasksTreeItem(totalOpen, status.notesRootUri);
+      const eventCount = await this.calendarService.countCalendarEntries(status.notesRootUri);
+      const calendarItem = new CalendarTreeItem(eventCount, status.notesRootUri);
       const dirItems = await this.readDirectoryItems(status.notesRootUri, false);
-      return [allTasksItem, ...dirItems];
+      return [allTasksItem, calendarItem, ...dirItems];
     }
 
     if (element instanceof FolderTreeItem) {

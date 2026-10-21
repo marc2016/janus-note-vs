@@ -40,18 +40,18 @@ The system SHALL provide a command `janus.openCalendar` that opens a Calendar Mo
 - **WHEN** the user clicks directly on a note event chip in the Calendar Month View
 - **THEN** the system opens the linked Markdown note in the Janus Markdown Editor
 
-### Requirement: Synchronized Day Details VS Code Panel in Split Editor
-When the user clicks a day cell in the Calendar Month View, the system SHALL open (or update if already open) a dedicated VS Code WebviewPanel in the adjacent editor group (`ViewColumn.Beside`) displaying the detailed schedule for that date. The Day Details panel SHALL list:
+### Requirement: Synchronized Day Details Sidebar Panel
+When the user clicks a day cell in the Calendar Month View, the system SHALL reveal and update a dedicated Day Details Sidebar Webview Panel (`janus.calendarDayDetailsView` in the Janus Note view container) displaying the detailed schedule for that date. The Day Details panel SHALL list:
 - All note appointments for the selected day (including time, title, source line/context, and a clickable button/badge to open the source note)
 - All tasks due on the selected day (including an interactive checkbox to toggle task completion directly in `tasks.json`, priority badge, and a clickable link to the associated note or folder tasks)
 
-#### Scenario: Clicking a day opens the Day Details panel beside the calendar
+#### Scenario: Clicking a day updates the Day Details sidebar panel
 - **WHEN** the user clicks on `24. Oktober 2026` in the Calendar Month View
-- **THEN** a dedicated VS Code WebviewPanel (`Tagesdetails`) opens in `ViewColumn.Beside` displaying all note appointments and due tasks for `2026-10-24`
+- **THEN** the Day Details sidebar panel (`Tagesdetails`) reveals and updates to display all note appointments and due tasks for `2026-10-24`
 
 #### Scenario: Selecting another day updates existing Day Details panel
-- **WHEN** the Day Details panel is already open in `ViewColumn.Beside` and the user clicks on `28. Oktober 2026` in the Calendar Month View
-- **THEN** the existing Day Details panel updates in place to display the entries for `2026-10-28` without spawning duplicate editor tabs
+- **WHEN** the Day Details sidebar panel is active and the user clicks on `28. Oktober 2026` in the Calendar Month View
+- **THEN** the Day Details sidebar panel updates in place to display the entries for `2026-10-28`
 
 #### Scenario: Toggling a due task from the Day Details panel
 - **WHEN** the user toggles the completion checkbox of a due task inside the Day Details panel

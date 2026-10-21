@@ -8,6 +8,7 @@ import { TaskItem, TaskItemSchema, TaskPrioritySchema } from '../models/tasks';
 const ExtractedTaskSchema = z.object({
   title: z.string().min(1),
   priority: TaskPrioritySchema.optional().default('medium'),
+  dueDate: z.string().optional(),
 });
 
 const ExtractedTasksResponseSchema = z.union([
@@ -23,12 +24,31 @@ export interface GenerateTasksResult {
   totalTasks: number;
 }
 
+export function normalizeDueDate(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+  const deMatch = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
+  if (deMatch) {
+    const day = Number(deMatch[1]);
+    const month = Number(deMatch[2]);
+    let year = Number(deMatch[3]);
+    if (year < 100) year += 2000;
+    const dStr = day < 10 ? `0${day}` : String(day);
+    const mStr = month < 10 ? `0${month}` : String(month);
+    return `${year}-${mStr}-${dStr}`;
+  }
+  return undefined;
+}
+
 /**
  * Extracts a JSON object or array from an LLM response that may contain Markdown code fences or surrounding text.
  */
 export function parseAiExtractedTasks(
   rawResponse: string
-): Array<{ title: string; priority: 'low' | 'medium' | 'high' }> {
+): Array<{ title: string; priority: 'low' | 'medium' | 'high'; dueDate?: string }> {
   const cleaned = rawResponse
     .replace(/```(?:json)?\s*/gi, '')
     .replace(/```/g, '')
@@ -66,6 +86,7 @@ export function parseAiExtractedTasks(
     .map((item) => ({
       title: item.title.trim(),
       priority: item.priority || 'medium',
+      dueDate: normalizeDueDate(item.dueDate),
     }))
     .filter((item) => item.title.length > 0);
 }
@@ -107,7 +128,8 @@ export class AiTaskGeneratorService {
       '1. Erstelle KEINE Duplikate zu bereits im Ordner vorhandenen Aufgaben.',
       '2. Behalte die Sprache der Notiz bei.',
       '3. Antworte AUSSCHLIESSLICH mit gültigem JSON im folgenden Format (ohne Markdown-Erklärungen):',
-      '{"tasks": [{"title": "Kurzer, prägnanter Aufgabentitel", "priority": "low" | "medium" | "high"}]}',
+      '{"tasks": [{"title": "Kurzer, prägnanter Aufgabentitel", "priority": "low" | "medium" | "high", "dueDate": "YYYY-MM-DD"}]}',
+      'Wenn für eine Aufgabe kein Fälligkeitsdatum genannt wird, lasse das Feld dueDate weg oder setze null.',
       'Wenn keine neuen Aufgaben in der Notiz enthalten sind, antworte mit {"tasks": []}.',
     ].join('\n');
 
@@ -141,6 +163,7 @@ export class AiTaskGeneratorService {
         completed: false,
         status: 'todo',
         priority: candidate.priority,
+        dueDate: candidate.dueDate,
         note: noteFileName,
         createdAt: now,
       });
@@ -160,4 +183,3 @@ export class AiTaskGeneratorService {
     };
   }
 }
-
