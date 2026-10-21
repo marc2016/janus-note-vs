@@ -116,9 +116,23 @@ export const livePreviewTheme = EditorView.baseTheme({
     lineHeight: '0.5rem',
     margin: '0.5rem 0',
   },
+  '.cm-link-text': {
+    color: 'var(--vscode-textLink-foreground, #3b82f6)',
+    textDecoration: 'underline',
+    textUnderlineOffset: '2px',
+    cursor: 'pointer',
+    transition: 'color 0.15s ease',
+  },
+  '.cm-link-text:hover': {
+    color: 'var(--vscode-textLink-activeForeground, #60a5fa)',
+  },
+  '.cm-link-editing': {
+    // Keep cursor as pointer so users can always click links directly
+    cursor: 'pointer',
+  },
 });
 
-function buildDecorations(view: EditorView): DecorationSet {
+export function buildDecorations(view: EditorView): DecorationSet {
   const mode = view.state.facet(syntaxVisibilityFacet);
   const builder: Range<Decoration>[] = [];
   const selection = view.state.selection.main;
@@ -171,6 +185,153 @@ function buildDecorations(view: EditorView): DecorationSet {
             class: 'cm-hr',
           }).range(line.from)
         );
+      }
+
+      // Inline Link Decorations: wiki-links [[Target]] or [[Target|Alias]]
+      const wikiRe = /\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]+))?\]\]/g;
+      let wikiMatch: RegExpExecArray | null;
+      const coveredLinkRanges: { from: number; to: number }[] = [];
+
+      while ((wikiMatch = wikiRe.exec(line.text)) !== null) {
+        const matchStart = line.from + wikiMatch.index;
+        const matchEnd = matchStart + wikiMatch[0].length;
+        coveredLinkRanges.push({ from: matchStart, to: matchEnd });
+
+        const target = wikiMatch[1].trim();
+        const hasAlias = Boolean(wikiMatch[2] && wikiMatch[2].trim());
+        const isCursorInside =
+          (cursorHead >= matchStart && cursorHead <= matchEnd) ||
+          (cursorAnchor >= matchStart && cursorAnchor <= matchEnd);
+        const shouldHide = mode === 'hidden' || (mode === 'auto' && !isCursorInside);
+
+        if (hasAlias) {
+          const pipeIndex = wikiMatch[0].indexOf('|');
+          const pipePos = matchStart + pipeIndex;
+
+          if (shouldHide) {
+            builder.push(
+              Decoration.mark({ class: 'cm-syntax-hidden' }).range(matchStart, pipePos + 1)
+            );
+            builder.push(
+              Decoration.mark({
+                class: 'cm-link-text',
+                attributes: {
+                  'data-link-target': target,
+                  'data-link-type': 'wiki',
+                },
+              }).range(pipePos + 1, matchEnd - 2)
+            );
+            builder.push(
+              Decoration.mark({ class: 'cm-syntax-hidden' }).range(matchEnd - 2, matchEnd)
+            );
+          } else {
+            builder.push(
+              Decoration.mark({
+                class: isCursorInside ? 'cm-link-text cm-link-editing' : 'cm-link-text',
+                attributes: {
+                  'data-link-target': target,
+                  'data-link-type': 'wiki',
+                },
+              }).range(matchStart + 2, matchEnd - 2)
+            );
+          }
+        } else {
+          if (shouldHide) {
+            builder.push(
+              Decoration.mark({ class: 'cm-syntax-hidden' }).range(matchStart, matchStart + 2)
+            );
+            builder.push(
+              Decoration.mark({
+                class: 'cm-link-text',
+                attributes: {
+                  'data-link-target': target,
+                  'data-link-type': 'wiki',
+                },
+              }).range(matchStart + 2, matchEnd - 2)
+            );
+            builder.push(
+              Decoration.mark({ class: 'cm-syntax-hidden' }).range(matchEnd - 2, matchEnd)
+            );
+          } else {
+            builder.push(
+              Decoration.mark({
+                class: isCursorInside ? 'cm-link-text cm-link-editing' : 'cm-link-text',
+                attributes: {
+                  'data-link-target': target,
+                  'data-link-type': 'wiki',
+                },
+              }).range(matchStart + 2, matchEnd - 2)
+            );
+          }
+        }
+      }
+
+      // Inline Link Decorations: Markdown links [Label](target)
+      const mdLinkRe = /(?<!!)\[([^\]]+)\]\(([^)]+)\)/g;
+      let mdMatch: RegExpExecArray | null;
+      while ((mdMatch = mdLinkRe.exec(line.text)) !== null) {
+        const matchStart = line.from + mdMatch.index;
+        const matchEnd = matchStart + mdMatch[0].length;
+        coveredLinkRanges.push({ from: matchStart, to: matchEnd });
+
+        const label = mdMatch[1];
+        const target = mdMatch[2].trim();
+        const labelStart = matchStart + 1;
+        const labelEnd = labelStart + label.length;
+
+        const isCursorInside =
+          (cursorHead >= matchStart && cursorHead <= matchEnd) ||
+          (cursorAnchor >= matchStart && cursorAnchor <= matchEnd);
+        const shouldHide = mode === 'hidden' || (mode === 'auto' && !isCursorInside);
+        const linkType = target.startsWith('http') ? 'external' : 'markdown';
+
+        if (shouldHide) {
+          builder.push(
+            Decoration.mark({ class: 'cm-syntax-hidden' }).range(matchStart, labelStart)
+          );
+          builder.push(
+            Decoration.mark({
+              class: 'cm-link-text',
+              attributes: {
+                'data-link-target': target,
+                'data-link-type': linkType,
+              },
+            }).range(labelStart, labelEnd)
+          );
+          builder.push(
+            Decoration.mark({ class: 'cm-syntax-hidden' }).range(labelEnd, matchEnd)
+          );
+        } else {
+          builder.push(
+            Decoration.mark({
+              class: isCursorInside ? 'cm-link-text cm-link-editing' : 'cm-link-text',
+              attributes: {
+                'data-link-target': target,
+                'data-link-type': linkType,
+              },
+            }).range(labelStart, labelEnd)
+          );
+        }
+      }
+
+      // Inline Link Decorations: Bare external URLs https://... or http://...
+      const bareUrlRe = /(?<![(\[="])\bhttps?:\/\/[^\s<>)\]]+/g;
+      let urlMatch: RegExpExecArray | null;
+      while ((urlMatch = bareUrlRe.exec(line.text)) !== null) {
+        const urlStart = line.from + urlMatch.index;
+        const urlEnd = urlStart + urlMatch[0].length;
+        const isCovered = coveredLinkRanges.some((r) => urlStart >= r.from && urlEnd <= r.to);
+        if (!isCovered) {
+          builder.push(
+            Decoration.mark({
+              class: 'cm-link-text',
+              attributes: {
+                'data-link-target': urlMatch[0],
+                'data-link-type': 'external',
+              },
+            }).range(urlStart, urlEnd)
+          );
+        }
       }
 
       if (line.to >= view.state.doc.length) break;
@@ -279,6 +440,7 @@ function buildDecorations(view: EditorView): DecorationSet {
     });
   }
 
+  builder.sort((a, b) => a.from - b.from || a.to - b.to);
   return Decoration.set(builder, true);
 }
 

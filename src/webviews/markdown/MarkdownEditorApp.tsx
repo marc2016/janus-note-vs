@@ -20,6 +20,7 @@ import {
 import { LinkCandidate } from '../../companion/noteLinking';
 import { styledLists } from './extensions/styledLists';
 import { styledTables } from './extensions/styledTables';
+import { clickableLinks } from './extensions/clickableLinks';
 import {
   MarkdownToolbar,
   ActiveToolbarState,
@@ -200,6 +201,7 @@ export const MarkdownEditorApp: React.FC = () => {
   const isUpdatingFromHostRef = useRef<boolean>(false);
   const debounceTimerRef = useRef<any>(null);
   const linkCandidatesRef = useRef<LinkCandidate[]>([]);
+  const handleOpenLinkRef = useRef<(target: string, viewType?: string) => void>(() => {});
   const datePickerHandlerRef = useRef<
     (pos: number, coords: { top: number; left: number } | null) => void
   >(() => {});
@@ -264,6 +266,7 @@ export const MarkdownEditorApp: React.FC = () => {
         keymap.of([...formattingKeymap, ...defaultKeymap, ...historyKeymap]),
         markdown({ extensions: [Table] }),
         livePreview(syntaxMode),
+        clickableLinks({ onOpenLink: (target) => handleOpenLinkRef.current(target) }),
         styledLists(),
         taskCheckboxes(),
         styledTables(),
@@ -346,6 +349,30 @@ export const MarkdownEditorApp: React.FC = () => {
     return () => window.removeEventListener('message', handleMessage);
   }, [editorView]);
 
+  // Direct click handler for inline links in Live Preview (capture phase fallback)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleContainerClick = (e: MouseEvent) => {
+      if (e.button !== 0 || e.altKey) return;
+
+      const linkEl = (e.target as HTMLElement)?.closest?.('.cm-link-text') as HTMLElement | null;
+      if (!linkEl) return;
+
+      const target = linkEl.getAttribute('data-link-target');
+      if (!target) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      handleOpenLink(target);
+    };
+
+    container.addEventListener('click', handleContainerClick, { capture: true });
+    return () => container.removeEventListener('click', handleContainerClick, { capture: true });
+  }, []);
+
   const handleOpenSource = () => {
     const api = getVsCodeApi();
     if (api) {
@@ -363,6 +390,7 @@ export const MarkdownEditorApp: React.FC = () => {
       });
     }
   };
+  handleOpenLinkRef.current = handleOpenLink;
 
   const handleAddLink = () => {
     const api = getVsCodeApi();

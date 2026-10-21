@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { CompanionManager } from '../companion/companionManager';
+import { isMarkdownNote } from '../companion/companionPaths';
 import {
   findMarkdownNotesInRoot,
   getNoteLinksData,
+  resolveOutgoingLink,
 } from '../services/noteLinkService';
 import { findLinkCandidatesInRoot } from '../companion/noteLinking';
 import { AiModelService } from '../services/aiModelService';
@@ -373,9 +375,102 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     if (message.type === 'openLink' && typeof message.targetUri === 'string') {
-      const targetUri = message.targetUri.includes('://')
-        ? vscode.Uri.parse(message.targetUri)
-        : vscode.Uri.file(message.targetUri);
+      const rawTarget = message.targetUri.trim();
+      if (!rawTarget) {
+        return;
+      }
+
+      // External URLs & mailto
+      if (/^https?:\/\//i.test(rawTarget) || /^mailto:/i.test(rawTarget)) {
+        await vscode.env.openExternal(vscode.Uri.parse(rawTarget));
+        return;
+      }
+
+      // Clean syntax delimiters (e.g. [[Target]] or [Label](url)), title attributes, and hash fragments
+      let cleanTarget = rawTarget;
+      const mdMatch = cleanTarget.match(/^\[.*\]\((.*)\)$/);
+      if (mdMatch) {
+        cleanTarget = mdMatch[1].trim();
+      }
+      cleanTarget = cleanTarget.replace(/^\[\[/, '').replace(/\]\]$/, '').trim();
+      cleanTarget = cleanTarget.split(/\s+["']/)[0].split('#')[0].trim();
+
+      if (!cleanTarget) {
+        return;
+      }
+
+      if (/^https?:\/\//i.test(cleanTarget) || /^mailto:/i.test(cleanTarget)) {
+        await vscode.env.openExternal(vscode.Uri.parse(cleanTarget));
+        return;
+      }
+
+      const notesRootUri = this.companionManager.getNotesRootUri(document.uri);
+      let targetUri: vscode.Uri;
+      let exists = false;
+
+      if (cleanTarget.startsWith('file://')) {
+        targetUri = vscode.Uri.parse(cleanTarget);
+        try {
+          await vscode.workspace.fs.stat(targetUri);
+          exists = true;
+        } catch {
+          exists = false;
+        }
+      } else if (path.isAbsolute(cleanTarget)) {
+        targetUri = vscode.Uri.file(cleanTarget);
+        try {
+          await vscode.workspace.fs.stat(targetUri);
+          exists = true;
+        } catch {
+          exists = false;
+        }
+      } else {
+        const workspaceNotes = notesRootUri ? await findMarkdownNotesInRoot(notesRootUri) : [];
+        const resolved = await resolveOutgoingLink(
+          {
+            raw: cleanTarget,
+            target: cleanTarget,
+            label: cleanTarget,
+            type: 'wiki',
+          },
+          document.uri,
+          notesRootUri,
+          workspaceNotes
+        );
+        targetUri = vscode.Uri.parse(resolved.uri);
+        exists = resolved.exists;
+      }
+
+      // If target note does not exist, prompt user to confirm creation
+      if (!exists) {
+        if (isMarkdownNote(targetUri.fsPath)) {
+          const baseTitle = path.basename(targetUri.fsPath).replace(/\.(md|markdown)$/i, '');
+          const choice = await vscode.window.showInformationMessage(
+            `Notiz '${baseTitle}' existiert nicht. Jetzt erstellen?`,
+            'Erstellen',
+            'Abbrechen'
+          );
+          if (choice !== 'Erstellen') {
+            return;
+          }
+          try {
+            await vscode.workspace.fs.createDirectory(
+              vscode.Uri.file(path.dirname(targetUri.fsPath))
+            );
+          } catch {
+            // parent directory might already exist
+          }
+          await vscode.workspace.fs.writeFile(
+            targetUri,
+            Buffer.from(`# ${baseTitle}\n\n`, 'utf-8')
+          );
+        } else {
+          void vscode.window.showErrorMessage(
+            `Datei '${path.basename(targetUri.fsPath)}' existiert nicht.`
+          );
+          return;
+        }
+      }
 
       let viewType = message.viewType as string | undefined;
       if (!viewType) {
@@ -383,25 +478,16 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
           viewType = TasksEditorProvider.viewType;
         } else if (targetUri.fsPath.endsWith('.chart.json')) {
           viewType = ChartEditorProvider.viewType;
-        } else {
+        } else if (isMarkdownNote(targetUri.fsPath)) {
           viewType = MarkdownEditorProvider.viewType;
         }
       }
 
-      // If target is a missing markdown note, create it on click so broken wiki-links work seamlessly
-      if (viewType === MarkdownEditorProvider.viewType) {
-        try {
-          await vscode.workspace.fs.stat(targetUri);
-        } catch {
-          const baseTitle = path.basename(targetUri.fsPath).replace(/\.(md|markdown)$/i, '');
-          await vscode.workspace.fs.writeFile(
-            targetUri,
-            Buffer.from(`# ${baseTitle}\n\n`, 'utf-8')
-          );
-        }
+      if (viewType) {
+        await vscode.commands.executeCommand('vscode.openWith', targetUri, viewType);
+      } else {
+        await vscode.commands.executeCommand('vscode.open', targetUri);
       }
-
-      await vscode.commands.executeCommand('vscode.openWith', targetUri, viewType);
       return;
     }
 

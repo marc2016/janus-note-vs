@@ -14,10 +14,19 @@ export class Uri {
   }
 
   static parse(str: string): Uri {
-    const parts = str.split('://');
-    const scheme = parts[0] || 'file';
-    const path = parts[1] || '';
-    return new Uri(scheme, '', path);
+    try {
+      const u = new URL(str);
+      const scheme = u.protocol.replace(/:$/, '');
+      if (scheme === 'mailto') {
+        return new Uri(scheme, '', u.pathname);
+      }
+      return new Uri(scheme, u.host, u.pathname);
+    } catch {
+      const parts = str.split('://');
+      const scheme = parts[0] || 'file';
+      const path = parts[1] || '';
+      return new Uri(scheme, '', path);
+    }
   }
 
   static joinPath(base: Uri, ...pathSegments: string[]): Uri {
@@ -280,6 +289,7 @@ export class WorkspaceEdit {
 
 export const env = {
   language: 'de',
+  openExternal: async (_uri: any) => true,
 };
 
 
