@@ -7,6 +7,7 @@ import {
   getNoteLinksData,
   resolveOutgoingLink,
   findLinkCandidatesAcrossRoots,
+  parseLinkTargetAndLine,
 } from '../services/noteLinkService';
 import { findLinkCandidatesInRoot } from '../companion/noteLinking';
 import { AiModelService } from '../services/aiModelService';
@@ -23,6 +24,39 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
 
   private readonly _onDidChangeActiveCustomEditor = new vscode.EventEmitter<vscode.Uri>();
   public readonly onDidChangeActiveCustomEditor = this._onDidChangeActiveCustomEditor.event;
+
+  private readonly _activePanels = new Map<string, vscode.WebviewPanel>();
+  private readonly _pendingLineReveals = new Map<string, number>();
+
+  public setPendingLineReveal(uri: vscode.Uri, line: number): void {
+    this._pendingLineReveals.set(uri.toString(), line);
+  }
+
+  public getOpenWebviewPanel(uri: vscode.Uri): vscode.WebviewPanel | undefined {
+    return this._activePanels.get(uri.toString());
+  }
+
+  private static readonly _lineHighlightDecorationType = vscode.window.createTextEditorDecorationType({
+    isWholeLine: true,
+    backgroundColor: new vscode.ThemeColor('editor.findMatchHighlightBackground'),
+    borderWidth: '0 0 0 4px',
+    borderStyle: 'solid',
+    borderColor: new vscode.ThemeColor('focusBorder'),
+  });
+
+  private highlightLineInTextEditor(editor: vscode.TextEditor, range: vscode.Range): void {
+    editor.setDecorations(MarkdownEditorProvider._lineHighlightDecorationType, [range]);
+
+    const highlightTime = Date.now();
+    const disposable = vscode.window.onDidChangeTextEditorSelection((e) => {
+      if (e.textEditor === editor) {
+        if (Date.now() - highlightTime > 300) {
+          editor.setDecorations(MarkdownEditorProvider._lineHighlightDecorationType, []);
+          disposable.dispose();
+        }
+      }
+    });
+  }
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -76,6 +110,8 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         vscode.Uri.joinPath(this.context.extensionUri, 'dist'),
       ],
     };
+
+    this._activePanels.set(document.uri.toString(), webviewPanel);
 
     webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview, document);
 
@@ -182,6 +218,8 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     webviewPanel.onDidDispose(() => {
+      this._activePanels.delete(document.uri.toString());
+      this._pendingLineReveals.delete(document.uri.toString());
       viewStateSubscription.dispose();
       changeDocumentSubscription.dispose();
       aiModelChangeSubscription.dispose();
@@ -238,6 +276,15 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             candidates,
           });
         }
+      }
+
+      const pending = this._pendingLineReveals.get(document.uri.toString());
+      if (pending !== undefined) {
+        this._pendingLineReveals.delete(document.uri.toString());
+        void webviewPanel.webview.postMessage({
+          type: 'revealLine',
+          line: pending,
+        });
       }
       return;
     }
@@ -393,14 +440,9 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         return;
       }
 
-      // Clean syntax delimiters (e.g. [[Target]] or [Label](url)), title attributes, and hash fragments
-      let cleanTarget = rawTarget;
-      const mdMatch = cleanTarget.match(/^\[.*\]\((.*)\)$/);
-      if (mdMatch) {
-        cleanTarget = mdMatch[1].trim();
-      }
-      cleanTarget = cleanTarget.replace(/^\[\[/, '').replace(/\]\]$/, '').trim();
-      cleanTarget = cleanTarget.split(/\s+["']/)[0].split('#')[0].trim();
+      const parsed = parseLinkTargetAndLine(rawTarget);
+      const cleanTarget = parsed.cleanTarget;
+      const targetLine = typeof message.lineNumber === 'number' ? message.lineNumber : parsed.lineNumber;
 
       if (!cleanTarget) {
         return;
@@ -490,9 +532,38 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         }
       }
 
-      if (viewType) {
+      if (viewType === MarkdownEditorProvider.viewType || isMarkdownNote(targetUri.fsPath)) {
+        if (targetLine !== undefined) {
+          this.setPendingLineReveal(targetUri, targetLine);
+          const existingPanel = this.getOpenWebviewPanel(targetUri);
+          if (existingPanel) {
+            void existingPanel.webview.postMessage({
+              type: 'revealLine',
+              line: targetLine,
+            });
+          }
+        }
+        await vscode.commands.executeCommand('vscode.openWith', targetUri, MarkdownEditorProvider.viewType);
+      } else if (viewType) {
         await vscode.commands.executeCommand('vscode.openWith', targetUri, viewType);
       } else {
+        // Non-markdown file: open with showTextDocument if line number is specified
+        if (targetLine !== undefined) {
+          try {
+            const doc = await vscode.workspace.openTextDocument(targetUri);
+            const lineIndex = Math.max(0, Math.min(targetLine - 1, doc.lineCount - 1));
+            const line = doc.lineAt(lineIndex);
+            const editor = await vscode.window.showTextDocument(doc, {
+              selection: line.range,
+              preview: false,
+            });
+            editor.revealRange(line.range, vscode.TextEditorRevealType.InCenter);
+            this.highlightLineInTextEditor(editor, line.range);
+            return;
+          } catch {
+            // fallback
+          }
+        }
         await vscode.commands.executeCommand('vscode.open', targetUri);
       }
       return;

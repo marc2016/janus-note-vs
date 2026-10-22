@@ -5,6 +5,8 @@ import {
   findBacklinks,
   resolveCompanionSummary,
   getNoteLinksData,
+  parseLinkTargetAndLine,
+  resolveOutgoingLink,
 } from '../src/services/noteLinkService';
 import { CompanionManager } from '../src/companion/companionManager';
 import { __setConfigStore } from './__mocks__/vscode';
@@ -371,6 +373,126 @@ Ignore ![Diagram](diagram.png) and [Google](https://google.com) and [Mail](mailt
       expect(candidates[1].fileType).toBe('task');
       expect(candidates[2].fileType).toBe('image');
       expect(candidates[3].fileType).toBe('pdf');
+    });
+  });
+
+  describe('Line Target Parsing & Line-Aware Backlinks', () => {
+    it('parseLinkTargetAndLine extracts target and line numbers across formats', () => {
+      expect(parseLinkTargetAndLine('src/auth/login.ts:42')).toEqual({
+        cleanTarget: 'src/auth/login.ts',
+        lineNumber: 42,
+      });
+
+      expect(parseLinkTargetAndLine('src/auth/login.ts:42:15')).toEqual({
+        cleanTarget: 'src/auth/login.ts',
+        lineNumber: 42,
+      });
+
+      expect(parseLinkTargetAndLine('src/auth/login.ts#L42')).toEqual({
+        cleanTarget: 'src/auth/login.ts',
+        lineNumber: 42,
+      });
+
+      expect(parseLinkTargetAndLine('src/auth/login.ts#L42-L50')).toEqual({
+        cleanTarget: 'src/auth/login.ts',
+        lineNumber: 42,
+      });
+
+      expect(parseLinkTargetAndLine('[[notes/guide.md:15]]')).toEqual({
+        cleanTarget: 'notes/guide.md',
+        lineNumber: 15,
+      });
+
+      expect(parseLinkTargetAndLine('[[notes/guide#L25]]')).toEqual({
+        cleanTarget: 'notes/guide',
+        lineNumber: 25,
+      });
+
+      expect(parseLinkTargetAndLine('notes/guide.md#section-heading')).toEqual({
+        cleanTarget: 'notes/guide.md',
+        lineNumber: undefined,
+      });
+
+      expect(parseLinkTargetAndLine('C:\\workspace\\notes\\doc.md:88')).toEqual({
+        cleanTarget: 'C:\\workspace\\notes\\doc.md',
+        lineNumber: 88,
+      });
+    });
+
+    it('extractDocumentLinks extracts target line numbers', () => {
+      const text = `
+See [[src/service.ts:42]] and [Handler](src/handler.ts#L88) and regular [[Meeting-Notes]].
+`;
+      const links = extractDocumentLinks(text);
+      expect(links).toHaveLength(3);
+
+      const serviceLink = links.find((l) => l.target === 'src/service.ts');
+      const handlerLink = links.find((l) => l.target === 'src/handler.ts');
+      const regularLink = links.find((l) => l.target === 'Meeting-Notes');
+
+      expect(serviceLink?.lineNumber).toBe(42);
+      expect(handlerLink?.lineNumber).toBe(88);
+      expect(regularLink?.lineNumber).toBeUndefined();
+    });
+
+    it('resolveOutgoingLink attaches lineNumber to resolved item', async () => {
+      const sourceNote = vscode.Uri.file('/workspace/notes/test.md');
+      const targetFile = vscode.Uri.file('/workspace/notes/src/service.ts');
+
+      vi.spyOn(vscode.workspace.fs, 'stat').mockImplementation(async (uri) => {
+        if (uri.fsPath === targetFile.fsPath) {
+          return { type: vscode.FileType.File } as any;
+        }
+        throw new Error('Not found');
+      });
+
+      const resolved = await resolveOutgoingLink(
+        {
+          raw: '[[src/service.ts:42]]',
+          target: 'src/service.ts:42',
+          label: 'Service',
+          type: 'wiki',
+        },
+        sourceNote,
+        vscode.Uri.file('/workspace/notes')
+      );
+
+      expect(resolved.exists).toBe(true);
+      expect(resolved.lineNumber).toBe(42);
+    });
+
+    it('findBacklinks records 1-based origin line numbers of incoming references', async () => {
+      const targetNoteUri = vscode.Uri.file('/workspace/notes/Target.md');
+
+      vi.spyOn(vscode.workspace.fs, 'readDirectory').mockImplementation(async (uri) => {
+        if (uri.fsPath === '/workspace/notes') {
+          return [
+            ['Target.md', vscode.FileType.File],
+            ['SourceA.md', vscode.FileType.File],
+            ['SourceB.md', vscode.FileType.File],
+          ];
+        }
+        return [];
+      });
+
+      vi.spyOn(vscode.workspace.fs, 'readFile').mockImplementation(async (uri) => {
+        if (uri.fsPath.endsWith('SourceA.md')) {
+          return Buffer.from('# Source A\nLine 2\nLine 3 references [[Target]]\nLine 4', 'utf-8');
+        }
+        if (uri.fsPath.endsWith('SourceB.md')) {
+          return Buffer.from('Line 1\nLine 2\nLine 3\nLine 4\nLine 5 links to [Target](Target.md)\n', 'utf-8');
+        }
+        return Buffer.from('', 'utf-8');
+      });
+
+      const backlinks = await findBacklinks(targetNoteUri, notesRootUri);
+      expect(backlinks).toHaveLength(2);
+
+      const a = backlinks.find((b) => b.title === 'SourceA');
+      const b = backlinks.find((b) => b.title === 'SourceB');
+
+      expect(a?.lineNumber).toBe(3);
+      expect(b?.lineNumber).toBe(5);
     });
   });
 });

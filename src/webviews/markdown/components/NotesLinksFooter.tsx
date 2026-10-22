@@ -24,6 +24,7 @@ export interface FooterLinkItem {
   relativePath: string;
   exists: boolean;
   viewType?: string;
+  lineNumber?: number;
 }
 
 export interface FooterCompanions {
@@ -56,7 +57,7 @@ export interface NoteLinksData {
 
 export interface NotesLinksFooterProps {
   linksData: NoteLinksData | null;
-  onOpenLink: (targetUri: string, viewType?: string) => void;
+  onOpenLink: (targetUri: string, viewType?: string, lineNumber?: number) => void;
   onAddLink: () => void;
   onCreateCompanion?: (companionType: 'tasks' | 'chart') => void;
   onGenerateAiTasks?: () => void;
@@ -288,12 +289,14 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
                 }
                 description={
                   link.exists
-                    ? `Diese Notiz verweist im Text auf „${link.title}“ (${link.relativePath}).`
+                    ? `Diese Notiz verweist im Text auf „${link.title}“ (${link.relativePath}${link.lineNumber ? `, Zeile ${link.lineNumber}` : ''}).`
                     : `Diese Notiz verweist auf „${link.title}“ (${link.relativePath}), aber die Zieldatei existiert noch nicht.`
                 }
                 actionHint={
                   link.exists
-                    ? 'Klicken, um die verknüpfte Notiz zu öffnen'
+                    ? link.lineNumber
+                      ? `Klicken, um bei Zeile ${link.lineNumber} zu öffnen`
+                      : 'Klicken, um die verknüpfte Notiz zu öffnen'
                     : 'Klicken, um die Notiz automatisch anzulegen und zu öffnen'
                 }
               >
@@ -301,16 +304,16 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
                   variant="outline"
                   role="button"
                   tabIndex={0}
-                  onClick={() => onOpenLink(link.uri, 'janus.markdownEditor')}
+                  onClick={() => onOpenLink(link.uri, 'janus.markdownEditor', link.lineNumber)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      onOpenLink(link.uri, 'janus.markdownEditor');
+                      onOpenLink(link.uri, 'janus.markdownEditor', link.lineNumber);
                     }
                   }}
                   title={
                     link.exists
-                      ? `Ausgehende Verknüpfung (↗): Diese Notiz verweist auf "${link.title}" (${link.relativePath}) – Klicken zum Öffnen`
+                      ? `Ausgehende Verknüpfung (↗): Diese Notiz verweist auf "${link.title}" (${link.relativePath}${link.lineNumber ? `:${link.lineNumber}` : ''}) – Klicken zum Öffnen`
                       : `Ausgehende Verknüpfung (↗): Notiz "${link.title}" existiert noch nicht – Klicken zum Erstellen & Öffnen`
                   }
                   className={`rounded-full px-3 py-1 text-xs font-medium cursor-pointer shadow-xs ${
@@ -318,7 +321,10 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
                   }`}
                 >
                   <MdiIcon path={mdiFileDocumentOutline} size={13} />
-                  <span>{link.title}</span>
+                  <span>
+                    {link.title}
+                    {link.lineNumber ? ` :${link.lineNumber}` : ''}
+                  </span>
                   <MdiIcon path={mdiArrowTopRight} size={12} className="opacity-90" />
                 </Badge>
               </PillWithTooltip>
@@ -327,27 +333,34 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
             {/* Backlink Pills (Teal/Emerald accent) */}
             {backlinks.map((backlink) => (
               <PillWithTooltip
-                key={`back-${backlink.uri}`}
+                key={`back-${backlink.uri}-${backlink.lineNumber ?? 0}`}
                 category="Eingehender Rückverweis / Backlink (↙)"
-                description={`Die Notiz „${backlink.title}“ (${backlink.relativePath}) enthält einen Verweis auf diese Notiz.`}
-                actionHint="Klicken, um die verweisende Notiz zu öffnen"
+                description={`Die Notiz „${backlink.title}“ (${backlink.relativePath}${backlink.lineNumber ? `, Zeile ${backlink.lineNumber}` : ''}) enthält einen Verweis auf diese Notiz.`}
+                actionHint={
+                  backlink.lineNumber
+                    ? `Klicken, um bei Zeile ${backlink.lineNumber} zu öffnen`
+                    : 'Klicken, um die verweisende Notiz zu öffnen'
+                }
               >
                 <Badge
                   variant="outline"
                   role="button"
                   tabIndex={0}
-                  onClick={() => onOpenLink(backlink.uri, 'janus.markdownEditor')}
+                  onClick={() => onOpenLink(backlink.uri, 'janus.markdownEditor', backlink.lineNumber)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      onOpenLink(backlink.uri, 'janus.markdownEditor');
+                      onOpenLink(backlink.uri, 'janus.markdownEditor', backlink.lineNumber);
                     }
                   }}
-                  title={`Eingehender Rückverweis / Backlink (↙): Referenz aus "${backlink.title}" (${backlink.relativePath}) – Klicken zum Öffnen`}
+                  title={`Eingehender Rückverweis / Backlink (↙): Referenz aus "${backlink.title}" (${backlink.relativePath}${backlink.lineNumber ? `:${backlink.lineNumber}` : ''}) – Klicken zum Öffnen`}
                   className="janus-pill-backlink rounded-full px-3 py-1 text-xs font-medium cursor-pointer shadow-xs"
                 >
                   <MdiIcon path={mdiArrowBottomLeft} size={13} className="opacity-90" />
-                  <span>{backlink.title}</span>
+                  <span>
+                    {backlink.title}
+                    {backlink.lineNumber ? ` :${backlink.lineNumber}` : ''}
+                  </span>
                 </Badge>
               </PillWithTooltip>
             ))}

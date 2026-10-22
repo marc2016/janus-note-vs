@@ -21,6 +21,7 @@ import { LinkCandidate } from '../../companion/noteLinking';
 import { styledLists } from './extensions/styledLists';
 import { styledTables } from './extensions/styledTables';
 import { clickableLinks } from './extensions/clickableLinks';
+import { lineHighlightExtension, setHighlightLine } from './extensions/lineHighlight';
 import {
   MarkdownToolbar,
   ActiveToolbarState,
@@ -118,6 +119,17 @@ function getEditorTheme(isDark: boolean) {
       '.cm-activeLine': {
         backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.03)',
       },
+      '.cm-target-line-highlight': {
+        backgroundColor: isDark
+          ? 'rgba(234, 179, 8, 0.28) !important'
+          : 'rgba(234, 179, 8, 0.22) !important',
+        borderLeft: isDark
+          ? '4px solid #facc15 !important'
+          : '4px solid #ca8a04 !important',
+        boxShadow: isDark
+          ? 'inset 0 0 0 1px rgba(234, 179, 8, 0.4)'
+          : 'inset 0 0 0 1px rgba(234, 179, 8, 0.3)',
+      },
     },
     { dark: isDark }
   );
@@ -198,6 +210,8 @@ export const MarkdownEditorApp: React.FC = () => {
   } | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const editorViewRef = useRef<EditorView | null>(null);
+  const pendingRevealLineRef = useRef<number | null>(null);
   const isUpdatingFromHostRef = useRef<boolean>(false);
   const debounceTimerRef = useRef<any>(null);
   const linkCandidatesRef = useRef<LinkCandidate[]>([]);
@@ -205,6 +219,20 @@ export const MarkdownEditorApp: React.FC = () => {
   const datePickerHandlerRef = useRef<
     (pos: number, coords: { top: number; left: number } | null) => void
   >(() => {});
+
+  const doRevealLine = (targetLineNum: number, view: EditorView) => {
+    const totalLines = view.state.doc.lines;
+    const targetLine = Math.min(Math.max(1, targetLineNum), totalLines);
+    const line = view.state.doc.line(targetLine);
+    view.dispatch({
+      selection: { anchor: line.from },
+      effects: [
+        EditorView.scrollIntoView(line.from, { y: 'center' }),
+        setHighlightLine.of(targetLine),
+      ],
+    });
+    view.focus();
+  };
 
   datePickerHandlerRef.current = (pos: number, coords: { top: number; left: number } | null) => {
     setDatePickerState({
@@ -270,6 +298,7 @@ export const MarkdownEditorApp: React.FC = () => {
         styledLists(),
         taskCheckboxes(),
         styledTables(),
+        lineHighlightExtension(),
         slashCommands({
           onOpenDatePicker: (pos, coords) => datePickerHandlerRef.current(pos, coords),
           linkCompletionSource: createLinkAutocompleteSource(() => linkCandidatesRef.current),
@@ -305,31 +334,37 @@ export const MarkdownEditorApp: React.FC = () => {
       parent: containerRef.current,
     });
 
+    editorViewRef.current = view;
     setEditorView(view);
+
+    if (pendingRevealLineRef.current !== null) {
+      const pendingLine = pendingRevealLineRef.current;
+      pendingRevealLineRef.current = null;
+      setTimeout(() => {
+        doRevealLine(pendingLine, view);
+      }, 50);
+    }
 
     return () => {
       view.destroy();
+      editorViewRef.current = null;
       setEditorView(null);
     };
   }, []);
 
   // Listen for updates from VS Code extension host
   useEffect(() => {
-    const api = getVsCodeApi();
-    if (api) {
-      api.postMessage({ type: 'ready' });
-    }
-
     const handleMessage = (event: MessageEvent) => {
       const message = event.data;
       if (message.type === 'init' || message.type === 'update') {
         const newContent = typeof message.content === 'string' ? message.content : '';
-        if (editorView) {
-          const currentDoc = editorView.state.doc.toString();
+        const view = editorViewRef.current;
+        if (view) {
+          const currentDoc = view.state.doc.toString();
           if (currentDoc !== newContent) {
             isUpdatingFromHostRef.current = true;
-            editorView.dispatch({
-              changes: { from: 0, to: editorView.state.doc.length, insert: newContent },
+            view.dispatch({
+              changes: { from: 0, to: view.state.doc.length, insert: newContent },
             });
             isUpdatingFromHostRef.current = false;
           }
@@ -342,11 +377,30 @@ export const MarkdownEditorApp: React.FC = () => {
         setIsGeneratingTasks(Boolean(message.isGenerating));
       } else if (message.type === 'aiInboxSorting') {
         setIsSortingInbox(Boolean(message.isSorting));
+      } else if (message.type === 'revealLine') {
+        const rawLine = typeof message.line === 'number' ? message.line : parseInt(message.line, 10);
+        if (!isNaN(rawLine) && rawLine > 0) {
+          const view = editorViewRef.current;
+          if (!view) {
+            pendingRevealLineRef.current = rawLine;
+            return;
+          }
+          doRevealLine(rawLine, view);
+        }
       }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  // Post ready when editorView is mounted and ready
+  useEffect(() => {
+    if (!editorView) return;
+    const api = getVsCodeApi();
+    if (api) {
+      api.postMessage({ type: 'ready' });
+    }
   }, [editorView]);
 
   // Direct click handler for inline links in Live Preview (capture phase fallback)
@@ -380,13 +434,14 @@ export const MarkdownEditorApp: React.FC = () => {
     }
   };
 
-  const handleOpenLink = (targetUri: string, viewType?: string) => {
+  const handleOpenLink = (targetUri: string, viewType?: string, lineNumber?: number) => {
     const api = getVsCodeApi();
     if (api) {
       api.postMessage({
         type: 'openLink',
         targetUri,
         viewType,
+        lineNumber,
       });
     }
   };

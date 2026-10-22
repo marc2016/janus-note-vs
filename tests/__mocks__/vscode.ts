@@ -35,8 +35,26 @@ export class Uri {
   }
 }
 
+export class Position {
+  constructor(public readonly line: number, public readonly character: number) {}
+}
+
 export class Range {
-  constructor(public startLine: any, public startCol: any, public endLine?: any, public endCol?: any) {}
+  public start: Position;
+  public end: Position;
+  constructor(startLineOrPos: any, startColOrEndPos?: any, endLine?: any, endCol?: any) {
+    if (typeof startLineOrPos === 'number') {
+      this.start = new Position(startLineOrPos, startColOrEndPos ?? 0);
+      this.end = new Position(endLine ?? startLineOrPos, endCol ?? startColOrEndPos ?? 0);
+    } else {
+      this.start = startLineOrPos;
+      this.end = startColOrEndPos ?? startLineOrPos;
+    }
+  }
+  get startLine(): any { return this.start?.line; }
+  get startCol(): any { return this.start?.character; }
+  get endLine(): any { return this.end?.line; }
+  get endCol(): any { return this.end?.character; }
 }
 
 export class CodeLens {
@@ -205,6 +223,17 @@ export class TabInputWebview {
   constructor(public readonly viewType: string) {}
 }
 
+export class ThemeColor {
+  constructor(public id: string) {}
+}
+
+export enum TextEditorRevealType {
+  Default = 0,
+  InCenter = 1,
+  InCenterIfOutsideViewport = 2,
+  AtTop = 3,
+}
+
 export const window = {
   activeTextEditor: undefined as any,
   tabGroups: {
@@ -212,6 +241,8 @@ export const window = {
     onDidChangeTabs: (_listener: () => any) => ({ dispose: () => {} }),
   },
   onDidChangeActiveTextEditor: (_listener: (e: any) => any) => ({ dispose: () => {} }),
+  onDidChangeTextEditorSelection: (_listener: (e: any) => any) => ({ dispose: () => {} }),
+  createTextEditorDecorationType: (_options: any) => ({ dispose: () => {} }),
   showInformationMessage: async (..._args: any[]): Promise<any> => undefined,
   showWarningMessage: async (..._args: any[]): Promise<any> => undefined,
   showErrorMessage: async (..._args: any[]): Promise<any> => undefined,

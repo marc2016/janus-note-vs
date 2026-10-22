@@ -24,6 +24,8 @@ export interface ExtractedLink {
   target: string;
   label: string;
   type: 'wiki' | 'markdown';
+  lineNumber?: number;
+  sourceLineNumber?: number;
 }
 
 export interface NoteLinkItem {
@@ -33,6 +35,7 @@ export interface NoteLinkItem {
   relativePath: string;
   exists: boolean;
   viewType?: string;
+  lineNumber?: number;
 }
 
 export interface CompanionSummary {
@@ -65,6 +68,53 @@ export interface NoteLinksData {
 
 const EXTERNAL_PROTOCOL_RE = /^(https?:|mailto:|tel:|vscode:|data:|#)/i;
 
+/**
+ * Extracts the clean target path and optional line number from a raw link target.
+ * Supports:
+ * - Colon line numbers: file.ts:42, file.ts:42:5, [[note:42]]
+ * - GitHub hash anchors: file.ts#L42, file.ts#L42-L50, [[note#L42]]
+ */
+export function parseLinkTargetAndLine(rawTarget: string): { cleanTarget: string; lineNumber?: number } {
+  let clean = rawTarget.trim();
+
+  // Strip wrapping markdown link or wiki link delimiters if present
+  const mdMatch = clean.match(/^\[.*\]\((.*)\)$/);
+  if (mdMatch) {
+    clean = mdMatch[1].trim();
+  }
+  clean = clean.replace(/^\[\[/, '').replace(/\]\]$/, '').trim();
+
+  // Strip trailing title attributes: e.g. path/to/file.md "Title"
+  clean = clean.split(/\s+["']/)[0].trim();
+
+  let lineNumber: number | undefined;
+
+  // 1. Check for GitHub anchor #L42 or #L42-L50
+  const hashMatch = clean.match(/#L(\d+)(?:-L\d+)?$/i);
+  if (hashMatch) {
+    lineNumber = parseInt(hashMatch[1], 10);
+    clean = clean.split('#')[0].trim();
+  } else if (clean.includes('#')) {
+    // Other anchor like #section
+    clean = clean.split('#')[0].trim();
+  }
+
+  // 2. Check for colon line syntax: :42 or :42:10 (avoiding drive letter C:\...)
+  if (!lineNumber) {
+    const trailingColonMatch = clean.match(/:(\d+)(?::\d+)?$/);
+    if (trailingColonMatch) {
+      const idx = trailingColonMatch.index!;
+      // Ensure it's not a single drive letter like C:
+      if (idx > 1 || (idx === 1 && !/^[a-zA-Z]:/.test(clean))) {
+        lineNumber = parseInt(trailingColonMatch[1], 10);
+        clean = clean.substring(0, idx).trim();
+      }
+    }
+  }
+
+  return { cleanTarget: clean, lineNumber };
+}
+
 function stripExtension(filename: string): string {
   return filename.replace(/\.(md|markdown)$/i, '');
 }
@@ -85,23 +135,33 @@ export function extractDocumentLinks(text: string): ExtractedLink[] {
   const seenTargets = new Set<string>();
 
   // 1. Wiki-links: [[Target]] or [[Target|Alias]]
-  const wikiRe = /\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]+))?\]\]/g;
+  const wikiRe = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
   let match: RegExpExecArray | null;
   while ((match = wikiRe.exec(text)) !== null) {
-    const target = match[1].trim();
+    const fullTarget = match[1].trim();
     const label = (match[2] || match[1]).trim();
-    if (!target || EXTERNAL_PROTOCOL_RE.test(target)) {
+    if (!fullTarget || EXTERNAL_PROTOCOL_RE.test(fullTarget)) {
       continue;
     }
-    const key = target.toLowerCase();
+
+    const { cleanTarget, lineNumber } = parseLinkTargetAndLine(fullTarget);
+    if (!cleanTarget) {
+      continue;
+    }
+
+    const key = cleanTarget.toLowerCase();
     if (!seenTargets.has(key)) {
       seenTargets.add(key);
-      results.push({
+      const link: ExtractedLink = {
         raw: match[0],
-        target,
+        target: cleanTarget,
         label,
         type: 'wiki',
-      });
+      };
+      if (lineNumber !== undefined) {
+        link.lineNumber = lineNumber;
+      }
+      results.push(link);
     }
   }
 
@@ -110,22 +170,28 @@ export function extractDocumentLinks(text: string): ExtractedLink[] {
   while ((match = mdRe.exec(text)) !== null) {
     const label = match[1].trim();
     let rawTarget = match[2].trim();
-    // Strip optional title attribute: e.g. path/to/note.md "Title"
-    rawTarget = rawTarget.split(/\s+["']/)[0].trim();
-    // Strip anchor fragment: e.g. note.md#section
-    const targetWithoutHash = rawTarget.split('#')[0].trim();
-    if (!targetWithoutHash || EXTERNAL_PROTOCOL_RE.test(rawTarget)) {
+    if (!rawTarget || EXTERNAL_PROTOCOL_RE.test(rawTarget)) {
       continue;
     }
-    const key = targetWithoutHash.toLowerCase();
+
+    const { cleanTarget, lineNumber } = parseLinkTargetAndLine(rawTarget);
+    if (!cleanTarget) {
+      continue;
+    }
+
+    const key = cleanTarget.toLowerCase();
     if (!seenTargets.has(key)) {
       seenTargets.add(key);
-      results.push({
+      const link: ExtractedLink = {
         raw: match[0],
-        target: targetWithoutHash,
-        label: label || targetWithoutHash,
+        target: cleanTarget,
+        label: label || cleanTarget,
         type: 'markdown',
-      });
+      };
+      if (lineNumber !== undefined) {
+        link.lineNumber = lineNumber;
+      }
+      results.push(link);
     }
   }
 
@@ -220,7 +286,9 @@ export async function resolveOutgoingLink(
   notesRootUri?: vscode.Uri,
   workspaceNotes?: vscode.Uri[]
 ): Promise<NoteLinkItem> {
-  const normalizedTarget = ensureNoteExtension(link.target.replace(/^\.\//, ''));
+  const { cleanTarget, lineNumber } = parseLinkTargetAndLine(link.target);
+  const targetLine = link.lineNumber ?? lineNumber;
+  const normalizedTarget = ensureNoteExtension(cleanTarget.replace(/^\.\//, ''));
   const sourceDir = path.dirname(sourceNoteUri.fsPath);
 
   // Candidate 1: relative to source note directory
@@ -235,6 +303,7 @@ export async function resolveOutgoingLink(
       uri: relativeCandidate.toString(),
       relativePath: relPath,
       exists: true,
+      lineNumber: targetLine,
     };
   }
 
@@ -249,6 +318,7 @@ export async function resolveOutgoingLink(
         uri: rootCandidate.toString(),
         relativePath: relPath,
         exists: true,
+        lineNumber: targetLine,
       };
     }
   }
@@ -265,6 +335,7 @@ export async function resolveOutgoingLink(
         uri: wsCandidate.toString(),
         relativePath: relPath,
         exists: true,
+        lineNumber: targetLine,
       };
     }
   }
@@ -285,6 +356,7 @@ export async function resolveOutgoingLink(
         uri: matched.toString(),
         relativePath: relPath,
         exists: true,
+        lineNumber: targetLine,
       };
     }
   }
@@ -301,6 +373,7 @@ export async function resolveOutgoingLink(
     uri: fallbackUri.toString(),
     relativePath: relPath,
     exists: false,
+    lineNumber: targetLine,
   };
 }
 
@@ -379,12 +452,26 @@ export async function findBacklinks(
       continue;
     }
 
-    const extracted = extractDocumentLinks(text);
-    const linksToTarget = extracted.some((link) =>
-      doesLinkMatchTarget(link, candidateUri, targetNoteUri, roots)
-    );
+    const lines = text.split(/\r?\n/);
+    let matchedLineNumber: number | undefined;
 
-    if (linksToTarget) {
+    for (let i = 0; i < lines.length; i++) {
+      const lineLinks = extractDocumentLinks(lines[i]);
+      if (lineLinks.some((l) => doesLinkMatchTarget(l, candidateUri, targetNoteUri, roots))) {
+        matchedLineNumber = i + 1;
+        break;
+      }
+    }
+
+    // Fallback if not detected on a single line (e.g. multiline link syntax)
+    if (matchedLineNumber === undefined) {
+      const fullDocLinks = extractDocumentLinks(text);
+      if (fullDocLinks.some((l) => doesLinkMatchTarget(l, candidateUri, targetNoteUri, roots))) {
+        matchedLineNumber = 1;
+      }
+    }
+
+    if (matchedLineNumber !== undefined) {
       let relPath: string;
       const relToPrimary = primaryRoot
         ? path.relative(primaryRoot.fsPath, candidateUri.fsPath).replace(/\\/g, '/')
@@ -404,6 +491,7 @@ export async function findBacklinks(
         uri: candidateUri.toString(),
         relativePath: relPath,
         exists: true,
+        lineNumber: matchedLineNumber,
       });
     }
   }

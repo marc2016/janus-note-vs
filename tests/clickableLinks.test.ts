@@ -420,6 +420,133 @@ describe('Clickable Editor Links & Delimiter Concealing', () => {
       expect(errorSpy).toHaveBeenCalledWith("Datei 'missing.pdf' existiert nicht.");
       expect(execSpy).not.toHaveBeenCalled();
     });
+
+    it('opens code files with vscode.window.showTextDocument selecting the target line', async () => {
+      const companionManager = new CompanionManager();
+      const provider = new MarkdownEditorProvider(
+        { extensionUri: vscode.Uri.file('/ext') } as any,
+        companionManager
+      );
+      const mockDoc = {
+        uri: vscode.Uri.file('/workspace/notes/alpha.md'),
+        getText: () => '# Alpha\n',
+      } as any;
+      const mockPanel = {
+        webview: { postMessage: vi.fn() },
+      } as any;
+
+      vi.spyOn(vscode.workspace.fs, 'stat').mockResolvedValue({} as any);
+      const fakeLineRange = new vscode.Range(new vscode.Position(24, 0), new vscode.Position(24, 30));
+      const fakeTextDoc = {
+        uri: vscode.Uri.file('/workspace/src/app.ts'),
+        lineCount: 100,
+        lineAt: vi.fn().mockReturnValue({ range: fakeLineRange }),
+      };
+      const mockEditor = {
+        revealRange: vi.fn(),
+        setDecorations: vi.fn(),
+      };
+      const openTextDocSpy = vi.spyOn(vscode.workspace, 'openTextDocument').mockResolvedValue(fakeTextDoc as any);
+      const showTextDocSpy = vi.spyOn(vscode.window, 'showTextDocument').mockResolvedValue(mockEditor as any);
+
+      await provider.handleWebviewMessage(
+        { type: 'openLink', targetUri: '/workspace/src/app.ts:25' },
+        mockDoc,
+        mockPanel
+      );
+
+      expect(openTextDocSpy).toHaveBeenCalledWith(vscode.Uri.file('/workspace/src/app.ts'));
+      expect(showTextDocSpy).toHaveBeenCalledWith(fakeTextDoc, {
+        selection: fakeLineRange,
+        preview: false,
+      });
+      expect(mockEditor.revealRange).toHaveBeenCalledWith(fakeLineRange, vscode.TextEditorRevealType.InCenter);
+      expect(mockEditor.setDecorations).toHaveBeenCalled();
+    });
+
+    it('sets pending line reveal and dispatches revealLine when the target markdown webview becomes ready', async () => {
+      const companionManager = new CompanionManager();
+      vi.spyOn(companionManager, 'getNotesRootUri').mockReturnValue(
+        vscode.Uri.file('/workspace/notes')
+      );
+
+      const provider = new MarkdownEditorProvider(
+        { extensionUri: vscode.Uri.file('/ext') } as any,
+        companionManager
+      );
+      const mockDoc = {
+        uri: vscode.Uri.file('/workspace/notes/alpha.md'),
+        getText: () => '# Alpha\n',
+      } as any;
+      const mockPanel = {
+        webview: { postMessage: vi.fn() },
+      } as any;
+
+      const targetDoc = {
+        uri: vscode.Uri.file('/workspace/notes/target.md'),
+        getText: () => '# Target\nLine 2\nLine 3',
+      } as any;
+      const targetPanel = {
+        webview: { postMessage: vi.fn() },
+      } as any;
+
+      vi.spyOn(vscode.workspace.fs, 'stat').mockResolvedValue({} as any);
+      vi.spyOn(vscode.commands, 'executeCommand').mockResolvedValue(undefined);
+
+      // Trigger openLink targeting target.md with line 18
+      await provider.handleWebviewMessage(
+        { type: 'openLink', targetUri: '/workspace/notes/target.md:18' },
+        mockDoc,
+        mockPanel
+      );
+
+      // Target webview initializes and sends 'ready'
+      await provider.handleWebviewMessage(
+        { type: 'ready' },
+        targetDoc,
+        targetPanel
+      );
+
+      expect(targetPanel.webview.postMessage).toHaveBeenCalledWith({
+        type: 'revealLine',
+        line: 18,
+      });
+    });
+
+    it('dispatches revealLine immediately when opening a markdown file whose webview is already active', async () => {
+      const companionManager = new CompanionManager();
+      const provider = new MarkdownEditorProvider(
+        { extensionUri: vscode.Uri.file('/ext') } as any,
+        companionManager
+      );
+      const mockDoc = {
+        uri: vscode.Uri.file('/workspace/notes/alpha.md'),
+        getText: () => '# Alpha\n',
+      } as any;
+      const mockPanel = {
+        webview: { postMessage: vi.fn() },
+      } as any;
+
+      const targetUri = vscode.Uri.file('/workspace/notes/beta.md');
+      const targetPanel = {
+        webview: { postMessage: vi.fn() },
+      } as any;
+
+      (provider as any)._activePanels.set(targetUri.toString(), targetPanel);
+      vi.spyOn(vscode.workspace.fs, 'stat').mockResolvedValue({} as any);
+      vi.spyOn(vscode.commands, 'executeCommand').mockResolvedValue(undefined);
+
+      await provider.handleWebviewMessage(
+        { type: 'openLink', targetUri: '/workspace/notes/beta.md', lineNumber: 35 },
+        mockDoc,
+        mockPanel
+      );
+
+      expect(targetPanel.webview.postMessage).toHaveBeenCalledWith({
+        type: 'revealLine',
+        line: 35,
+      });
+    });
   });
 
   describe('clickableLinks CodeMirror Extension DOM Event Handling', () => {
