@@ -246,7 +246,7 @@ export const ExportCompendiumApp: React.FC = () => {
           variant="default"
           onClick={handleConfirm}
           disabled={notes.length === 0 || isExporting}
-          className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2"
+          className="flex items-center gap-2"
         >
           <MdiIcon path={mdiFilePdfBox} size={18} />
           <span>{isExporting ? 'Wird generiert...' : 'Als PDF exportieren...'}</span>

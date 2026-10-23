@@ -6,11 +6,11 @@ Provides a dedicated Janus Activity Bar sidebar with a curated TreeView of notes
 ## Requirements
 
 ### Requirement: Activity Bar View Container and Notes TreeView
-The system SHALL contribute a custom View Container to the VS Code Activity Bar with a Janus icon, containing a TreeView for navigating Janus notes.
+The system SHALL contribute a custom View Container to the VS Code Activity Bar with a Janus icon, containing both the Notes TreeView (`janus.notesView`) for navigating Janus notes and the Janus AI & Search WebviewView (`janus.chatView`).
 
 #### Scenario: View container is present in Activity Bar
 - **WHEN** the extension activates in a workspace
-- **THEN** a Janus View Container icon appears in the Activity Bar with the Notes view available inside it
+- **THEN** a Janus View Container icon appears in the Activity Bar with the Notes view (`janus.notesView`) and the Janus AI & Search view (`janus.chatView`) available inside it
 
 ### Requirement: Notes Directory Scoping in TreeView
 The system SHALL display only Markdown notes (`*.md`, `*.markdown`) and subdirectories located within the configured `janus.notesRoot` directory or any directory configured in `janus.includeFolders` in the Notes TreeView. Non-note files and files outside these configured directories SHALL NOT appear in the tree view. Folder items in the tree view SHALL expose an inline action button `$(dashboard)` to open the central Folder Overview.

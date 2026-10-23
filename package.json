@@ -20,7 +20,8 @@
   "activationEvents": [
     "onStartupFinished",
     "onView:janus.notesView",
-    "onView:janus.calendarDayDetailsView"
+    "onView:janus.calendarDayDetailsView",
+    "onView:janus.chatView"
   ],
   "contributes": {
     "configuration": {
@@ -106,6 +107,11 @@
         {
           "id": "janus.calendarDayDetailsView",
           "name": "Tagesdetails",
+          "type": "webview"
+        },
+        {
+          "id": "janus.chatView",
+          "name": "KI & Suche",
           "type": "webview"
         }
       ]
@@ -235,6 +241,11 @@
         "command": "janus.exportFolderToPdf",
         "title": "Janus: Ordner als Sammel-PDF exportieren...",
         "icon": "$(file-pdf)"
+      },
+      {
+        "command": "janus.focusChatView",
+        "title": "Janus: KI & Suche fokussieren",
+        "icon": "$(comment-discussion)"
       }
     ],
     "menus": {

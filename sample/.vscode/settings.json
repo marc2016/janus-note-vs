@@ -1,0 +1,4 @@
+{
+  "janus.ai.provider": "gemini",
+  "janus.ai.modelId": "gemini-2.5-flash"
+}

@@ -34,6 +34,13 @@ import {
   mdiPrinter,
   mdiArrowUp,
   mdiArrowDown,
+  mdiSend,
+  mdiCreation,
+  mdiMagnify,
+  mdiInbox,
+  mdiHelpCircleOutline,
+  mdiFileDocumentOutline,
+  mdiCogOutline,
 } from '@mdi/js';
 
 export {
@@ -72,6 +79,13 @@ export {
   mdiPrinter,
   mdiArrowUp,
   mdiArrowDown,
+  mdiSend,
+  mdiCreation,
+  mdiMagnify,
+  mdiInbox,
+  mdiHelpCircleOutline,
+  mdiFileDocumentOutline,
+  mdiCogOutline,
 };
 
 /**

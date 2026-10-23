@@ -12,6 +12,7 @@ import { CalendarDayDetailsViewProvider } from './editors/calendarDayDetailsView
 import { SettingsViewProvider } from './editors/settingsViewProvider';
 import { FolderOverviewViewProvider } from './editors/folderOverviewViewProvider';
 import { ExportCompendiumViewProvider } from './editors/exportCompendiumViewProvider';
+import { ChatViewProvider } from './editors/chatViewProvider';
 import { collectMarkdownNotesFromSelection } from './services/noteLinkService';
 import { FolderTasksService } from './services/folderTasksService';
 import { CalendarService } from './services/calendarService';
@@ -159,6 +160,13 @@ export function activate(context: vscode.ExtensionContext) {
     () => notesTreeDataProvider.refresh()
   );
   const exportCompendiumViewProvider = new ExportCompendiumViewProvider(context);
+  const chatViewProvider = new ChatViewProvider(
+    context,
+    companionManager,
+    janusSearchService,
+    folderTasksService,
+    aiModelService
+  );
 
   let multiSelectionDebounceTimer: NodeJS.Timeout | undefined;
   const multiSelectionSub = notesTreeView.onDidChangeSelection(async (e) => {
@@ -213,6 +221,14 @@ export function activate(context: vscode.ExtensionContext) {
       CalendarDayDetailsViewProvider.viewType,
       calendarDayDetailsViewProvider
     ),
+    vscode.window.registerWebviewViewProvider(
+      ChatViewProvider.viewType,
+      chatViewProvider,
+      { webviewOptions: { retainContextWhenHidden: true } }
+    ),
+    vscode.commands.registerCommand('janus.focusChatView', async () => {
+      await vscode.commands.executeCommand('janus.chatView.focus');
+    }),
     TasksEditorProvider.register(context, (uri) => scheduleSyncSidebarSelection(uri)),
     ChartEditorProvider.register(context, (uri) => scheduleSyncSidebarSelection(uri)),
     MarkdownEditorProvider.register(
