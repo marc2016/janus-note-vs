@@ -30,6 +30,8 @@ import {
   mdiEyeOffOutline,
   mdiCalendarMonthOutline,
   mdiLinkVariant,
+  mdiFilePdfBox,
+  mdiPrinter,
 } from '@mdi/js';
 
 export {
@@ -64,6 +66,8 @@ export {
   mdiEyeOffOutline,
   mdiCalendarMonthOutline,
   mdiLinkVariant,
+  mdiFilePdfBox,
+  mdiPrinter,
 };
 
 /**

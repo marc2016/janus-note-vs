@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import * as vscode from 'vscode';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { markdown } from '@codemirror/lang-markdown';
@@ -18,6 +19,7 @@ import {
   insertEmptyMarkdownTable,
   markdownTableAutocompleter,
 } from '../src/webviews/markdown/extensions/styledTables';
+import { MarkdownEditorProvider } from '../src/editors/markdownEditorProvider';
 
 describe('CodeMirror Markdown Editor & Zero-Diff Verification', () => {
   describe('Slash Command Autocomplete', () => {
@@ -495,6 +497,28 @@ describe('CodeMirror Markdown Editor & Zero-Diff Verification', () => {
       expect(updated.split('\n')[2]).toBe('| Item | Qty |');
       expect(updated.split('\n')[3]).toBe('| --- | --- |');
       expect(updated.split('\n')[6]).toBe('Outro text');
+    });
+  });
+
+  describe('MarkdownEditorProvider Webview Message Handling', () => {
+    it('executes janus.exportNoteToPdf command when receiving exportPdf message', async () => {
+      const executeCommandSpy = vi.spyOn(vscode.commands, 'executeCommand').mockResolvedValue(undefined as any);
+      const mockContext: any = { subscriptions: [] };
+      const provider = new MarkdownEditorProvider(mockContext);
+
+      const mockDoc: any = {
+        uri: vscode.Uri.file('/notes/test.md'),
+        getText: () => '# Test Note',
+      };
+      const mockPanel: any = {
+        webview: {
+          postMessage: vi.fn(),
+        },
+      };
+
+      await provider.handleWebviewMessage({ type: 'exportPdf' }, mockDoc, mockPanel);
+
+      expect(executeCommandSpy).toHaveBeenCalledWith('janus.exportNoteToPdf', mockDoc.uri);
     });
   });
 });

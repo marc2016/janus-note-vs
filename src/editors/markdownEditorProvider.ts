@@ -428,6 +428,11 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       return;
     }
 
+    if (message.type === 'exportPdf') {
+      await vscode.commands.executeCommand('janus.exportNoteToPdf', document.uri);
+      return;
+    }
+
     if (message.type === 'openLink' && typeof message.targetUri === 'string') {
       const rawTarget = message.targetUri.trim();
       if (!rawTarget) {

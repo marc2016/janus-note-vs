@@ -79,6 +79,12 @@
           "type": "boolean",
           "default": true,
           "description": "Show a preview confirmation list before sorting inbox.md entries into notes and folders."
+        },
+        "janus.export.browserPath": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Custom executable path to a Chromium-based browser (Chrome, Edge, Brave, Chromium) used for PDF export. If empty, standard system locations are searched automatically."
         }
       }
     },
@@ -219,6 +225,11 @@
         "command": "janus.openSettings",
         "title": "Janus: Einstellungen öffnen",
         "icon": "$(gear)"
+      },
+      {
+        "command": "janus.exportNoteToPdf",
+        "title": "Janus: Als PDF exportieren...",
+        "icon": "$(file-pdf)"
       }
     ],
     "menus": {
@@ -299,6 +310,18 @@
           "command": "janus.removeLinkedFolder",
           "when": "view == janus.notesView && viewItem == linkedFolder",
           "group": "modify@3"
+        },
+        {
+          "command": "janus.exportNoteToPdf",
+          "when": "view == janus.notesView && viewItem == janusNote",
+          "group": "export@1"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "janus.exportNoteToPdf",
+          "when": "resourceExtname == .md || resourceExtname == .markdown || activeEditor == janus.markdownEditor",
+          "group": "navigation@100"
         }
       ],
       "explorer/context": [

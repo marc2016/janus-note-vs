@@ -26,6 +26,7 @@ import {
   mdiEyeOffOutline,
   mdiCalendarMonthOutline,
   mdiLinkVariant,
+  mdiFilePdfBox,
 } from '../../../ui/icons';
 import { SyntaxVisibilityMode } from '../extensions/livePreview';
 
@@ -57,6 +58,7 @@ interface MarkdownToolbarProps {
   editorView: EditorView | null;
   activeState?: ActiveToolbarState;
   onOpenSource?: () => void;
+  onExportPdf?: () => void;
   syntaxMode?: SyntaxVisibilityMode;
   onToggleSyntaxVisibility?: () => void;
   onOpenDatePicker?: () => void;
@@ -66,6 +68,7 @@ export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
   editorView,
   activeState = defaultActiveToolbarState,
   onOpenSource,
+  onExportPdf,
   syntaxMode = 'auto',
   onToggleSyntaxVisibility,
   onOpenDatePicker,
@@ -376,8 +379,21 @@ export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
         <MdiIcon path={mdiMinus} size={18} />
       </Button>
 
-      {(onToggleSyntaxVisibility || onOpenSource) && (
+      {(onToggleSyntaxVisibility || onOpenSource || onExportPdf) && (
         <div className="ml-auto flex items-center gap-1">
+          {onExportPdf && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+              onClick={onExportPdf}
+              title="Als PDF exportieren..."
+              aria-label="Als PDF exportieren"
+            >
+              <MdiIcon path={mdiFilePdfBox} size={18} />
+            </Button>
+          )}
+
           {onToggleSyntaxVisibility && (
             <Button
               variant={syntaxMode === 'visible' ? 'secondary' : 'ghost'}

@@ -18,7 +18,7 @@ The system SHALL provide a Custom Text Editor (`janus.markdownEditor`) for `*.md
 - **THEN** the editor reveals the raw Markdown markers (`# `, `**`) allowing direct text editing
 
 ### Requirement: Fixed Formatting Toolbar
-The system SHALL provide a single pinned, fixed formatting toolbar with actions for history, headings, inline marks, lists, blockquotes, tables, code blocks, and opening the underlying raw source file at the end of the toolbar, without displaying a separate top application header bar or manual theme toggle button. Inline mark actions SHALL expand to surrounding word boundaries when invoked with a collapsed cursor inside an unformatted word.
+The system SHALL provide a single pinned, fixed formatting toolbar with actions for history, headings, inline marks, lists, blockquotes, tables, code blocks, PDF export, and opening the underlying raw source file at the end of the toolbar, without displaying a separate top application header bar or manual theme toggle button. Inline mark actions SHALL expand to surrounding word boundaries when invoked with a collapsed cursor inside an unformatted word.
 
 #### Scenario: Applying inline formatting from toolbar
 - **WHEN** user selects text and clicks the Bold button
@@ -39,6 +39,10 @@ The system SHALL provide a single pinned, fixed formatting toolbar with actions 
 #### Scenario: Inserting block elements from toolbar
 - **WHEN** user clicks the Table or Code Block button
 - **THEN** the editor inserts the appropriate Markdown template at the cursor position without reformatting existing lines
+
+#### Scenario: Exporting PDF from toolbar
+- **WHEN** user clicks the PDF export button in the formatting toolbar
+- **THEN** the system triggers the `janus.exportNoteToPdf` command for the currently edited document
 
 #### Scenario: Opening source file from toolbar
 - **WHEN** user clicks the Open Source File button at the end of the formatting toolbar
@@ -232,6 +236,3 @@ The system SHALL render inline wiki-links and markdown links as interactive clic
 #### Scenario: Line number exceeding document length
 - **WHEN** user clicks a link with a line number that exceeds the total line count of the target file
 - **THEN** the system clamps the target line to the final line of the document and highlights the final line
-
-
-

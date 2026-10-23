@@ -434,6 +434,13 @@ export const MarkdownEditorApp: React.FC = () => {
     }
   };
 
+  const handleExportPdf = () => {
+    const api = getVsCodeApi();
+    if (api) {
+      api.postMessage({ type: 'exportPdf' });
+    }
+  };
+
   const handleOpenLink = (targetUri: string, viewType?: string, lineNumber?: number) => {
     const api = getVsCodeApi();
     if (api) {
@@ -539,6 +546,7 @@ export const MarkdownEditorApp: React.FC = () => {
           editorView={editorView}
           activeState={activeState}
           onOpenSource={handleOpenSource}
+          onExportPdf={handleExportPdf}
           syntaxMode={syntaxMode}
           onToggleSyntaxVisibility={handleToggleSyntaxVisibility}
           onOpenDatePicker={handleOpenDatePickerFromToolbar}

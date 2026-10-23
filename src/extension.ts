@@ -18,6 +18,7 @@ import { AiTaskGeneratorService } from './services/aiTaskGeneratorService';
 import { AiInboxSorterService } from './services/aiInboxSorterService';
 import { AiFolderSummaryService } from './services/aiFolderSummaryService';
 import { JanusSearchService } from './services/janusSearchService';
+import { PdfExportService } from './services/pdfExportService';
 import { DiffContentProvider, NoteDiffViewer } from './agent/diffViewer';
 import { ReadNoteTool } from './agent/tools/readNoteTool';
 import { MutateTasksTool } from './agent/tools/mutateTasksTool';
@@ -519,6 +520,82 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('janus.refreshNotesTree', () => {
       notesTreeDataProvider.refresh();
       updateNotesContextKeys(companionManager);
+    }),
+    vscode.commands.registerCommand('janus.exportNoteToPdf', async (item?: NotesTreeItem | vscode.Uri) => {
+      let targetUri: vscode.Uri | undefined;
+      if (item instanceof vscode.Uri) {
+        targetUri = item;
+      } else if (item && typeof item === 'object' && 'resourceUri' in item && (item as any).resourceUri instanceof vscode.Uri) {
+        targetUri = (item as any).resourceUri;
+      } else {
+        targetUri = getActiveNoteUri();
+      }
+
+      if (!targetUri || !isMarkdownNote(targetUri.fsPath)) {
+        vscode.window.showErrorMessage('Bitte öffnen oder wählen Sie zuerst eine Markdown-Notiz aus.');
+        return;
+      }
+
+      const defaultPdfPath = targetUri.fsPath.replace(/\.(md|markdown)$/i, '.pdf');
+      const defaultPdfUri = vscode.Uri.file(defaultPdfPath);
+
+      const destinationUri = await vscode.window.showSaveDialog({
+        defaultUri: defaultPdfUri,
+        filters: { 'PDF Dokument': ['pdf'] },
+        saveLabel: 'PDF exportieren',
+        title: 'Notiz als PDF exportieren',
+      });
+
+      if (!destinationUri) {
+        return;
+      }
+
+      try {
+        const noteDoc = await vscode.workspace.openTextDocument(targetUri);
+        const markdown = noteDoc.getText();
+
+        const config = vscode.workspace.getConfiguration('janus.export');
+        const customBrowser = config.get<string>('browserPath');
+
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: 'Janus Note: PDF wird generiert...',
+            cancellable: false,
+          },
+          async () => {
+            const service = new PdfExportService(customBrowser);
+            await service.exportNoteToPdf({
+              markdown,
+              outputPath: destinationUri.fsPath,
+              noteFilePath: targetUri!.fsPath,
+              title: path.basename(targetUri!.fsPath, path.extname(targetUri!.fsPath)),
+            });
+          }
+        );
+
+        const action = await vscode.window.showInformationMessage(
+          `PDF erfolgreich exportiert: ${path.basename(destinationUri.fsPath)}`,
+          'Öffnen',
+          'Im Dateimanager anzeigen'
+        );
+
+        if (action === 'Öffnen') {
+          await vscode.env.openExternal(destinationUri);
+        } else if (action === 'Im Dateimanager anzeigen') {
+          await vscode.commands.executeCommand('revealFileInOS', destinationUri);
+        }
+      } catch (err: any) {
+        const errorMsg = err?.message || String(err);
+        if (errorMsg.includes('janus.export.browserPath')) {
+          const opt = await vscode.window.showErrorMessage(errorMsg, 'Einstellungen öffnen');
+          if (opt === 'Einstellungen öffnen') {
+            await vscode.commands.executeCommand('workbench.action.openSettings', 'janus.export.browserPath');
+          }
+        } else {
+          vscode.window.showErrorMessage(`Fehler beim PDF-Export: ${errorMsg}`);
+        }
+      }
     }),
 
     vscode.workspace.onDidChangeConfiguration((e) => {
