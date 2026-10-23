@@ -555,7 +555,8 @@
     "watch": "node esbuild.js --watch",
     "build": "node esbuild.js",
     "test": "vitest run",
-    "package": "vsce package --no-git-tag-version"
+    "package": "vsce package --no-git-tag-version",
+    "release": "./release.sh"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",

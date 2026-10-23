@@ -42,19 +42,23 @@ TARGET_VER=${TARGET_VER#v}
 echo ""
 echo "🚀 Bereite Release v$TARGET_VER vor..."
 
-# Step 1: Run Unit Tests
+# Step 1: Typecheck & Unit Tests
 echo ""
-echo "🧪 1/3 Führe Unit-Tests aus (Vitest)..."
+echo "🔍 1/4 Prüfe TypeScript Typen (tsc)..."
+npm run compile
+
+echo ""
+echo "🧪 2/4 Führe Unit-Tests aus (Vitest)..."
 npm test
 
 # Step 2: Build Extension & Webview
 echo ""
-echo "📦 2/3 Baue Extension & Webview Produktionsbundle..."
+echo "📦 3/4 Baue Extension & Webview Produktionsbundle..."
 npm run build
 
 # Step 3: Bump Version in package.json
 echo ""
-echo "✍️ 3/3 Aktualisiere package.json Version auf v$TARGET_VER..."
+echo "✍️ 4/4 Aktualisiere package.json Version auf v$TARGET_VER..."
 npm version $TARGET_VER --no-git-tag-version > /dev/null
 
 # Step 4: Git Commit & Tag
@@ -67,10 +71,16 @@ if [[ "$CONFIRM_GIT" =~ ^[Yy]$ ]]; then
     COMMIT_MSG="Release v$TARGET_VER"
   fi
 
-  git add package.json package-lock.json
-  if [ -f CHANGELOG.md ]; then
-    git add CHANGELOG.md
+  read -p "Möchtest du alle aktuellen Projektänderungen in dieses Release mit aufnehmen? (Y/n): " STAGE_ALL
+  if [[ "$STAGE_ALL" =~ ^[Nn]$ ]]; then
+    git add package.json package-lock.json
+    if [ -f CHANGELOG.md ]; then
+      git add CHANGELOG.md
+    fi
+  else
+    git add -A
   fi
+
   git commit -m "$COMMIT_MSG"
   git tag -a "v$TARGET_VER" -m "$COMMIT_MSG"
   echo "✅ Git Commit & Tag v$TARGET_VER erstellt."
