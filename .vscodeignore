@@ -1,10 +1,15 @@
 .vscode/**
 .agents/**
+.gemini/**
+.github/**
 openspec/**
 src/**
 tests/**
+sample/**
+release.sh
 vitest.config.ts
 tsconfig.json
 esbuild.js
 **/*.map
 .gitignore
+node_modules/**
