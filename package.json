@@ -196,6 +196,11 @@
         "icon": "$(checklist)"
       },
       {
+        "command": "janus.openFolderOverview",
+        "title": "Janus: Ordnerübersicht öffnen",
+        "icon": "$(dashboard)"
+      },
+      {
         "command": "janus.selectAiModel",
         "title": "Janus: KI-Modell auswählen / konfigurieren",
         "icon": "$(sparkle)"
@@ -245,6 +250,16 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "janus.openFolderOverview",
+          "when": "view == janus.notesView && (viewItem == janusFolder || viewItem == linkedFolder)",
+          "group": "inline@0"
+        },
+        {
+          "command": "janus.openFolderOverview",
+          "when": "view == janus.notesView && (viewItem == janusFolder || viewItem == linkedFolder)",
+          "group": "navigation@0"
+        },
         {
           "command": "janus.createNote",
           "when": "view == janus.notesView && viewItem == janusFolder",
@@ -507,6 +522,7 @@
     "clsx": "^2.1.1",
     "codemirror-markdown-tables": "^1.0.1",
     "d3": "^7.9.0",
+    "marked": "^18.1.1",
     "mermaid": "^12.2.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

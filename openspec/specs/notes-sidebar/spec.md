@@ -13,11 +13,15 @@ The system SHALL contribute a custom View Container to the VS Code Activity Bar 
 - **THEN** a Janus View Container icon appears in the Activity Bar with the Notes view available inside it
 
 ### Requirement: Notes Directory Scoping in TreeView
-The system SHALL display only Markdown notes (`*.md`, `*.markdown`) and subdirectories located within the configured `janus.notesRoot` directory or any directory configured in `janus.includeFolders` in the Notes TreeView. Non-note files and files outside these configured directories SHALL NOT appear in the tree view.
+The system SHALL display only Markdown notes (`*.md`, `*.markdown`) and subdirectories located within the configured `janus.notesRoot` directory or any directory configured in `janus.includeFolders` in the Notes TreeView. Non-note files and files outside these configured directories SHALL NOT appear in the tree view. Folder items in the tree view SHALL expose an inline action button `$(dashboard)` to open the central Folder Overview.
 
 #### Scenario: Displaying notes and folders
 - **WHEN** a user expands the Notes TreeView in an initialized workspace or a workspace with linked folders
 - **THEN** only Markdown files and folder hierarchies within `janus.notesRoot` and `janus.includeFolders` are displayed as items
+
+#### Scenario: Hovering on folder item shows inline overview action
+- **WHEN** user hovers over a folder item in the Notes TreeView
+- **THEN** an inline action button with icon `$(dashboard)` (`janus.openFolderOverview`) is displayed
 
 ### Requirement: Companion Files Displayed as Expandable Child Items
 The system SHALL discover attached companion files (`*.tasks.json`, `*.chart.json`) for each Markdown note and display them as expandable child items directly beneath that note in the TreeView.
@@ -179,5 +183,16 @@ The system SHALL provide the command `janus.addLinkedFolder` (accessible via the
 #### Scenario: Removing a linked folder via item context menu
 - **WHEN** user right-clicks a linked folder in the Notes view and selects "Aus Janus Notizen entfernen"
 - **THEN** the system removes that folder path from `janus.includeFolders` and refreshes the Notes view without modifying or deleting files on disk
+
+### Requirement: Multi-Selection in Notes TreeView
+The system SHALL allow multiple items (notes and folders) to be simultaneously selected in the Notes TreeView (`janus.notesView`) via standard multi-select gestures (`canSelectMany: true`). When two or more items are selected, the system SHALL automatically reveal or update the Overview dashboard displaying the aggregated contents of the active selection.
+
+#### Scenario: Selecting two or more items opens selection overview
+- **WHEN** user selects two or more notes or folders in the Notes TreeView using Shift-click or Cmd/Ctrl-click
+- **THEN** the system reveals or updates the central Overview dashboard showing the aggregated items of the selection
+
+#### Scenario: Single item selection retains standard behavior
+- **WHEN** user selects a single item in the Notes TreeView
+- **THEN** the system selects the item in the tree without automatically replacing the active editor with an overview
 
 

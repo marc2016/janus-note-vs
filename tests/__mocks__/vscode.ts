@@ -251,10 +251,12 @@ export const window = {
   showQuickPick: async (_items?: any, _options?: any): Promise<any> => undefined,
   registerCustomEditorProvider: () => ({ dispose: () => {} }),
   registerTreeDataProvider: () => ({ dispose: () => {} }),
-  createTreeView: () => ({
+  createTreeView: (_viewId?: string, options?: any) => ({
     selection: [] as any[],
+    options,
     dispose: () => {},
     reveal: async () => {},
+    onDidChangeSelection: (_listener: any) => ({ dispose: () => {} }),
   }),
   createWebviewPanel: (_viewType: string, title: string, _showOptions: any, _options?: any) => ({
     title,
@@ -321,6 +323,10 @@ export class WorkspaceEdit {
 export const env = {
   language: 'de',
   openExternal: async (_uri: any) => true,
+  clipboard: {
+    writeText: async (_t: string) => {},
+    readText: async () => '',
+  },
 };
 
 

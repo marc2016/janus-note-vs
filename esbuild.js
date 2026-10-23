@@ -35,6 +35,7 @@ async function build() {
       markdown: 'src/webviews/markdown/index.tsx',
       settings: 'src/webviews/settings/index.tsx',
       calendar: 'src/webviews/calendar/index.tsx',
+      folderOverview: 'src/webviews/folderOverview/index.tsx',
     },
     bundle: true,
     format: 'iife',

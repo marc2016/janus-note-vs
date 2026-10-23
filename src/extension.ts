@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { CompanionManager } from './companion/companionManager';
 import { CompanionCodeLensProvider } from './companion/companionCodeLensProvider';
 import { CompanionWatcher } from './companion/companionWatcher';
@@ -9,11 +10,13 @@ import { GlobalTasksViewProvider } from './editors/globalTasksViewProvider';
 import { CalendarViewProvider } from './editors/calendarViewProvider';
 import { CalendarDayDetailsViewProvider } from './editors/calendarDayDetailsViewProvider';
 import { SettingsViewProvider } from './editors/settingsViewProvider';
+import { FolderOverviewViewProvider } from './editors/folderOverviewViewProvider';
 import { FolderTasksService } from './services/folderTasksService';
 import { CalendarService } from './services/calendarService';
 import { AiModelService } from './services/aiModelService';
 import { AiTaskGeneratorService } from './services/aiTaskGeneratorService';
 import { AiInboxSorterService } from './services/aiInboxSorterService';
+import { AiFolderSummaryService } from './services/aiFolderSummaryService';
 import { JanusSearchService } from './services/janusSearchService';
 import { DiffContentProvider, NoteDiffViewer } from './agent/diffViewer';
 import { ReadNoteTool } from './agent/tools/readNoteTool';
@@ -37,7 +40,12 @@ import {
   renameItemCommand,
   deleteItemCommand,
 } from './commands/notesFileCommands';
-import { NotesTreeDataProvider, NotesTreeItem, FolderTreeItem } from './ui/notesTreeDataProvider';
+import {
+  NotesTreeDataProvider,
+  NotesTreeItem,
+  FolderTreeItem,
+  LinkedFolderTreeItem,
+} from './ui/notesTreeDataProvider';
 
 export function getActiveNoteUri(): vscode.Uri | undefined {
   const tabGroups = vscode.window.tabGroups;
@@ -87,6 +95,7 @@ export function activate(context: vscode.ExtensionContext) {
   const notesTreeView = vscode.window.createTreeView('janus.notesView', {
     treeDataProvider: notesTreeDataProvider,
     showCollapseAll: true,
+    canSelectMany: true,
   });
 
   // Active editor synchronization with sidebar selection
@@ -139,6 +148,26 @@ export function activate(context: vscode.ExtensionContext) {
     () => scheduleSyncSidebarSelection(vscode.Uri.parse('janus-calendar:///all'))
   );
   const settingsViewProvider = new SettingsViewProvider(context, aiModelService);
+  const aiFolderSummaryService = new AiFolderSummaryService(aiModelService, folderTasksService);
+  const folderOverviewViewProvider = new FolderOverviewViewProvider(
+    context,
+    aiFolderSummaryService,
+    folderTasksService,
+    () => notesTreeDataProvider.refresh()
+  );
+
+  let multiSelectionDebounceTimer: NodeJS.Timeout | undefined;
+  const multiSelectionSub = notesTreeView.onDidChangeSelection(async (e) => {
+    if (multiSelectionDebounceTimer) {
+      clearTimeout(multiSelectionDebounceTimer);
+    }
+    if (e.selection && e.selection.length >= 2) {
+      multiSelectionDebounceTimer = setTimeout(async () => {
+        const status = await checkNotesRootStatus(companionManager);
+        await folderOverviewViewProvider.openSelection(e.selection as any[], status.notesRootUri);
+      }, 200);
+    }
+  });
 
   // 2. Diff and Review Services
   const diffContentProvider = new DiffContentProvider();
@@ -146,6 +175,14 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     companionWatcher,
+    multiSelectionSub,
+    {
+      dispose: () => {
+        if (multiSelectionDebounceTimer) {
+          clearTimeout(multiSelectionDebounceTimer);
+        }
+      },
+    },
     vscode.languages.registerCodeLensProvider({ language: 'markdown' }, codeLensProvider),
     vscode.workspace.registerTextDocumentContentProvider(DiffContentProvider.scheme, diffContentProvider),
     notesTreeView,
@@ -366,6 +403,31 @@ export function activate(context: vscode.ExtensionContext) {
       }
       await vscode.commands.executeCommand('vscode.openWith', tasksUri, TasksEditorProvider.viewType);
       scheduleSyncSidebarSelection(tasksUri);
+    }),
+    vscode.commands.registerCommand('janus.openFolderOverview', async (item?: NotesTreeItem | vscode.Uri) => {
+      let folderUri: vscode.Uri | undefined;
+      if (item instanceof FolderTreeItem || item instanceof LinkedFolderTreeItem) {
+        folderUri = item.uri;
+      } else if (item instanceof vscode.Uri) {
+        folderUri = item;
+      } else if (item && typeof (item as any).resourceUri === 'object' && (item as any).resourceUri instanceof vscode.Uri) {
+        folderUri = (item as any).resourceUri;
+      } else if (item && typeof (item as any).uri === 'object' && (item as any).uri instanceof vscode.Uri) {
+        folderUri = (item as any).uri;
+      } else {
+        const activeUri = getActiveNoteUri();
+        if (activeUri && isMarkdownNote(activeUri.fsPath)) {
+          folderUri = vscode.Uri.file(path.dirname(activeUri.fsPath));
+        } else {
+          const status = await checkNotesRootStatus(companionManager);
+          folderUri = status.notesRootUri;
+        }
+      }
+      if (!folderUri) {
+        vscode.window.showErrorMessage('Kein Ordner für die Übersicht ausgewählt.');
+        return;
+      }
+      await folderOverviewViewProvider.open(folderUri);
     }),
     vscode.commands.registerCommand('janus.openSettings', async () => {
       await settingsViewProvider.open();
