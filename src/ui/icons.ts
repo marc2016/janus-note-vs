@@ -32,6 +32,8 @@ import {
   mdiLinkVariant,
   mdiFilePdfBox,
   mdiPrinter,
+  mdiArrowUp,
+  mdiArrowDown,
 } from '@mdi/js';
 
 export {
@@ -68,6 +70,8 @@ export {
   mdiLinkVariant,
   mdiFilePdfBox,
   mdiPrinter,
+  mdiArrowUp,
+  mdiArrowDown,
 };
 
 /**

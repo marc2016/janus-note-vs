@@ -230,6 +230,11 @@
         "command": "janus.exportNoteToPdf",
         "title": "Janus: Als PDF exportieren...",
         "icon": "$(file-pdf)"
+      },
+      {
+        "command": "janus.exportFolderToPdf",
+        "title": "Janus: Ordner als Sammel-PDF exportieren...",
+        "icon": "$(file-pdf)"
       }
     ],
     "menus": {
@@ -315,6 +320,16 @@
           "command": "janus.exportNoteToPdf",
           "when": "view == janus.notesView && viewItem == janusNote",
           "group": "export@1"
+        },
+        {
+          "command": "janus.exportFolderToPdf",
+          "when": "view == janus.notesView && (viewItem == janusFolder || viewItem == linkedFolder)",
+          "group": "export@1"
+        },
+        {
+          "command": "janus.exportFolderToPdf",
+          "when": "view == janus.notesView && viewItem == janusNote",
+          "group": "export@2"
         }
       ],
       "editor/title": [

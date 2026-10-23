@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import * as path from 'path';
 import {
   compileNoteToPrintHtml,
+  compileMultiNoteToPrintHtml,
   resolveImageSource,
   PdfExportService,
   DEFAULT_PRINT_CSS,
@@ -152,6 +153,88 @@ describe('pdfExportService', () => {
           execFileFn: mockExecFile,
         })
       ).rejects.toThrow('PDF-Generierung fehlgeschlagen: Process crashed');
+    });
+  });
+
+  describe('compileMultiNoteToPrintHtml', () => {
+    const sampleNotes = [
+      {
+        title: 'Einführung',
+        markdown: '# Einführung\n\nErster Inhalt.',
+        filePath: '/notes/01-intro.md',
+      },
+      {
+        title: 'Architektur',
+        markdown: '# Architektur\n\nZweiter Inhalt:\n- [x] Done.',
+        filePath: '/notes/02-arch.md',
+      },
+    ];
+
+    it('generates a table of contents with internal anchor links when includeToc is true', () => {
+      const html = compileMultiNoteToPrintHtml(sampleNotes, {
+        title: 'Projekt Kompendium',
+        includeToc: true,
+      });
+
+      expect(html).toContain('Projekt Kompendium');
+      expect(html).toContain('Inhaltsverzeichnis</h2>');
+      expect(html).toContain('href="#note-0"');
+      expect(html).toContain('href="#note-1"');
+      expect(html).toContain('id="note-0"');
+      expect(html).toContain('id="note-1"');
+      expect(html).toContain('Einführung</h1>');
+      expect(html).toContain('Architektur</h1>');
+      expect(html).toContain('page-break-before: always;');
+      expect(html).toContain('task-checkbox checked');
+    });
+
+    it('omits table of contents when includeToc is false', () => {
+      const html = compileMultiNoteToPrintHtml(sampleNotes, {
+        includeToc: false,
+      });
+
+      expect(html).not.toContain('Inhaltsverzeichnis</h2>');
+      expect(html).not.toContain('<ul class="toc-list">');
+      expect(html).toContain('id="note-0"');
+      expect(html).toContain('id="note-1"');
+    });
+  });
+
+  describe('PdfExportService.exportCompendiumToPdf', () => {
+    it('invokes browser binary with headless flags for compendium export', async () => {
+      let executedBinary = '';
+      let executedArgs: readonly string[] = [];
+
+      const mockExecFile: any = (
+        file: string,
+        args: readonly string[],
+        _opts: any,
+        callback: (error: Error | null, stdout: string, stderr: string) => void
+      ) => {
+        executedBinary = file;
+        executedArgs = args;
+        callback(null, '', '');
+      };
+
+      const service = new PdfExportService();
+      const outputPath = path.resolve(__dirname, 'compendium.pdf');
+      const result = await service.exportCompendiumToPdf({
+        notes: [
+          {
+            title: 'Note 1',
+            markdown: '# Note 1',
+            filePath: '/notes/note1.md',
+          },
+        ],
+        outputPath,
+        browserPath: process.execPath,
+        execFileFn: mockExecFile,
+      });
+
+      expect(result).toBe(outputPath);
+      expect(executedBinary).toBe(process.execPath);
+      expect(executedArgs).toContain('--headless');
+      expect(executedArgs).toContain(`--print-to-pdf=${outputPath}`);
     });
   });
 });

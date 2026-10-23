@@ -642,6 +642,22 @@ export class FolderOverviewViewProvider {
         }
         break;
       }
+
+      case 'exportPdf': {
+        if (this.currentMode === 'multi' && this.currentSelection) {
+          await vscode.commands.executeCommand(
+            'janus.exportFolderToPdf',
+            undefined,
+            this.currentSelection.map((s) => s.uri)
+          );
+        } else if (message.folderUri) {
+          await vscode.commands.executeCommand(
+            'janus.exportFolderToPdf',
+            this.resolveUri(message.folderUri)
+          );
+        }
+        break;
+      }
     }
   }
 

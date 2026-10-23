@@ -579,3 +579,61 @@ export async function getNoteLinksData(
   };
 }
 
+/**
+ * Recursively collects and deduplicates Markdown notes from a list of selected tree items or URIs.
+ */
+export async function collectMarkdownNotesFromSelection(
+  items: (any | vscode.Uri)[],
+  maxDepth: number = 5
+): Promise<vscode.Uri[]> {
+  const result: vscode.Uri[] = [];
+  const seen = new Set<string>();
+
+  for (const item of items) {
+    let targetUri: vscode.Uri | undefined;
+    if (item instanceof vscode.Uri) {
+      targetUri = item;
+    } else if (item && typeof item === 'object' && item.resourceUri instanceof vscode.Uri) {
+      targetUri = item.resourceUri;
+    } else if (item && typeof item === 'object' && item.uri instanceof vscode.Uri) {
+      targetUri = item.uri;
+    } else if (typeof item?.fsPath === 'string') {
+      targetUri = vscode.Uri.file(item.fsPath);
+    }
+
+    if (!targetUri) {
+      continue;
+    }
+
+    try {
+      const stat = await vscode.workspace.fs.stat(targetUri);
+      if (stat.type === vscode.FileType.Directory) {
+        const nestedNotes = await findMarkdownNotesInRoot(targetUri, maxDepth);
+        for (const note of nestedNotes) {
+          const key = note.toString();
+          if (!seen.has(key)) {
+            seen.add(key);
+            result.push(note);
+          }
+        }
+      } else if (stat.type === vscode.FileType.File && isMarkdownNote(targetUri.fsPath)) {
+        const key = targetUri.toString();
+        if (!seen.has(key)) {
+          seen.add(key);
+          result.push(targetUri);
+        }
+      }
+    } catch {
+      if (isMarkdownNote(targetUri.fsPath)) {
+        const key = targetUri.toString();
+        if (!seen.has(key)) {
+          seen.add(key);
+          result.push(targetUri);
+        }
+      }
+    }
+  }
+
+  return result;
+}
+

@@ -13,11 +13,36 @@ export interface CompilePrintHtmlOptions {
   mermaidScriptUrl?: string;
 }
 
+export interface CompendiumNoteInput {
+  markdown: string;
+  filePath: string;
+  title?: string;
+}
+
+export interface CompileMultiNotePrintHtmlOptions {
+  title?: string;
+  includeToc?: boolean;
+  customCss?: string;
+  mermaidScriptUrl?: string;
+}
+
 export interface ExportPdfOptions {
   markdown: string;
   outputPath: string;
   noteFilePath?: string;
   title?: string;
+  browserPath?: string;
+  timeoutMs?: number;
+  customCss?: string;
+  execFileFn?: typeof execFile;
+  findBrowserFn?: typeof findChromiumBrowser;
+}
+
+export interface ExportCompendiumOptions {
+  notes: CompendiumNoteInput[];
+  outputPath: string;
+  title?: string;
+  includeToc?: boolean;
   browserPath?: string;
   timeoutMs?: number;
   customCss?: string;
@@ -228,19 +253,16 @@ export function findLocalMermaidScript(): string | null {
   return null;
 }
 
-export function compileNoteToPrintHtml(
-  markdown: string,
-  options: CompilePrintHtmlOptions = {}
-): string {
-  // 1. Parse markdown with marked
-  let rawHtml = marked.parse(markdown, {
+export function formatMarkdownHtml(
+  rawMarkdown: string,
+  noteFilePath?: string
+): { html: string; hasMermaid: boolean } {
+  let rawHtml = marked.parse(rawMarkdown, {
     async: false,
     gfm: true,
     breaks: true,
   }) as string;
 
-  // 2. Format task checkboxes
-  // Handle checked inputs: <input checked="" disabled="" type="checkbox"> or <input disabled="" type="checkbox" checked="">
   rawHtml = rawHtml.replace(
     /<input[^>]*checked[^>]*type=["']checkbox["'][^>]*>/gi,
     '<span class="task-checkbox checked"></span>'
@@ -249,30 +271,26 @@ export function compileNoteToPrintHtml(
     /<input[^>]*type=["']checkbox["'][^>]*checked[^>]*>/gi,
     '<span class="task-checkbox checked"></span>'
   );
-  // Handle unchecked inputs: <input disabled="" type="checkbox">
   rawHtml = rawHtml.replace(
     /<input[^>]*type=["']checkbox["'][^>]*>/gi,
     '<span class="task-checkbox unchecked"></span>'
   );
 
-  // 3. Resolve relative image paths
-  if (options.noteFilePath) {
+  if (noteFilePath) {
     rawHtml = rawHtml.replace(
       /<img([^>]+)src=["']([^"']+)["']([^>]*)>/gi,
       (_match, before, src, after) => {
-        const resolvedSrc = resolveImageSource(src, options.noteFilePath);
+        const resolvedSrc = resolveImageSource(src, noteFilePath);
         return `<img${before}src="${resolvedSrc}"${after}>`;
       }
     );
   }
 
-  // 4. Convert mermaid code blocks: <pre><code class="language-mermaid">...</code></pre>
   const hasMermaid = /class=["']language-mermaid["']/i.test(rawHtml);
   if (hasMermaid) {
     rawHtml = rawHtml.replace(
       /<pre><code class=["']language-mermaid["']>([\s\S]*?)<\/code><\/pre>/gi,
       (_match, code) => {
-        // Unescape standard HTML entities inside code block so mermaid can parse syntax cleanly
         const unescaped = code
           .replace(/&lt;/g, '<')
           .replace(/&gt;/g, '>')
@@ -284,12 +302,20 @@ export function compileNoteToPrintHtml(
     );
   }
 
+  return { html: rawHtml, hasMermaid };
+}
+
+export function compileNoteToPrintHtml(
+  markdown: string,
+  options: CompilePrintHtmlOptions = {}
+): string {
+  const formatted = formatMarkdownHtml(markdown, options.noteFilePath);
   const title = options.title || 'Janus Note';
   const customCss = options.customCss || '';
   const mermaidScriptUrl =
     options.mermaidScriptUrl || findLocalMermaidScript() || 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js';
 
-  const mermaidScripts = hasMermaid
+  const mermaidScripts = formatted.hasMermaid
     ? `
   <script src="${mermaidScriptUrl}"></script>
   <script>
@@ -313,7 +339,145 @@ ${customCss}
 </head>
 <body>
   <div class="note-container">
-${rawHtml}
+${formatted.html}
+  </div>
+${mermaidScripts}
+</body>
+</html>`;
+}
+
+export function compileMultiNoteToPrintHtml(
+  notes: CompendiumNoteInput[],
+  options: CompileMultiNotePrintHtmlOptions = {}
+): string {
+  const compendiumTitle = options.title || 'Janus Note Kompendium';
+  const includeToc = options.includeToc !== false;
+  let anyMermaid = false;
+
+  let tocHtml = '';
+  if (includeToc) {
+    const tocItems = notes
+      .map((note, index) => {
+        const noteTitle = note.title || path.basename(note.filePath, path.extname(note.filePath));
+        return `<li class="toc-item"><a href="#note-${index}" class="toc-link"><span class="toc-title">${noteTitle}</span><span class="toc-dot-leader"></span></a></li>`;
+      })
+      .join('\n');
+
+    tocHtml = `
+    <div class="toc-page">
+      <h1 class="toc-main-title">${compendiumTitle}</h1>
+      <h2 class="toc-heading">Inhaltsverzeichnis</h2>
+      <ul class="toc-list">
+        ${tocItems}
+      </ul>
+    </div>
+    <div style="page-break-after: always;"></div>`;
+  }
+
+  const notesHtml = notes
+    .map((note, index) => {
+      const noteTitle = note.title || path.basename(note.filePath, path.extname(note.filePath));
+      const formatted = formatMarkdownHtml(note.markdown, note.filePath);
+      if (formatted.hasMermaid) {
+        anyMermaid = true;
+      }
+      const breakBefore = includeToc || index > 0 ? 'style="page-break-before: always;"' : '';
+      return `
+    <section id="note-${index}" class="note-section" ${breakBefore}>
+      <header class="note-header">
+        <h1 class="note-title">${noteTitle}</h1>
+      </header>
+      <div class="note-content">
+        ${formatted.html}
+      </div>
+    </section>`;
+    })
+    .join('\n');
+
+  const customCss = options.customCss || '';
+  const mermaidScriptUrl =
+    options.mermaidScriptUrl || findLocalMermaidScript() || 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js';
+
+  const mermaidScripts = anyMermaid
+    ? `
+  <script src="${mermaidScriptUrl}"></script>
+  <script>
+    try {
+      mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+    } catch (e) {
+      console.error('Mermaid initialization failed', e);
+    }
+  </script>`
+    : '';
+
+  const tocCss = `
+.toc-page {
+  padding-top: 2em;
+}
+.toc-main-title {
+  font-size: 26pt;
+  margin-bottom: 0.3em;
+  color: #0f172a;
+}
+.toc-heading {
+  font-size: 16pt;
+  color: #64748b;
+  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: 0.4em;
+  margin-bottom: 1.5em;
+}
+.toc-list {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+.toc-item {
+  margin-bottom: 0.8em;
+}
+.toc-link {
+  display: flex;
+  align-items: baseline;
+  text-decoration: none;
+  color: #1e293b;
+  font-size: 12pt;
+  font-weight: 500;
+}
+.toc-link:hover {
+  color: #2563eb;
+}
+.toc-dot-leader {
+  flex-grow: 1;
+  border-bottom: 1px dotted #cbd5e1;
+  margin: 0 8px;
+}
+.note-section {
+  margin-bottom: 2em;
+}
+.note-header {
+  border-bottom: 1.5px solid #eaeaea;
+  margin-bottom: 1.2em;
+}
+.note-header .note-title {
+  font-size: 20pt;
+  margin: 0 0 0.3em 0;
+}
+`;
+
+  return `<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>${compendiumTitle}</title>
+  <style>
+${DEFAULT_PRINT_CSS}
+${tocCss}
+${customCss}
+  </style>
+</head>
+<body>
+  <div class="compendium-container">
+${tocHtml}
+${notesHtml}
   </div>
 ${mermaidScripts}
 </body>
@@ -384,6 +548,77 @@ export class PdfExportService {
       return options.outputPath;
     } finally {
       // Clean up temporary files
+      try {
+        if (fs.existsSync(tempHtmlFile)) {
+          fs.unlinkSync(tempHtmlFile);
+        }
+        if (fs.existsSync(tempDir)) {
+          fs.rmdirSync(tempDir);
+        }
+      } catch {
+        // Ignore temp cleanup errors
+      }
+    }
+  }
+
+  public async exportCompendiumToPdf(options: ExportCompendiumOptions): Promise<string> {
+    const locateBrowser = options.findBrowserFn || findChromiumBrowser;
+    const browserBinary = locateBrowser({
+      customPath: options.browserPath || this.customBrowserPath,
+    });
+
+    if (!browserBinary) {
+      throw new Error(
+        'Kein Chromium-basierter Browser gefunden. Bitte installieren Sie Google Chrome, Microsoft Edge oder Brave, oder setzen Sie "janus.export.browserPath" in den Einstellungen.'
+      );
+    }
+
+    const html = compileMultiNoteToPrintHtml(options.notes, {
+      title: options.title,
+      includeToc: options.includeToc,
+      customCss: options.customCss,
+    });
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'janus-compendium-'));
+    const tempHtmlFile = path.join(tempDir, 'compendium.html');
+    fs.writeFileSync(tempHtmlFile, html, 'utf-8');
+
+    const outDir = path.dirname(options.outputPath);
+    if (!fs.existsSync(outDir)) {
+      fs.mkdirSync(outDir, { recursive: true });
+    }
+
+    const args = [
+      '--headless',
+      '--disable-gpu',
+      '--no-pdf-header-footer',
+      '--allow-file-access-from-files',
+      `--print-to-pdf=${options.outputPath}`,
+      tempHtmlFile,
+    ];
+
+    const runExecFile = options.execFileFn || execFile;
+    const timeout = options.timeoutMs || 45000;
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        runExecFile(browserBinary, args, { timeout }, (error, _stdout, stderr) => {
+          if (error) {
+            reject(
+              new Error(
+                `Sammel-PDF-Generierung fehlgeschlagen: ${error.message}${
+                  stderr ? `\n${stderr}` : ''
+                }`
+              )
+            );
+          } else {
+            resolve();
+          }
+        });
+      });
+
+      return options.outputPath;
+    } finally {
       try {
         if (fs.existsSync(tempHtmlFile)) {
           fs.unlinkSync(tempHtmlFile);

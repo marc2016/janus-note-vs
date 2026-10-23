@@ -11,6 +11,8 @@ import { CalendarViewProvider } from './editors/calendarViewProvider';
 import { CalendarDayDetailsViewProvider } from './editors/calendarDayDetailsViewProvider';
 import { SettingsViewProvider } from './editors/settingsViewProvider';
 import { FolderOverviewViewProvider } from './editors/folderOverviewViewProvider';
+import { ExportCompendiumViewProvider } from './editors/exportCompendiumViewProvider';
+import { collectMarkdownNotesFromSelection } from './services/noteLinkService';
 import { FolderTasksService } from './services/folderTasksService';
 import { CalendarService } from './services/calendarService';
 import { AiModelService } from './services/aiModelService';
@@ -156,6 +158,7 @@ export function activate(context: vscode.ExtensionContext) {
     folderTasksService,
     () => notesTreeDataProvider.refresh()
   );
+  const exportCompendiumViewProvider = new ExportCompendiumViewProvider(context);
 
   let multiSelectionDebounceTimer: NodeJS.Timeout | undefined;
   const multiSelectionSub = notesTreeView.onDidChangeSelection(async (e) => {
@@ -596,6 +599,45 @@ export function activate(context: vscode.ExtensionContext) {
           vscode.window.showErrorMessage(`Fehler beim PDF-Export: ${errorMsg}`);
         }
       }
+    }),
+    vscode.commands.registerCommand('janus.exportFolderToPdf', async (item?: any, allSelectedItems?: any[]) => {
+      let targets: any[] = [];
+      if (Array.isArray(allSelectedItems) && allSelectedItems.length > 0) {
+        targets = allSelectedItems;
+      } else if (item) {
+        targets = [item];
+      } else {
+        const activeUri = getActiveNoteUri();
+        if (activeUri) {
+          targets = [activeUri];
+        }
+      }
+
+      if (targets.length === 0) {
+        vscode.window.showErrorMessage('Bitte wählen Sie einen Ordner oder Notizen für den Export aus.');
+        return;
+      }
+
+      const status = await checkNotesRootStatus(companionManager);
+      const noteUris = await collectMarkdownNotesFromSelection(targets);
+
+      if (noteUris.length === 0) {
+        vscode.window.showWarningMessage('Keine Markdown-Notizen im ausgewählten Bereich gefunden.');
+        return;
+      }
+
+      let defaultTitle = 'Notizensammlung';
+      if (targets.length === 1) {
+        const target = targets[0];
+        const targetUri: vscode.Uri | undefined = target instanceof vscode.Uri ? target : (target?.resourceUri || target?.uri);
+        if (targetUri) {
+          defaultTitle = path.basename(targetUri.fsPath);
+        }
+      } else {
+        defaultTitle = `Auswahl (${noteUris.length} Notizen)`;
+      }
+
+      await exportCompendiumViewProvider.open(defaultTitle, noteUris, status.notesRootUri);
     }),
 
     vscode.workspace.onDidChangeConfiguration((e) => {

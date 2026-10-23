@@ -36,6 +36,7 @@ async function build() {
       settings: 'src/webviews/settings/index.tsx',
       calendar: 'src/webviews/calendar/index.tsx',
       folderOverview: 'src/webviews/folderOverview/index.tsx',
+      exportCompendium: 'src/webviews/exportCompendium/index.tsx',
     },
     bundle: true,
     format: 'iife',

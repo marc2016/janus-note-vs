@@ -7,6 +7,7 @@ import {
   getNoteLinksData,
   parseLinkTargetAndLine,
   resolveOutgoingLink,
+  collectMarkdownNotesFromSelection,
 } from '../src/services/noteLinkService';
 import { CompanionManager } from '../src/companion/companionManager';
 import { __setConfigStore } from './__mocks__/vscode';
@@ -493,6 +494,57 @@ See [[src/service.ts:42]] and [Handler](src/handler.ts#L88) and regular [[Meetin
 
       expect(a?.lineNumber).toBe(3);
       expect(b?.lineNumber).toBe(5);
+    });
+  });
+
+  describe('collectMarkdownNotesFromSelection', () => {
+    it('collects individual markdown files and deduplicates them', async () => {
+      const note1 = vscode.Uri.file('/workspace/notes/a.md');
+      const note2 = vscode.Uri.file('/workspace/notes/b.md');
+
+      vi.spyOn(vscode.workspace.fs, 'stat').mockImplementation(async (uri) => {
+        return { type: vscode.FileType.File, ctime: 0, mtime: 0, size: 100 };
+      });
+
+      const notes = await collectMarkdownNotesFromSelection([
+        note1,
+        note2,
+        note1, // duplicate
+        { resourceUri: note2 }, // duplicate object
+      ]);
+
+      expect(notes).toHaveLength(2);
+      expect(notes.map((n) => n.fsPath)).toEqual([note1.fsPath, note2.fsPath]);
+    });
+
+    it('recursively discovers markdown files when a directory is selected', async () => {
+      const dirUri = vscode.Uri.file('/workspace/notes/project');
+
+      vi.spyOn(vscode.workspace.fs, 'stat').mockImplementation(async (uri) => {
+        if (uri.fsPath === dirUri.fsPath) {
+          return { type: vscode.FileType.Directory, ctime: 0, mtime: 0, size: 0 };
+        }
+        return { type: vscode.FileType.File, ctime: 0, mtime: 0, size: 100 };
+      });
+
+      vi.spyOn(vscode.workspace.fs, 'readDirectory').mockImplementation(async (uri) => {
+        if (uri.fsPath === dirUri.fsPath) {
+          return [
+            ['note1.md', vscode.FileType.File],
+            ['sub', vscode.FileType.Directory],
+            ['image.png', vscode.FileType.File],
+          ];
+        }
+        if (uri.fsPath === '/workspace/notes/project/sub') {
+          return [['note2.markdown', vscode.FileType.File]];
+        }
+        return [];
+      });
+
+      const notes = await collectMarkdownNotesFromSelection([dirUri]);
+      expect(notes).toHaveLength(2);
+      expect(notes.map((n) => n.fsPath)).toContain('/workspace/notes/project/note1.md');
+      expect(notes.map((n) => n.fsPath)).toContain('/workspace/notes/project/sub/note2.markdown');
     });
   });
 });
