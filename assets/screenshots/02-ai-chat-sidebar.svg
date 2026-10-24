@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 640" width="1000" height="640" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <defs>
+    <filter id="shadow2" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.45" />
+    </filter>
+  </defs>
+
+  <!-- Background Frame -->
+  <rect x="20" y="20" width="960" height="600" rx="10" fill="#1e1e1e" stroke="#333333" stroke-width="1.5" filter="url(#shadow2)" />
+
+  <!-- Left: Sidebar Chat View Panel (Width: 380px) -->
+  <rect x="20" y="20" width="380" height="600" rx="10" fill="#252526" />
+  <rect x="390" y="20" width="10" height="600" fill="#1e1e1e" />
+
+  <!-- Sidebar Header: Active Model Badge & Trash Icon -->
+  <rect x="20" y="20" width="380" height="48" rx="10" fill="#252526" />
+  <line x1="20" y1="68" x2="400" y2="68" stroke="#333333" stroke-width="1" />
+
+  <!-- Model Badge -->
+  <rect x="36" y="32" width="180" height="26" rx="6" fill="#333333" stroke="#484848" stroke-width="1" />
+  <text x="46" y="49" fill="#cca700" font-size="12">✨</text>
+  <text x="64" y="49" fill="#ffffff" font-size="11.5" font-weight="600">Ollama: llama3.3</text>
+  <text x="194" y="49" fill="#888888" font-size="11">⚙️</text>
+
+  <!-- Clear History Button -->
+  <circle cx="370" cy="45" r="14" fill="#2d2d2d" />
+  <text x="364" y="49" fill="#aaaaaa" font-size="12">🗑️</text>
+
+  <!-- Chat Messages Thread -->
+  <!-- User Message 1 -->
+  <g transform="translate(130, 84)">
+    <rect x="0" y="0" width="250" height="34" rx="10" fill="#007acc" />
+    <text x="14" y="21" fill="#ffffff" font-size="12">/search Architekturentscheidungen</text>
+  </g>
+
+  <!-- Assistant Reply 1 -->
+  <g transform="translate(36, 130)">
+    <rect x="0" y="0" width="344" height="230" rx="10" fill="#202022" stroke="#38383a" />
+    <text x="14" y="22" fill="#cca700" font-size="12" font-weight="bold">Janus Note KI</text>
+    <text x="14" y="44" fill="#e0e0e0" font-size="12">Folgende Notizen enthalten Architektur-Beschlüsse:</text>
+    
+    <text x="14" y="66" fill="#cccccc" font-size="11.5">• Trennung von Notiztext und Companion-Dateien</text>
+    <text x="14" y="84" fill="#cccccc" font-size="11.5">• Lokale Chromium-Engine für Vektor-PDF-Export</text>
+
+    <!-- Source Note Card 1 -->
+    <g transform="translate(14, 98)">
+      <rect x="0" y="0" width="316" height="52" rx="6" fill="#28282b" stroke="#444" />
+      <text x="10" y="18" fill="#3794ff" font-size="11.5" font-weight="bold">📄 architecture.md</text>
+      <text x="10" y="32" fill="#888888" font-size="10">knowledge/architecture.md</text>
+      <text x="10" y="44" fill="#aaaaaa" font-size="10" font-style="italic">"Janus verbindet Markdown-Notizen mit strukturierten..."</text>
+    </g>
+
+    <!-- Contextual Action Buttons -->
+    <g transform="translate(14, 160)">
+      <rect x="0" y="0" width="130" height="26" rx="4" fill="#3a3d41" stroke="#555" />
+      <text x="8" y="17" fill="#ffffff" font-size="10.5" font-weight="600">Alle Aufgaben öffnen</text>
+
+      <rect x="140" y="0" width="130" height="26" rx="4" fill="#3a3d41" stroke="#555" />
+      <text x="148" y="17" fill="#ffffff" font-size="10.5" font-weight="600">Notiz im Editor öffnen</text>
+    </g>
+  </g>
+
+  <!-- User Message 2 -->
+  <g transform="translate(150, 376)">
+    <rect x="0" y="0" width="230" height="34" rx="10" fill="#007acc" />
+    <text x="14" y="21" fill="#ffffff" font-size="12">Fasse die Inbox zusammen</text>
+  </g>
+
+  <!-- Quick Command Chips Above Input -->
+  <g transform="translate(36, 524)">
+    <rect x="0" y="0" width="62" height="22" rx="11" fill="#333538" stroke="#45494e" />
+    <text x="10" y="15" fill="#ffffff" font-size="10.5" font-weight="500">🔍 /search</text>
+
+    <rect x="68" y="0" width="60" height="22" rx="11" fill="#333538" stroke="#45494e" />
+    <text x="76" y="15" fill="#ffffff" font-size="10.5" font-weight="500">☑ /tasks</text>
+
+    <rect x="134" y="0" width="84" height="22" rx="11" fill="#333538" stroke="#45494e" />
+    <text x="142" y="15" fill="#ffffff" font-size="10.5" font-weight="500">📄 /summarize</text>
+
+    <rect x="224" y="0" width="56" height="22" rx="11" fill="#333538" stroke="#45494e" />
+    <text x="232" y="15" fill="#ffffff" font-size="10.5" font-weight="500">📥 /inbox</text>
+
+    <rect x="286" y="0" width="54" height="22" rx="11" fill="#333538" stroke="#45494e" />
+    <text x="294" y="15" fill="#ffffff" font-size="10.5" font-weight="500">❓ /help</text>
+  </g>
+
+  <!-- Chat Input Box -->
+  <g transform="translate(36, 558)">
+    <rect x="0" y="0" width="344" height="42" rx="6" fill="#3c3c3c" stroke="#007acc" stroke-width="1.5" />
+    <text x="14" y="26" fill="#ffffff" font-size="12">Welche Aufgaben sind bis Freitag fällig?|</text>
+    <!-- Send Arrow Button -->
+    <rect x="306" y="7" width="28" height="28" rx="4" fill="#007acc" />
+    <text x="314" y="25" fill="#ffffff" font-size="14">➤</text>
+  </g>
+
+  <!-- Right: Feature Callout Panel (Width: 540px) -->
+  <g transform="translate(430, 60)">
+    <text x="0" y="30" fill="#ffffff" font-size="22" font-weight="bold">KI &amp; Suche direkt in der Aktivitätsleiste</text>
+    <text x="0" y="60" fill="#aaaaaa" font-size="13" line-height="22">
+      Janus bringt einen provider-unabhängigen KI-Assistenten direkt unter den Notizenbaum.
+    </text>
+
+    <!-- Feature Card 1 -->
+    <g transform="translate(0, 90)">
+      <rect x="0" y="0" width="510" height="74" rx="8" fill="#252528" stroke="#38383a" />
+      <text x="20" y="28" fill="#cca700" font-size="14" font-weight="bold">✨ Freie Modellauswahl</text>
+      <text x="20" y="50" fill="#cccccc" font-size="12">Unterstützt lokale Modelle via Ollama (z. B. Llama 3.3, Qwen) sowie Cloud-Provider</text>
+      <text x="20" y="66" fill="#888888" font-size="11">(Google Gemini, OpenAI, Anthropic Claude, Custom AI Endpoints).</text>
+    </g>
+
+    <!-- Feature Card 2 -->
+    <g transform="translate(0, 180)">
+      <rect x="0" y="0" width="510" height="74" rx="8" fill="#252528" stroke="#38383a" />
+      <text x="20" y="28" fill="#388bfd" font-size="14" font-weight="bold">⚡ Slash-Commands &amp; 1-Klick-Chips</text>
+      <text x="20" y="50" fill="#cccccc" font-size="12">Schnellaktionen für <tspan fill="#ffffff" font-weight="bold">/search</tspan>, <tspan fill="#ffffff" font-weight="bold">/tasks</tspan>, <tspan fill="#ffffff" font-weight="bold">/summarize</tspan>, <tspan fill="#ffffff" font-weight="bold">/inbox</tspan> und <tspan fill="#ffffff" font-weight="bold">/help</tspan>.</text>
+      <text x="20" y="66" fill="#888888" font-size="11">Automatischer RAG-Kontext aus allen Markdown-Dateien und companion JSONs.</text>
+    </g>
+
+    <!-- Feature Card 3 -->
+    <g transform="translate(0, 270)">
+      <rect x="0" y="0" width="510" height="74" rx="8" fill="#252528" stroke="#38383a" />
+      <text x="20" y="28" fill="#2ea043" font-size="14" font-weight="bold">🔗 Interaktive Quellkarten &amp; Aktionen</text>
+      <text x="20" y="50" fill="#cccccc" font-size="12">Jeder gefundene Hinweis zeigt eine Quellkarte mit Snippet.</text>
+      <text x="20" y="66" fill="#888888" font-size="11">Ein Klick öffnet die Notiz direkt im WYSIWYG Markdown Editor an der passenden Stelle.</text>
+    </g>
+  </g>
+</svg>
+

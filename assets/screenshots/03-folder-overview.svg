@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 600" width="1000" height="600" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <defs>
+    <filter id="shadow3" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.45" />
+    </filter>
+  </defs>
+
+  <rect x="20" y="20" width="960" height="560" rx="10" fill="#1e1e1e" stroke="#333333" stroke-width="1.5" filter="url(#shadow3)" />
+
+  <!-- Dashboard Header -->
+  <g transform="translate(50, 48)">
+    <text x="0" y="24" fill="#888888" font-size="12" font-weight="600">ORDNER-ÜBERSICHT</text>
+    <text x="0" y="54" fill="#ffffff" font-size="26" font-weight="bold">📁 projects / App-Launch</text>
+
+    <!-- Top Action Buttons -->
+    <g transform="translate(620, 24)">
+      <rect x="0" y="0" width="110" height="30" rx="4" fill="#0e639c" />
+      <text x="12" y="20" fill="#ffffff" font-size="12" font-weight="600">+ Neue Notiz</text>
+
+      <rect x="120" y="0" width="130" height="30" rx="4" fill="#3a3d41" stroke="#555" />
+      <text x="130" y="20" fill="#ffffff" font-size="12" font-weight="600">Aufgaben-Board</text>
+
+      <rect x="260" y="0" width="130" height="30" rx="4" fill="#007acc" />
+      <text x="270" y="20" fill="#ffffff" font-size="12" font-weight="600">Als PDF exportieren</text>
+    </g>
+  </g>
+
+  <!-- Metric Badges Row -->
+  <g transform="translate(50, 126)">
+    <rect x="0" y="0" width="140" height="32" rx="6" fill="#252528" stroke="#38383a" />
+    <text x="14" y="21" fill="#aaaaaa" font-size="12">Notizen: <tspan fill="#ffffff" font-weight="bold">4</tspan></text>
+
+    <rect x="150" y="0" width="180" height="32" rx="6" fill="#252528" stroke="#38383a" />
+    <text x="164" y="21" fill="#aaaaaa" font-size="12">Offene Aufgaben: <tspan fill="#cca700" font-weight="bold">3 von 7</tspan></text>
+
+    <rect x="340" y="0" width="200" height="32" rx="6" fill="#252528" stroke="#38383a" />
+    <text x="354" y="21" fill="#aaaaaa" font-size="12">Fortschritt: <tspan fill="#2ea043" font-weight="bold">57% abgeschlossen</tspan></text>
+  </g>
+
+  <!-- AI Summary Card -->
+  <g transform="translate(50, 180)">
+    <rect x="0" y="0" width="900" height="136" rx="8" fill="#202023" stroke="#007acc" stroke-width="1.5" />
+    <g transform="translate(20, 20)">
+      <text x="0" y="16" fill="#cca700" font-size="14" font-weight="bold">✨ KI-Zusammenfassung aller Ordnernotizen</text>
+      <text x="0" y="42" fill="#e0e0e0" font-size="12.5" line-height="20">
+        Das Projekt „App-Launch“ umfasst die finale UI-Überarbeitung und den Vektor-PDF-Export.
+      </text>
+      <text x="0" y="64" fill="#cccccc" font-size="12">• Kickoff-Beschlüsse sind in <tspan fill="#3794ff">kickoff.md</tspan> dokumentiert (CodeMirror 6 als Editor-Kern).</text>
+      <text x="0" y="84" fill="#cccccc" font-size="12">• Offene Punkte betreffen die Release-Pipeline und das Testen auf Windows/macOS.</text>
+      <text x="0" y="104" fill="#888888" font-size="11">Generiert mit Ollama (llama3.3) am 24.10.2026</text>
+    </g>
+  </g>
+
+  <!-- Note Cards Grid -->
+  <g transform="translate(50, 340)">
+    <text x="0" y="18" fill="#ffffff" font-size="15" font-weight="bold">Notizen im Ordner</text>
+
+    <!-- Card 1 -->
+    <g transform="translate(0, 30)">
+      <rect x="0" y="0" width="280" height="150" rx="8" fill="#252528" stroke="#38383a" />
+      <text x="16" y="28" fill="#3794ff" font-size="14" font-weight="bold">📄 project-plan.md</text>
+      <text x="16" y="48" fill="#888888" font-size="11">Zuletzt bearbeitet: Heute, 10:14</text>
+      <text x="16" y="72" fill="#cccccc" font-size="11.5">"Sprint-Ziele und Meilensteine für..."</text>
+      <rect x="16" y="108" width="80" height="20" rx="4" fill="#094771" />
+      <text x="24" y="122" fill="#ffffff" font-size="10">3 Aufgaben</text>
+      <rect x="104" y="108" width="70" height="20" rx="4" fill="#333538" />
+      <text x="112" y="122" fill="#cca700" font-size="10">Diagramm</text>
+    </g>
+
+    <!-- Card 2 -->
+    <g transform="translate(310, 30)">
+      <rect x="0" y="0" width="280" height="150" rx="8" fill="#252528" stroke="#38383a" />
+      <text x="16" y="28" fill="#3794ff" font-size="14" font-weight="bold">📄 kickoff.md</text>
+      <text x="16" y="48" fill="#888888" font-size="11">Zuletzt bearbeitet: Gestern, 18:30</text>
+      <text x="16" y="72" fill="#cccccc" font-size="11.5">"Kickoff Meeting Protokoll &amp; Roadmap..."</text>
+      <rect x="16" y="108" width="80" height="20" rx="4" fill="#094771" />
+      <text x="24" y="122" fill="#ffffff" font-size="10">4 Aufgaben</text>
+    </g>
+
+    <!-- Card 3 -->
+    <g transform="translate(620, 30)">
+      <rect x="0" y="0" width="280" height="150" rx="8" fill="#252528" stroke="#38383a" />
+      <text x="16" y="28" fill="#3794ff" font-size="14" font-weight="bold">📄 feedback.md</text>
+      <text x="16" y="48" fill="#888888" font-size="11">Zuletzt bearbeitet: Vor 2 Tagen</text>
+      <text x="16" y="72" fill="#cccccc" font-size="11.5">"Nutzerfeedback zur Kontrastverbesserung..."</text>
+      <rect x="16" y="108" width="110" height="20" rx="4" fill="#238636" />
+      <text x="24" y="122" fill="#ffffff" font-size="10">✓ Alle erledigt</text>
+    </g>
+  </g>
+</svg>
+

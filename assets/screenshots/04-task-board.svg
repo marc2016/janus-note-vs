@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 600" width="1000" height="600" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <defs>
+    <filter id="shadow4" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.45" />
+    </filter>
+  </defs>
+
+  <rect x="20" y="20" width="960" height="560" rx="10" fill="#1e1e1e" stroke="#333333" stroke-width="1.5" filter="url(#shadow4)" />
+
+  <!-- Task Board Header -->
+  <g transform="translate(50, 48)">
+    <text x="0" y="24" fill="#888888" font-size="12" font-weight="600">AUFGABEN-BOARD</text>
+    <text x="0" y="54" fill="#ffffff" font-size="26" font-weight="bold">☑ projects / project-plan.tasks.json</text>
+
+    <!-- Search & Filter Bar -->
+    <g transform="translate(560, 26)">
+      <rect x="0" y="0" width="220" height="30" rx="4" fill="#3c3c3c" stroke="#555" />
+      <text x="12" y="20" fill="#888" font-size="12">🔍 Aufgaben filtern...</text>
+      <rect x="230" y="0" width="150" height="30" rx="4" fill="#007acc" />
+      <text x="242" y="20" fill="#ffffff" font-size="12" font-weight="600">+ Aufgabe erstellen</text>
+    </g>
+  </g>
+
+  <!-- 3 Kanban Columns: To Do, In Progress, Done -->
+  <g transform="translate(50, 130)">
+    <!-- Column 1: Zu erledigen (To Do) -->
+    <g transform="translate(0, 0)">
+      <rect x="0" y="0" width="280" height="420" rx="8" fill="#252528" stroke="#38383a" />
+      <text x="16" y="26" fill="#ffffff" font-size="13" font-weight="bold">Zu erledigen <tspan fill="#888888">(2)</tspan></text>
+
+      <!-- Task Card 1 -->
+      <g transform="translate(12, 42)">
+        <rect x="0" y="0" width="256" height="100" rx="6" fill="#1e1e1e" stroke="#38383a" />
+        <text x="12" y="24" fill="#ffffff" font-size="12" font-weight="600">Release Notes erstellen</text>
+        <text x="12" y="44" fill="#888888" font-size="11">Notiz: project-plan.md</text>
+        <rect x="12" y="66" width="56" height="18" rx="3" fill="#cf222e" opacity="0.2" />
+        <text x="18" y="79" fill="#ff7b72" font-size="9.5" font-weight="bold">HIGH</text>
+        <text x="76" y="79" fill="#cca700" font-size="10.5">📅 2026-10-25</text>
+      </g>
+
+      <!-- Task Card 2 -->
+      <g transform="translate(12, 154)">
+        <rect x="0" y="0" width="256" height="90" rx="6" fill="#1e1e1e" stroke="#38383a" />
+        <text x="12" y="24" fill="#ffffff" font-size="12" font-weight="600">Testlauf auf Windows 11</text>
+        <text x="12" y="44" fill="#888888" font-size="11">Notiz: kickoff.md</text>
+        <rect x="12" y="60" width="64" height="18" rx="3" fill="#9e6a03" opacity="0.2" />
+        <text x="18" y="73" fill="#d29922" font-size="9.5" font-weight="bold">MEDIUM</text>
+      </g>
+    </g>
+
+    <!-- Column 2: In Bearbeitung (In Progress) -->
+    <g transform="translate(310, 0)">
+      <rect x="0" y="0" width="280" height="420" rx="8" fill="#252528" stroke="#38383a" />
+      <text x="16" y="26" fill="#ffffff" font-size="13" font-weight="bold">In Bearbeitung <tspan fill="#888888">(1)</tspan></text>
+
+      <!-- Task Card 3 -->
+      <g transform="translate(12, 42)">
+        <rect x="0" y="0" width="256" height="106" rx="6" fill="#1e1e1e" stroke="#007acc" stroke-width="1.5" />
+        <text x="12" y="24" fill="#ffffff" font-size="12" font-weight="600">Vektor PDF Compendium Export</text>
+        <text x="12" y="44" fill="#888888" font-size="11">Notiz: project-plan.md</text>
+        <text x="12" y="60" fill="#aaaaaa" font-size="10.5">Inhaltsverzeichnis + Anchor Links</text>
+        <rect x="12" y="74" width="56" height="18" rx="3" fill="#cf222e" opacity="0.2" />
+        <text x="18" y="87" fill="#ff7b72" font-size="9.5" font-weight="bold">HIGH</text>
+      </g>
+    </g>
+
+    <!-- Column 3: Erledigt (Done) -->
+    <g transform="translate(620, 0)">
+      <rect x="0" y="0" width="280" height="420" rx="8" fill="#252528" stroke="#38383a" />
+      <text x="16" y="26" fill="#ffffff" font-size="13" font-weight="bold">Erledigt <tspan fill="#2ea043">(4)</tspan></text>
+
+      <!-- Task Card 4 (Done) -->
+      <g transform="translate(12, 42)">
+        <rect x="0" y="0" width="256" height="74" rx="6" fill="#1a201c" stroke="#238636" />
+        <text x="12" y="24" fill="#888888" font-size="12" text-decoration="line-through">CodeMirror 6 Markdown Editor</text>
+        <text x="12" y="44" fill="#555555" font-size="11">Erledigt am 22.10.2026</text>
+        <rect x="12" y="52" width="70" height="16" rx="3" fill="#238636" opacity="0.2" />
+        <text x="16" y="64" fill="#2ea043" font-size="9.5">✓ Abgeschlossen</text>
+      </g>
+
+      <!-- Task Card 5 (Done) -->
+      <g transform="translate(12, 126)">
+        <rect x="0" y="0" width="256" height="74" rx="6" fill="#1a201c" stroke="#238636" />
+        <text x="12" y="24" fill="#888888" font-size="12" text-decoration="line-through">GitHub Actions Release Pipeline</text>
+        <text x="12" y="44" fill="#555555" font-size="11">Erledigt am 23.10.2026</text>
+        <rect x="12" y="52" width="70" height="16" rx="3" fill="#238636" opacity="0.2" />
+        <text x="16" y="64" fill="#2ea043" font-size="9.5">✓ Abgeschlossen</text>
+      </g>
+    </g>
+  </g>
+</svg>
+
