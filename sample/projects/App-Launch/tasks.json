@@ -5,18 +5,18 @@
     {
       "id": "t-app-1",
       "title": "TestFlight Build 2.0.1 hochladen",
-      "description": "Signiertes IPA-Paket in App Store Connect bereitstellen",
-      "completed": true,
-      "status": "done",
+      "completed": false,
+      "status": "todo",
       "priority": "high",
       "note": "app-launch.md",
+      "dueDate": "2026-12-27",
+      "scheduledDate": "2026-11-27",
       "createdAt": "2026-10-16T09:00:00.000Z",
       "updatedAt": "2026-10-17T14:30:00.000Z"
     },
     {
       "id": "t-app-2",
       "title": "OAuth2 Token-Refresh bei instabiler Verbindung absichern",
-      "description": "Retry-Backoff in der Sync-Engine ergänzen",
       "completed": false,
       "status": "in_progress",
       "priority": "high",
@@ -34,4 +34,3 @@
     }
   ]
 }
-
