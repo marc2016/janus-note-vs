@@ -6,7 +6,7 @@ import { markdown } from '@codemirror/lang-markdown';
 import { Table } from '@lezer/markdown';
 import { syntaxTree } from '@codemirror/language';
 import { slashCommandSource } from '../src/webviews/markdown/extensions/slashCommands';
-import { styledLists } from '../src/webviews/markdown/extensions/styledLists';
+import { styledLists, buildListDecorations } from '../src/webviews/markdown/extensions/styledLists';
 import {
   livePreview,
   syntaxVisibilityCompartment,
@@ -213,6 +213,28 @@ describe('CodeMirror Markdown Editor & Zero-Diff Verification', () => {
       expect(isUnorderedList('  * Nested bullet')).toBe(true);
       expect(isUnorderedList('    + Deep nested')).toBe(true);
       expect(isUnorderedList('---')).toBe(false);
+    });
+
+    function listLevels(doc: string): number[] {
+      const state = EditorState.create({ doc, extensions: [markdown({ extensions: [Table] })] });
+      const levels: number[] = [];
+      buildListDecorations(state, [{ from: 0, to: state.doc.length }]).between(0, state.doc.length, (_from, _to, deco) => {
+        const match = /cm-list-level-(\d+)/.exec(deco.spec.class ?? '');
+        if (match) levels.push(Number(match[1]));
+      });
+      return levels;
+    }
+
+    it('derives nesting levels from list structure for CommonMark ordered indentation', () => {
+      expect(listLevels('1. A\n   1. B\n      1. C')).toEqual([0, 1, 2]);
+    });
+
+    it('derives nesting level 1 for bullets nested under wide ordered markers', () => {
+      expect(listLevels('10. A\n    - B')).toEqual([0, 1]);
+    });
+
+    it('keeps levels for 2-space bullet nesting and task items', () => {
+      expect(listLevels('- A\n  - B\n    - C\n- [ ] T\n  - [x] U')).toEqual([0, 1, 2, 0, 1]);
     });
 
     it('calculates indentation level correctly for 2-space and 4-space markdown indents', () => {

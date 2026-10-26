@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, keymap, drawSelection, dropCursor } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { history } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { Table } from '@lezer/markdown';
 import { syntaxTree } from '@codemirror/language';
@@ -32,7 +32,7 @@ import {
   NotesLinksFooter,
   NoteLinksData,
 } from './components/NotesLinksFooter';
-import { formattingKeymap } from './lib/formatting';
+import { markdownEditorKeymap } from './lib/editorKeymap';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: any): void;
@@ -291,7 +291,7 @@ export const MarkdownEditorApp: React.FC = () => {
         history(),
         drawSelection(),
         dropCursor(),
-        keymap.of([...formattingKeymap, ...defaultKeymap, ...historyKeymap]),
+        keymap.of(markdownEditorKeymap),
         markdown({ extensions: [Table] }),
         livePreview(syntaxMode),
         clickableLinks({ onOpenLink: (target) => handleOpenLinkRef.current(target) }),

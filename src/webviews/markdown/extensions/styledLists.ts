@@ -6,7 +6,10 @@ import {
   ViewUpdate,
   WidgetType,
 } from '@codemirror/view';
-import { Range, Extension } from '@codemirror/state';
+import { Range, Extension, EditorState } from '@codemirror/state';
+import { syntaxTree } from '@codemirror/language';
+import type { Tree } from '@lezer/common';
+import { getAvailableTree, getListDepthAt } from '../lib/listStructure';
 
 class BulletWidget extends WidgetType {
   constructor(
@@ -83,20 +86,33 @@ export const styledListsTheme = EditorView.baseTheme({
   },
 });
 
-function buildListDecorations(view: EditorView): DecorationSet {
-  const builder: Range<Decoration>[] = [];
+/**
+ * Nesting level of the list item whose marker starts at `markerPos`, derived from the list
+ * structure (CommonMark-aware). Falls back to the whitespace heuristic while the tree is incomplete.
+ */
+function listLevel(state: EditorState, tree: Tree, markerPos: number, indent: number): number {
+  const depth = getListDepthAt(state, tree, markerPos);
+  return Math.min(depth ?? Math.floor(indent / 2), 6);
+}
 
-  for (const { from, to } of view.visibleRanges) {
+export function buildListDecorations(
+  state: EditorState,
+  ranges: readonly { from: number; to: number }[]
+): DecorationSet {
+  const builder: Range<Decoration>[] = [];
+  const tree = getAvailableTree(state, ranges.length ? ranges[ranges.length - 1].to : 0);
+
+  for (const { from, to } of ranges) {
     let pos = from;
     while (pos <= to) {
-      const line = view.state.doc.lineAt(pos);
+      const line = state.doc.lineAt(pos);
 
       // Check for task list items first: optional whitespace + bullet + space + [ ] or [x]
       const isTaskList = /^(\s*[-*+]\s+)\[([ xX])\]/.test(line.text);
       if (isTaskList) {
         const indentMatch = line.text.match(/^(\s*)/);
         const indent = indentMatch ? indentMatch[1].length : 0;
-        const level = Math.min(Math.floor(indent / 2), 6);
+        const level = listLevel(state, tree, line.from + indent, indent);
         builder.push(
           Decoration.line({
             class: `cm-list-item cm-task-list-item cm-list-level-${level}`,
@@ -107,9 +123,9 @@ function buildListDecorations(view: EditorView): DecorationSet {
         const bulletMatch = line.text.match(/^(\s*)([-*+])(\s+)/);
         if (bulletMatch) {
           const indent = bulletMatch[1].length;
-          const level = Math.min(Math.floor(indent / 2), 6);
           const markerChar = bulletMatch[2];
           const markerPos = line.from + indent;
+          const level = listLevel(state, tree, markerPos, indent);
 
           // Line decoration for hierarchical indentation
           builder.push(
@@ -129,8 +145,8 @@ function buildListDecorations(view: EditorView): DecorationSet {
           const orderedMatch = line.text.match(/^(\s*)(\d+[.)])(\s+)/);
           if (orderedMatch) {
             const indent = orderedMatch[1].length;
-            const level = Math.min(Math.floor(indent / 2), 6);
             const markerPos = line.from + indent;
+            const level = listLevel(state, tree, markerPos, indent);
             const markerLen = orderedMatch[2].length;
 
             builder.push(
@@ -148,7 +164,7 @@ function buildListDecorations(view: EditorView): DecorationSet {
         }
       }
 
-      if (line.to >= view.state.doc.length) break;
+      if (line.to >= state.doc.length) break;
       pos = line.to + 1;
     }
   }
@@ -161,12 +177,16 @@ export const styledListsPlugin = ViewPlugin.fromClass(
     decorations: DecorationSet;
 
     constructor(view: EditorView) {
-      this.decorations = buildListDecorations(view);
+      this.decorations = buildListDecorations(view.state, view.visibleRanges);
     }
 
     update(update: ViewUpdate) {
-      if (update.docChanged || update.viewportChanged) {
-        this.decorations = buildListDecorations(update.view);
+      if (
+        update.docChanged ||
+        update.viewportChanged ||
+        syntaxTree(update.startState) !== syntaxTree(update.state)
+      ) {
+        this.decorations = buildListDecorations(update.state, update.view.visibleRanges);
       }
     }
   },
