@@ -139,5 +139,41 @@ describe('FolderTasksService', () => {
     const afterDelete = JSON.parse(fileMap.get(tasksUri.fsPath)!);
     expect(afterDelete.tasks).toHaveLength(0);
   });
-});
 
+  it('preserves due and scheduled dates on update and removes a date saved without it', async () => {
+    const fileMap = new Map<string, string>();
+    const tasksUri = vscode.Uri.file('/workspace/notes/projekt-alpha/tasks.json');
+
+    vi.spyOn(vscode.workspace.fs, 'readFile').mockImplementation(async (uri) => {
+      const content = fileMap.get(uri.fsPath);
+      if (!content) throw new Error('File not found');
+      return Buffer.from(content, 'utf-8');
+    });
+    vi.spyOn(vscode.workspace.fs, 'writeFile').mockImplementation(async (uri, content) => {
+      fileMap.set(uri.fsPath, Buffer.from(content).toString('utf-8'));
+    });
+
+    const added = await service.addTaskToFolder(tasksUri, {
+      id: 'task-1',
+      title: 'Bericht schreiben',
+      dueDate: '2026-11-03',
+      scheduledDate: '2026-10-30',
+    });
+    expect(added.dueDate).toBe('2026-11-03');
+    expect(added.scheduledDate).toBe('2026-10-30');
+
+    // Toggling completion keeps both dates
+    await service.updateTaskInFolder(tasksUri, { ...added, completed: true, status: 'done' });
+    let saved = JSON.parse(fileMap.get(tasksUri.fsPath)!).tasks[0];
+    expect(saved.dueDate).toBe('2026-11-03');
+    expect(saved.scheduledDate).toBe('2026-10-30');
+
+    // Saving without scheduledDate removes the field from disk
+    const { scheduledDate: _removed, ...withoutScheduled } = added;
+    await service.updateTaskInFolder(tasksUri, withoutScheduled);
+    saved = JSON.parse(fileMap.get(tasksUri.fsPath)!).tasks[0];
+    expect('scheduledDate' in saved).toBe(false);
+    expect(saved.dueDate).toBe('2026-11-03');
+    expect(saved.title).toBe('Bericht schreiben');
+  });
+});

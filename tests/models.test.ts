@@ -89,6 +89,29 @@ describe('TasksCompanion Model', () => {
     expect(parsed.tasks[1].status).toBe('done');
     expect(parsed.tasks[1].note).toBeUndefined();
   });
+
+  it('preserves dueDate and scheduledDate on tasks', () => {
+    const parsed = parseTasksCompanion({
+      tasks: [{ id: 't1', title: 'Bericht', dueDate: '2026-11-03', scheduledDate: '2026-10-30' }],
+    });
+    expect(parsed.tasks[0].dueDate).toBe('2026-11-03');
+    expect(parsed.tasks[0].scheduledDate).toBe('2026-10-30');
+  });
+
+  it('keeps dates when recovering partially malformed tasks', () => {
+    const parsed = parseTasksCompanion({
+      tasks: [{ id: 't1', title: '', dueDate: '2026-11-03', scheduledDate: '2026-10-30' }],
+    });
+    expect(parsed.tasks[0].title).toBe('Untitled task');
+    expect(parsed.tasks[0].dueDate).toBe('2026-11-03');
+    expect(parsed.tasks[0].scheduledDate).toBe('2026-10-30');
+  });
+
+  it('loads tasks without date fields unchanged', () => {
+    const parsed = parseTasksCompanion({ tasks: [{ id: 't1', title: 'Ohne Datum' }] });
+    expect(parsed.tasks[0].dueDate).toBeUndefined();
+    expect(parsed.tasks[0].scheduledDate).toBeUndefined();
+  });
 });
 
 describe('ChartCompanion Model', () => {

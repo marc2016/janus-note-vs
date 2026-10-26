@@ -116,6 +116,8 @@ export class TasksEditorProvider implements vscode.CustomTextEditorProvider {
           const edit = new vscode.WorkspaceEdit();
           edit.replace(document.uri, fullRange, updatedJson);
           await vscode.workspace.applyEdit(edit);
+          // Persist immediately so disk-based consumers (calendar, sidebar, global list) see the change.
+          await document.save();
         } catch (error: any) {
           vscode.window.showErrorMessage('Failed to update tasks: ' + error.message);
         }

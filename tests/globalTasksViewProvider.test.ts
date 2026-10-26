@@ -89,6 +89,32 @@ describe('GlobalTasksViewProvider', () => {
     expect(mutatedCount).toBe(1);
   });
 
+  it('writes due and scheduled dates from updateTask messages to the folder tasks.json', async () => {
+    const folderTasksUri = vscode.Uri.file('/workspace/notes/project-a/tasks.json');
+    const updateSpy = vi
+      .spyOn(folderTasksService, 'updateTaskInFolder')
+      .mockResolvedValue(undefined);
+
+    await provider.handleMessage({
+      type: 'updateTask',
+      folderUri: folderTasksUri.toString(),
+      task: {
+        id: 't1',
+        title: 'Bericht schreiben',
+        completed: false,
+        status: 'todo',
+        priority: 'medium',
+        dueDate: '2026-11-03',
+        scheduledDate: '2026-10-30',
+      },
+    });
+
+    expect(updateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ path: '/workspace/notes/project-a/tasks.json' }),
+      expect.objectContaining({ id: 't1', dueDate: '2026-11-03', scheduledDate: '2026-10-30' })
+    );
+  });
+
   it('supports creating and deleting tasks in specific folders and opening linked notes', async () => {
     const folderTasksUri = vscode.Uri.file('/workspace/notes/project-a/tasks.json');
     const addSpy = vi.spyOn(folderTasksService, 'addTaskToFolder').mockResolvedValue({

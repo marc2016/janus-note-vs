@@ -4,6 +4,7 @@ import { FolderTasksService } from './folderTasksService';
 import { isMarkdownNote } from '../companion/companionPaths';
 
 export type CalendarEntryKind = 'note' | 'task';
+export type TaskDateKind = 'due' | 'scheduled';
 
 export interface CalendarEntry {
   id: string;
@@ -17,6 +18,7 @@ export interface CalendarEntry {
   line?: number;
   snippet?: string;
   // For tasks:
+  dateKind?: TaskDateKind;
   taskId?: string;
   completed?: boolean;
   priority?: 'low' | 'medium' | 'high';
@@ -244,7 +246,7 @@ export class CalendarService {
   }
 
   /**
-   * Loads and aggregates all calendar entries (notes + tasks with dueDate) across notesRootUri.
+   * Loads and aggregates all calendar entries (notes + tasks with due/scheduled dates) across notesRootUri.
    */
   async loadAllCalendarEntries(notesRootUri: vscode.Uri): Promise<CalendarEntry[]> {
     const entries: CalendarEntry[] = [];
@@ -262,23 +264,30 @@ export class CalendarService {
       }
     }
 
-    // 2. Load all tasks with dueDate
+    // 2. Load all tasks with a due and/or scheduled date (one entry per date)
     try {
       const taskGroups = await this.folderTasksService.loadAllTasks(notesRootUri);
       for (const group of taskGroups) {
+        const folderUri = group.uri.toString();
         for (const task of group.tasks) {
-          if (task.dueDate && /^\d{4}-\d{2}-\d{2}$/.test(task.dueDate)) {
+          const dates: Array<[TaskDateKind, string | undefined]> = [
+            ['due', task.dueDate],
+            ['scheduled', task.scheduledDate],
+          ];
+          for (const [dateKind, date] of dates) {
+            if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
             entries.push({
-              id: `task-${task.id}`,
+              id: `task-${dateKind}-${folderUri}-${task.id}`,
               kind: 'task',
-              date: task.dueDate,
+              dateKind,
+              date,
               title: task.title,
               taskId: task.id,
               completed: task.completed,
               priority: task.priority || 'medium',
               notePath: task.note,
               folder: group.folder,
-              folderUri: group.uri.toString(),
+              folderUri,
             });
           }
         }

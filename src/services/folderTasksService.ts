@@ -154,6 +154,8 @@ export class FolderTasksService {
       status: task.completed ? 'done' : task.status || 'todo',
       priority: task.priority || 'medium',
       note: task.note,
+      dueDate: task.dueDate,
+      scheduledDate: task.scheduledDate,
       createdAt: task.createdAt || new Date().toISOString(),
     });
     companion.tasks.push(newTask);

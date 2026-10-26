@@ -6,6 +6,7 @@ import { Badge } from '../components/ui/badge';
 import { Checkbox } from '../components/ui/checkbox';
 import { Select } from '../components/ui/select';
 import { MdiIcon } from '../components/ui/MdiIcon';
+import { TaskDateControls } from './TaskDateControls';
 import {
   mdiFormatListCheckbox,
   mdiPlus,
@@ -41,6 +42,8 @@ export interface TaskItem {
   status: 'todo' | 'in_progress' | 'done';
   priority?: TaskPriority;
   note?: string;
+  dueDate?: string;
+  scheduledDate?: string;
   createdAt?: string;
   folder?: string;
   folderUri?: string;
@@ -635,6 +638,8 @@ const TaskChecklistRow: React.FC<TaskChecklistRowProps> = ({
         </Badge>
       )}
 
+      {/* Due / scheduled date chips with date picker */}
+      <TaskDateControls task={task} onUpdate={onUpdate} />
       {/* Priority Pill built with shadcn Badge (click to cycle priority) */}
       <Badge
         variant={priority}

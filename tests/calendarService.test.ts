@@ -140,5 +140,49 @@ Check out https://github.com/org/repo/commit/2026-10-24 for details.
     expect(oct24.some((e) => e.kind === 'task' && e.title === 'Pitch Deck fertigstellen')).toBe(true);
     expect(oct24.some((e) => e.kind === 'note' && e.time === '14:00')).toBe(true);
   });
-});
 
+  it('emits separate due and scheduled entries for tasks without rolling over past dates', async () => {
+    const mockFolderTasksService = new FolderTasksService();
+    vi.spyOn(mockFolderTasksService, 'loadAllTasks').mockResolvedValue([
+      {
+        folder: 'projects',
+        uri: vscode.Uri.file('/workspace/notes/projects/tasks.json'),
+        tasks: [
+          { id: 'due-only', title: 'Nur fällig', completed: false, status: 'todo', dueDate: '2026-11-03' },
+          { id: 'sched-only', title: 'Steuer', completed: false, status: 'todo', scheduledDate: '2026-10-30' },
+          {
+            id: 'both',
+            title: 'Bericht schreiben',
+            completed: false,
+            status: 'todo',
+            scheduledDate: '2026-10-30',
+            dueDate: '2026-11-03',
+          },
+          { id: 'invalid', title: 'Ungültig', completed: false, status: 'todo', scheduledDate: 'next week' },
+          { id: 'past', title: 'Liegengeblieben', completed: false, status: 'todo', scheduledDate: '2020-01-02' },
+        ] as any,
+      },
+    ]);
+    vi.spyOn(vscode.workspace.fs, 'readDirectory').mockResolvedValue([]);
+
+    const service = new CalendarService(mockFolderTasksService);
+    const entries = await service.loadAllCalendarEntries(dummyRootUri);
+    const summary = entries.map((e) => `${e.taskId}:${e.dateKind}:${e.date}`);
+
+    expect(summary).toEqual(
+      expect.arrayContaining([
+        'due-only:due:2026-11-03',
+        'sched-only:scheduled:2026-10-30',
+        'both:scheduled:2026-10-30',
+        'both:due:2026-11-03',
+        'past:scheduled:2020-01-02',
+      ])
+    );
+    expect(entries).toHaveLength(5);
+    expect(entries.some((e) => e.taskId === 'invalid')).toBe(false);
+    expect(entries.some((e) => e.taskId === 'sched-only' && e.dateKind === 'due')).toBe(false);
+
+    // Ids are unique even when one task appears on two days
+    expect(new Set(entries.map((e) => e.id)).size).toBe(entries.length);
+  });
+});

@@ -9,7 +9,8 @@ import {
   mdiClockOutline,
   mdiFileDocumentOutline,
   mdiFolderOutline,
-  mdiCheckAll,
+  mdiCalendarAlert,
+  mdiCalendarClock,
   mdiAlertCircleOutline,
 } from '@mdi/js';
 import { CalendarEntryData, CalendarInitialData, getVsCodeApi } from './CalendarMonthApp';
@@ -110,9 +111,97 @@ export const CalendarDayDetailsApp: React.FC<{ initialData?: CalendarInitialData
     return dayEvents.filter((e) => e.kind === 'note');
   }, [dayEvents]);
 
-  const taskEvents = useMemo(() => {
-    return dayEvents.filter((e) => e.kind === 'task');
+  const dueTasks = useMemo(() => {
+    return dayEvents.filter((e) => e.kind === 'task' && e.dateKind !== 'scheduled');
   }, [dayEvents]);
+
+  const scheduledTasks = useMemo(() => {
+    return dayEvents.filter((e) => e.kind === 'task' && e.dateKind === 'scheduled');
+  }, [dayEvents]);
+
+  const renderTaskSection = (heading: string, icon: string, items: CalendarEntryData[]) => (
+      <div className="flex flex-col gap-2">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wider opacity-70 flex items-center gap-1.5">
+          <MdiIcon path={icon} size={14} className="text-emerald-400 shrink-0" />
+          <span>
+            {heading} ({items.length})
+          </span>
+        </h2>
+
+        <div className="flex flex-col gap-2">
+          {items.map((task) => {
+            const checkboxId = `task-cal-${task.id}`;
+            return (
+              <Card
+                key={task.id}
+                className={`overflow-hidden border-l-4 transition-colors ${
+                  task.completed ? 'border-l-gray-500 opacity-60' : 'border-l-emerald-500'
+                }`}
+              >
+                <CardContent className="p-2.5 flex flex-col gap-1.5">
+                  {/* Top Row: Status, Badges & File Link */}
+                  <div className="flex items-center justify-between gap-1.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <label
+                        htmlFor={checkboxId}
+                        className="inline-flex items-center justify-center min-h-[18px] min-w-[18px] cursor-pointer"
+                      >
+                        <Checkbox
+                          id={checkboxId}
+                          checked={Boolean(task.completed)}
+                          onCheckedChange={() => handleToggleTask(task)}
+                        />
+                      </label>
+
+                      <Badge
+                        variant={task.priority || 'medium'}
+                        className="rounded-full text-[10px] py-0 shrink-0"
+                      >
+                        {task.priority === 'high'
+                          ? 'Hoch'
+                          : task.priority === 'low'
+                          ? 'Niedrig'
+                          : 'Mittel'}
+                      </Badge>
+
+                      {task.folder && (
+                        <Badge variant="outline" className="text-[10px] font-normal gap-1 py-0 shrink-0">
+                          <MdiIcon path={mdiFolderOutline} size={11} />
+                          <span className="truncate max-w-[90px]">{task.folder}</span>
+                        </Badge>
+                      )}
+                    </div>
+
+                    {task.notePath && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleOpenNote(task.notePath)}
+                        className="h-5 px-1.5 text-[10px] shrink-0 gap-1 hover:border-[var(--vscode-focusBorder,#007acc)]"
+                        title={`Notiz öffnen: ${task.notePath}`}
+                      >
+                        <MdiIcon path={mdiFileDocumentOutline} size={11} />
+                        <span className="truncate max-w-[150px]">{task.notePath}</span>
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Full-width Title */}
+                  <div
+                    className={`text-xs leading-snug break-words pl-6 ${
+                      task.completed ? 'line-through opacity-60' : 'font-medium'
+                    }`}
+                  >
+                    {task.title}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+  );
+
 
   return (
     <div className="flex flex-col min-h-full h-auto overflow-y-auto overflow-x-hidden p-3 w-full select-none bg-[var(--vscode-sideBar-background,inherit)] text-[var(--vscode-sideBar-foreground,inherit)]">
@@ -136,7 +225,7 @@ export const CalendarDayDetailsApp: React.FC<{ initialData?: CalendarInitialData
       {dayEvents.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="p-6 text-center text-xs opacity-60">
-            Keine Termine oder fälligen Aufgaben an diesem Tag vorhanden.
+            Keine Termine, fälligen oder geplanten Aufgaben an diesem Tag vorhanden.
           </CardContent>
         </Card>
       ) : (
@@ -197,87 +286,10 @@ export const CalendarDayDetailsApp: React.FC<{ initialData?: CalendarInitialData
             </div>
           )}
 
-          {/* Section: Fällige Aufgaben */}
-          {taskEvents.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <h2 className="text-[11px] font-semibold uppercase tracking-wider opacity-70 flex items-center gap-1.5">
-                <MdiIcon path={mdiCheckAll} size={14} className="text-emerald-400 shrink-0" />
-                <span>Fällige Aufgaben ({taskEvents.length})</span>
-              </h2>
-
-              <div className="flex flex-col gap-2">
-                {taskEvents.map((task) => {
-                  const checkboxId = `task-cal-${task.id}`;
-                  return (
-                    <Card
-                      key={task.id}
-                      className={`overflow-hidden border-l-4 transition-colors ${
-                        task.completed ? 'border-l-gray-500 opacity-60' : 'border-l-emerald-500'
-                      }`}
-                    >
-                      <CardContent className="p-2.5 flex flex-col gap-1.5">
-                        {/* Top Row: Status, Badges & File Link */}
-                        <div className="flex items-center justify-between gap-1.5">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <label
-                              htmlFor={checkboxId}
-                              className="inline-flex items-center justify-center min-h-[18px] min-w-[18px] cursor-pointer"
-                            >
-                              <Checkbox
-                                id={checkboxId}
-                                checked={Boolean(task.completed)}
-                                onCheckedChange={() => handleToggleTask(task)}
-                              />
-                            </label>
-
-                            <Badge
-                              variant={task.priority || 'medium'}
-                              className="rounded-full text-[10px] py-0 shrink-0"
-                            >
-                              {task.priority === 'high'
-                                ? 'Hoch'
-                                : task.priority === 'low'
-                                ? 'Niedrig'
-                                : 'Mittel'}
-                            </Badge>
-
-                            {task.folder && (
-                              <Badge variant="outline" className="text-[10px] font-normal gap-1 py-0 shrink-0">
-                                <MdiIcon path={mdiFolderOutline} size={11} />
-                                <span className="truncate max-w-[90px]">{task.folder}</span>
-                              </Badge>
-                            )}
-                          </div>
-
-                          {task.notePath && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleOpenNote(task.notePath)}
-                              className="h-5 px-1.5 text-[10px] shrink-0 gap-1 hover:border-[var(--vscode-focusBorder,#007acc)]"
-                              title={`Notiz öffnen: ${task.notePath}`}
-                            >
-                              <MdiIcon path={mdiFileDocumentOutline} size={11} />
-                              <span className="truncate max-w-[150px]">{task.notePath}</span>
-                            </Button>
-                          )}
-                        </div>
-
-                        {/* Full-width Title */}
-                        <div
-                          className={`text-xs leading-snug break-words pl-6 ${
-                            task.completed ? 'line-through opacity-60' : 'font-medium'
-                          }`}
-                        >
-                          {task.title}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          {/* Sections: Fällige und geplante Aufgaben */}
+          {dueTasks.length > 0 && renderTaskSection('Fällige Aufgaben', mdiCalendarAlert, dueTasks)}
+          {scheduledTasks.length > 0 &&
+            renderTaskSection('Geplante Aufgaben', mdiCalendarClock, scheduledTasks)}
         </div>
       )}
     </div>

@@ -11,6 +11,8 @@ import {
   mdiFileDocumentOutline,
   mdiCheckboxMarkedCircleOutline,
   mdiCheckboxBlankCircleOutline,
+  mdiCalendarAlert,
+  mdiCalendarClock,
 } from '@mdi/js';
 
 declare function acquireVsCodeApi(): {
@@ -37,6 +39,7 @@ export interface CalendarEntryData {
   notePath?: string;
   line?: number;
   snippet?: string;
+  dateKind?: 'due' | 'scheduled';
   taskId?: string;
   completed?: boolean;
   priority?: 'low' | 'medium' | 'high';
@@ -312,27 +315,39 @@ export const CalendarMonthApp: React.FC<{ initialData?: CalendarInitialData }> =
                   <div
                     key={item.id}
                     onClick={(e) => handleOpenNote(e, item.notePath, item.line)}
-                    title={`${item.time ? item.time + ' ' : ''}${item.title}${
+                    title={`${
+                      item.kind === 'task' ? (item.dateKind === 'scheduled' ? 'Geplant: ' : 'Fällig: ') : ''
+                    }${item.time ? item.time + ' ' : ''}${item.title}${
                       item.notePath ? ' (' + item.notePath + ')' : ''
                     }`}
                     className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] truncate leading-tight transition-colors ${
                       item.kind === 'task'
                         ? item.completed
                           ? 'line-through opacity-50 bg-[rgba(128,128,128,0.15)] text-[var(--vscode-editor-foreground,inherit)]'
-                          : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 font-medium'
+                          : `bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 font-medium ${
+                              item.dateKind === 'scheduled' ? 'border-dashed' : ''
+                            }`
                         : 'bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/25 font-medium'
                     }`}
                   >
                     {item.kind === 'task' ? (
-                      <MdiIcon
-                        path={
-                          item.completed
-                            ? mdiCheckboxMarkedCircleOutline
-                            : mdiCheckboxBlankCircleOutline
-                        }
-                        size={12}
-                        className="shrink-0"
-                      />
+                      <>
+                        <MdiIcon
+                          path={
+                            item.completed
+                              ? mdiCheckboxMarkedCircleOutline
+                              : mdiCheckboxBlankCircleOutline
+                          }
+                          size={12}
+                          className="shrink-0"
+                        />
+                        <MdiIcon
+                          path={item.dateKind === 'scheduled' ? mdiCalendarClock : mdiCalendarAlert}
+                          size={11}
+                          className="shrink-0 opacity-80"
+                          aria-label={item.dateKind === 'scheduled' ? 'geplant' : 'fällig'}
+                        />
+                      </>
                     ) : item.time ? (
                       <span className="text-[10px] font-mono shrink-0 opacity-80">{item.time}</span>
                     ) : (

@@ -96,5 +96,48 @@ describe('CalendarDayDetailsViewProvider', () => {
       'janus.markdownEditor'
     );
   });
-});
 
+  it('toggles a scheduled task entry in the folder tasks.json and keeps its dates', async () => {
+    provider.setNotesRootUri(notesRootUri);
+    const folderTasksUri = vscode.Uri.file('/workspace/notes/projects/tasks.json');
+    const task = {
+      id: 't1',
+      title: 'Bericht schreiben',
+      completed: false,
+      status: 'todo' as const,
+      priority: 'medium' as const,
+      scheduledDate: '2026-10-30',
+      dueDate: '2026-11-03',
+      createdAt: '2026-10-01T00:00:00.000Z',
+    };
+    vi.spyOn(folderTasksService, 'loadAllTasks').mockResolvedValue([
+      { folder: 'projects', uri: folderTasksUri, tasks: [task] },
+    ]);
+    vi.spyOn(folderTasksService, 'loadFolderTasks').mockResolvedValue([task]);
+    vi.spyOn(vscode.workspace.fs, 'readDirectory').mockResolvedValue([]);
+    const updateSpy = vi.spyOn(folderTasksService, 'updateTaskInFolder').mockResolvedValue(undefined);
+
+    const entries = await calendarService.loadAllCalendarEntries(notesRootUri);
+    const scheduled = entries.find((e) => e.dateKind === 'scheduled')!;
+    expect(scheduled.date).toBe('2026-10-30');
+
+    await provider.handleMessage({
+      type: 'toggleTask',
+      folderUri: scheduled.folderUri,
+      taskId: scheduled.taskId,
+      completed: true,
+    });
+
+    expect(updateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ path: '/workspace/notes/projects/tasks.json' }),
+      expect.objectContaining({
+        id: 't1',
+        completed: true,
+        status: 'done',
+        scheduledDate: '2026-10-30',
+        dueDate: '2026-11-03',
+      })
+    );
+    expect(mutatedCount).toBe(1);
+  });
+});
