@@ -1,7 +1,7 @@
 # Janus Note
 
 <p align="center">
-  <img src="assets/icon.svg" alt="Janus Note Logo" width="128" height="128" />
+  <img src="assets/icon.png" alt="Janus Note Logo" width="128" height="128" />
 </p>
 
 <p align="center">
