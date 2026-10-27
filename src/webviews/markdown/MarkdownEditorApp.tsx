@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { EditorState, Compartment } from '@codemirror/state';
+import { EditorState, Compartment, Transaction } from '@codemirror/state';
 import { EditorView, keymap, drawSelection, dropCursor } from '@codemirror/view';
 import { history } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
@@ -33,6 +33,7 @@ import {
   NoteLinksData,
 } from './components/NotesLinksFooter';
 import { markdownEditorKeymap } from './lib/editorKeymap';
+import { DocumentSync } from './lib/documentSync';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: any): void;
@@ -212,8 +213,24 @@ export const MarkdownEditorApp: React.FC = () => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const pendingRevealLineRef = useRef<number | null>(null);
-  const isUpdatingFromHostRef = useRef<boolean>(false);
+  const syncRef = useRef<DocumentSync>(new DocumentSync());
+  const hasInitializedRef = useRef<boolean>(false);
   const debounceTimerRef = useRef<any>(null);
+
+  // Sends unsent local edits to the host right away (cancels a pending debounce).
+  const flushPendingEdits = () => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    const view = editorViewRef.current;
+    const sync = syncRef.current;
+    if (!view || !sync.hasPending) return;
+    const { content, seq } = sync.takeOutgoing(view.state.doc.toString());
+    getVsCodeApi()?.postMessage({ type: 'updateContent', content, seq });
+  };
+  const flushPendingEditsRef = useRef(flushPendingEdits);
+  flushPendingEditsRef.current = flushPendingEdits;
   const linkCandidatesRef = useRef<LinkCandidate[]>([]);
   const handleOpenLinkRef = useRef<(target: string, viewType?: string) => void>(() => {});
   const datePickerHandlerRef = useRef<
@@ -284,6 +301,7 @@ export const MarkdownEditorApp: React.FC = () => {
     if (!containerRef.current) return;
 
     const initialText = getInitialContent();
+    syncRef.current.reset(initialText);
 
     const state = EditorState.create({
       doc: initialText,
@@ -304,26 +322,25 @@ export const MarkdownEditorApp: React.FC = () => {
           linkCompletionSource: createLinkAutocompleteSource(() => linkCandidatesRef.current),
         }),
         EditorView.lineWrapping,
+        // Save pending edits as soon as focus leaves the editor
+        EditorView.domEventHandlers({
+          blur: () => {
+            flushPendingEditsRef.current();
+            return false;
+          },
+        }),
         themeCompartment.of(getEditorTheme(effectiveIsDark)),
         EditorView.updateListener.of((update) => {
           if (update.selectionSet || update.docChanged) {
             setActiveState(computeActiveToolbarState(update.state));
           }
 
-          if (update.docChanged && !isUpdatingFromHostRef.current) {
-            const text = update.state.doc.toString();
+          // Only user edits are sent back; remote (host) changes are already in the document.
+          if (syncRef.current.recordLocalTransactions(update.transactions)) {
             if (debounceTimerRef.current) {
               clearTimeout(debounceTimerRef.current);
             }
-            debounceTimerRef.current = setTimeout(() => {
-              const api = getVsCodeApi();
-              if (api) {
-                api.postMessage({
-                  type: 'updateContent',
-                  content: text,
-                });
-              }
-            }, 250);
+            debounceTimerRef.current = setTimeout(() => flushPendingEditsRef.current(), 250);
           }
         }),
       ],
@@ -352,6 +369,21 @@ export const MarkdownEditorApp: React.FC = () => {
     };
   }, []);
 
+  // Save pending edits when the webview is hidden (e.g. switching editor tabs) or unloaded
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) flushPendingEditsRef.current();
+    };
+    const handlePageHide = () => flushPendingEditsRef.current();
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('pagehide', handlePageHide);
+      flushPendingEditsRef.current();
+    };
+  }, []);
+
   // Listen for updates from VS Code extension host
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -360,13 +392,25 @@ export const MarkdownEditorApp: React.FC = () => {
         const newContent = typeof message.content === 'string' ? message.content : '';
         const view = editorViewRef.current;
         if (view) {
-          const currentDoc = view.state.doc.toString();
-          if (currentDoc !== newContent) {
-            isUpdatingFromHostRef.current = true;
-            view.dispatch({
-              changes: { from: 0, to: view.state.doc.length, insert: newContent },
-            });
-            isUpdatingFromHostRef.current = false;
+          const sync = syncRef.current;
+          const remoteAnnotations = [Transaction.remote.of(true), Transaction.addToHistory.of(false)];
+          if (message.type === 'init' && !hasInitializedRef.current) {
+            // First load: adopt the host document wholesale.
+            hasInitializedRef.current = true;
+            sync.reset(newContent);
+            if (view.state.doc.toString() !== newContent) {
+              view.dispatch({
+                changes: { from: 0, to: view.state.doc.length, insert: newContent },
+                annotations: remoteAnnotations,
+              });
+            }
+          } else {
+            // External change: apply minimally (keeps the cursor), ignore stale states,
+            // and rebase onto local edits that were not sent yet.
+            const changes = sync.applyRemote(newContent, message.ackSeq);
+            if (changes) {
+              view.dispatch({ changes, annotations: remoteAnnotations });
+            }
           }
         }
       } else if (message.type === 'updateLinks' && message.linksData) {

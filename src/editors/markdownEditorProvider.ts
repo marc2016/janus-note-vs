@@ -15,6 +15,7 @@ import { AiTaskGeneratorService } from '../services/aiTaskGeneratorService';
 import { AiInboxSorterService } from '../services/aiInboxSorterService';
 import { TasksEditorProvider } from './tasksEditorProvider';
 import { ChartEditorProvider } from './chartEditorProvider';
+import { WebviewSyncTracker } from './webviewSyncTracker';
 
 export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'janus.markdownEditor';
@@ -26,6 +27,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   public readonly onDidChangeActiveCustomEditor = this._onDidChangeActiveCustomEditor.event;
 
   private readonly _activePanels = new Map<string, vscode.WebviewPanel>();
+  private readonly _syncTrackers = new WeakMap<vscode.WebviewPanel, WebviewSyncTracker>();
   private readonly _pendingLineReveals = new Map<string, number>();
 
   public setPendingLineReveal(uri: vscode.Uri, line: number): void {
@@ -178,10 +180,14 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() === document.uri.toString()) {
         const text = e.document.getText();
-        void webviewPanel.webview.postMessage({
-          type: 'update',
-          content: text,
-        });
+        const tracker = this.getSyncTracker(webviewPanel);
+        if (tracker.shouldForward(text)) {
+          void webviewPanel.webview.postMessage({
+            type: 'update',
+            content: text,
+            ackSeq: tracker.lastAppliedSeq,
+          });
+        }
         void sendLinksUpdate();
       }
     });
@@ -233,6 +239,15 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     updateWebview();
     void sendLinksUpdate();
     void sendCandidatesUpdate();
+  }
+
+  private getSyncTracker(panel: vscode.WebviewPanel): WebviewSyncTracker {
+    let tracker = this._syncTrackers.get(panel);
+    if (!tracker) {
+      tracker = new WebviewSyncTracker();
+      this._syncTrackers.set(panel, tracker);
+    }
+    return tracker;
   }
 
   public async handleWebviewMessage(
@@ -640,9 +655,16 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     if (message.type === 'updateContent') {
       try {
         const newText = message.content;
-        if (typeof newText !== 'string' || newText === document.getText()) {
+        if (typeof newText !== 'string') {
           return;
         }
+        const tracker = this.getSyncTracker(webviewPanel);
+        if (newText === document.getText()) {
+          // Nothing to apply, but acknowledge the seq so later updates are not treated as stale.
+          tracker.acknowledgeSeq(message.seq);
+          return;
+        }
+        tracker.recordWebviewEdit(newText, message.seq);
         const fullRange = new vscode.Range(
           document.positionAt(0),
           document.positionAt(document.getText().length)
