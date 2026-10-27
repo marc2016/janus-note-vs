@@ -98,8 +98,8 @@ describe('FolderOverviewViewProvider', () => {
     vi.spyOn(folderTasksService, 'readFolderCompanion').mockResolvedValue({
       version: 1,
       tasks: [
-        { id: '1', title: 'Task 1', completed: false, status: 'todo', priority: 'high', createdAt: '2026-01-01' },
-        { id: '2', title: 'Task 2', completed: true, status: 'done', priority: 'normal', createdAt: '2026-01-01' },
+        { id: '1', title: 'Task 1', completed: false, status: 'todo', priority: 'high', dueDate: '2026-11-05', scheduledDate: '2026-11-02', createdAt: '2026-01-01' },
+        { id: '2', title: 'Task 2', completed: true, status: 'done', priority: 'medium', createdAt: '2026-01-01' },
       ],
     });
 
@@ -113,6 +113,8 @@ describe('FolderOverviewViewProvider', () => {
     expect(data.tasks.exists).toBe(true);
     expect(data.tasks.openCount).toBe(1);
     expect(data.tasks.completedCount).toBe(1);
+    expect(data.tasks.recentTasks[0]).toMatchObject({ dueDate: '2026-11-05', scheduledDate: '2026-11-02' });
+    expect(data.tasks.recentTasks[1].dueDate).toBeUndefined();
   });
 
   it('handles saveSummaryAsNote by writing summary.md and opening in editor', async () => {
@@ -136,12 +138,12 @@ describe('FolderOverviewViewProvider', () => {
     );
   });
 
-  it('handles openTaskBoard and openNote messages', async () => {
+  it('handles openFolderTasks and openNote messages', async () => {
     const executeSpy = vi.spyOn(vscode.commands, 'executeCommand');
     await provider.open(folderUri);
 
     await provider.handleMessage({
-      type: 'openTaskBoard',
+      type: 'openFolderTasks',
       folderUri: folderUri.toString(),
     });
     expect(executeSpy).toHaveBeenCalledWith('janus.openFolderTasks', folderUri);

@@ -1,18 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { MdiIcon } from '../components/ui/MdiIcon';
-import { mdiCalendarAlert, mdiCalendarClock, mdiCalendarPlus, mdiClose } from '@mdi/js';
-import { formatTaskDate, getTaskDateState, isIsoDate, todayIso } from './taskDates';
-
-type DateField = 'dueDate' | 'scheduledDate';
-
-const FIELD_META: Record<DateField, { label: string; menuLabel: string; icon: string }> = {
-  scheduledDate: { label: 'Geplant', menuLabel: 'Geplant am…', icon: mdiCalendarClock },
-  dueDate: { label: 'Fällig', menuLabel: 'Fällig am…', icon: mdiCalendarAlert },
-};
-
-const FIELD_ORDER: DateField[] = ['scheduledDate', 'dueDate'];
+import { mdiCalendarPlus, mdiClose } from '@mdi/js';
+import { isIsoDate } from './taskDates';
+import { DateField, FIELD_META, FIELD_ORDER, TaskDateChips } from './TaskDateChips';
 
 export interface TaskDateControlsProps {
   task: { dueDate?: string; scheduledDate?: string; completed?: boolean };
@@ -27,8 +18,6 @@ export const TaskDateControls: React.FC<TaskDateControlsProps> = ({ task, onUpda
   const [editing, setEditing] = useState<DateField | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const today = todayIso();
-  const state = getTaskDateState(task, today);
   const missing = FIELD_ORDER.filter((f) => !isIsoDate(task[f]));
 
   // Close popovers on outside click or Escape
@@ -62,52 +51,9 @@ export const TaskDateControls: React.FC<TaskDateControlsProps> = ({ task, onUpda
     setEditing(null);
   };
 
-  const chipClass = (field: DateField) => {
-    const overdue = field === 'dueDate' ? state.dueOverdue : state.scheduledOverdue;
-    if (overdue) {
-      return 'border-[var(--vscode-errorForeground,#f14c4c)] text-[var(--vscode-errorForeground,#f14c4c)] bg-red-500/10';
-    }
-    if (field === 'scheduledDate' && state.scheduledAfterDue) {
-      return 'border-amber-500/50 text-amber-500 bg-amber-500/10';
-    }
-    return field === 'scheduledDate' ? 'border-dashed' : '';
-  };
-
-  const chipTitle = (field: DateField, value: string) => {
-    const [y, m, d] = value.split('-');
-    let title = `${FIELD_META[field].label} am ${d}.${m}.${y}`;
-    if (field === 'dueDate' ? state.dueOverdue : state.scheduledOverdue) title += ' (überfällig)';
-    if (field === 'scheduledDate' && state.scheduledAfterDue) title += ' (liegt nach der Frist)';
-    return `${title} – klicken zum Ändern`;
-  };
-
   return (
     <div ref={containerRef} className="relative flex items-center gap-1 shrink-0">
-      {FIELD_ORDER.map((field) => {
-        const value = task[field];
-        if (!isIsoDate(value)) return null;
-        return (
-          <Badge
-            key={field}
-            variant="outline"
-            role="button"
-            tabIndex={0}
-            aria-label={chipTitle(field, value)}
-            title={chipTitle(field, value)}
-            onClick={() => startEditing(field)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                startEditing(field);
-              }
-            }}
-            className={`rounded-full font-normal cursor-pointer hover:border-[var(--vscode-focusBorder,#007acc)] ${chipClass(field)}`}
-          >
-            <MdiIcon path={FIELD_META[field].icon} size={12} />
-            <span>{formatTaskDate(value, today)}</span>
-          </Badge>
-        );
-      })}
+      <TaskDateChips task={task} onChipClick={startEditing} />
 
       {missing.length > 0 && (
         <Button

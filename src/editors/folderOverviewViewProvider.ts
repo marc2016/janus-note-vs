@@ -4,6 +4,7 @@ import { AiFolderSummaryService, SelectionItem } from '../services/aiFolderSumma
 import { FolderTasksService } from '../services/folderTasksService';
 import { MarkdownEditorProvider } from './markdownEditorProvider';
 import { isMarkdownNote } from '../companion/companionPaths';
+import { TaskItem } from '../models/tasks';
 
 export interface FolderNoteCard {
   uri: string;
@@ -21,13 +22,22 @@ export interface FolderTaskSummary {
   openCount: number;
   completedCount: number;
   totalCount: number;
-  recentTasks: Array<{
-    id: string;
-    title: string;
-    completed: boolean;
-    priority?: string;
-    dueDate?: string;
-  }>;
+  recentTasks: FolderTaskPreview[];
+}
+
+export type FolderTaskPreview = Pick<TaskItem, 'id' | 'title' | 'priority' | 'dueDate' | 'scheduledDate'> & {
+  completed: boolean;
+};
+
+function toTaskPreviews(tasks: TaskItem[]): FolderTaskPreview[] {
+  return tasks.slice(0, 8).map((t) => ({
+    id: t.id,
+    title: t.title,
+    completed: !!t.completed,
+    priority: t.priority,
+    dueDate: t.dueDate,
+    scheduledDate: t.scheduledDate,
+  }));
 }
 
 export interface FolderOverviewData {
@@ -263,13 +273,7 @@ export class FolderOverviewViewProvider {
         openCount: openTasks.length,
         completedCount: completedTasks.length,
         totalCount: allTasks.length,
-        recentTasks: allTasks.slice(0, 8).map((t) => ({
-          id: t.id,
-          title: t.title,
-          completed: !!t.completed,
-          priority: t.priority,
-          dueDate: (t as any).dueDate,
-        })),
+        recentTasks: toTaskPreviews(allTasks),
       };
     } catch {}
 
@@ -398,7 +402,7 @@ export class FolderOverviewViewProvider {
       defaultSaveLocationUri = vscode.Uri.file('/');
     }
 
-    const allTasks: any[] = [];
+    const allTasks: TaskItem[] = [];
     for (const folderPath of foldersToCheckTasks) {
       try {
         const tasksUri = vscode.Uri.joinPath(vscode.Uri.file(folderPath), 'tasks.json');
@@ -420,13 +424,7 @@ export class FolderOverviewViewProvider {
       openCount: openTasks.length,
       completedCount: completedTasks.length,
       totalCount: allTasks.length,
-      recentTasks: allTasks.slice(0, 8).map((t) => ({
-        id: t.id,
-        title: t.title,
-        completed: !!t.completed,
-        priority: t.priority,
-        dueDate: (t as any).dueDate,
-      })),
+      recentTasks: toTaskPreviews(allTasks),
     };
 
     return {
@@ -492,7 +490,7 @@ export class FolderOverviewViewProvider {
         break;
       }
 
-      case 'openTaskBoard': {
+      case 'openFolderTasks': {
         if (folderUri) {
           await vscode.commands.executeCommand('janus.openFolderTasks', folderUri);
         }

@@ -4,6 +4,14 @@ import {
   FolderOverviewData,
   FolderNoteCard,
 } from '../../editors/folderOverviewViewProvider';
+import { TaskDateChips } from '../tasks/TaskDateChips';
+import type { TaskPriority } from '../../models/tasks';
+
+const PRIORITY_BADGE_CLASS: Record<TaskPriority, string> = {
+  high: 'bg-red-950 text-red-300 border border-red-800',
+  medium: 'bg-blue-950 text-blue-300 border border-blue-800',
+  low: 'bg-gray-800 text-gray-400',
+};
 
 declare function acquireVsCodeApi(): {
   postMessage(message: any): void;
@@ -99,10 +107,10 @@ export const FolderOverviewApp: React.FC = () => {
     });
   };
 
-  const handleOpenTaskBoard = () => {
+  const handleOpenFolderTasks = () => {
     if (!data?.folderUri) return;
     getVsCodeApi()?.postMessage({
-      type: 'openTaskBoard',
+      type: 'openFolderTasks',
       folderUri: data.folderUri,
     });
   };
@@ -228,20 +236,20 @@ export const FolderOverviewApp: React.FC = () => {
 
           {tasks.exists ? (
             <button
-              onClick={handleOpenTaskBoard}
+              onClick={handleOpenFolderTasks}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded bg-[var(--vscode-button-secondaryBackground,#3a3d41)] text-[var(--vscode-button-secondaryForeground,#ffffff)] hover:bg-[var(--vscode-button-secondaryHoverBackground,#45494e)] transition-colors cursor-pointer"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z" />
               </svg>
-              <span>Aufgaben-Board</span>
+              <span>Aufgaben</span>
             </button>
           ) : (
             data.mode !== 'multi' && (
               <button
-                onClick={handleOpenTaskBoard}
+                onClick={handleOpenFolderTasks}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded bg-[var(--vscode-button-secondaryBackground,#3a3d41)] text-[var(--vscode-button-secondaryForeground,#ffffff)] hover:bg-[var(--vscode-button-secondaryHoverBackground,#45494e)] transition-colors cursor-pointer"
-                title="Erstellt tasks.json für diesen Ordner und öffnet das Board"
+                title="Erstellt tasks.json für diesen Ordner und öffnet die Aufgaben"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" />
@@ -402,10 +410,10 @@ export const FolderOverviewApp: React.FC = () => {
             </div>
 
             <button
-              onClick={handleOpenTaskBoard}
+              onClick={handleOpenFolderTasks}
               className="text-xs text-[var(--vscode-textLink-foreground,#3794ff)] hover:underline flex items-center gap-1 cursor-pointer"
             >
-              <span>Zum Aufgaben-Board</span>
+              <span>Zu den Aufgaben</span>
               <span>→</span>
             </button>
           </div>
@@ -429,18 +437,13 @@ export const FolderOverviewApp: React.FC = () => {
                   <span className={task.completed ? 'text-green-400' : 'text-gray-400'}>
                     {task.completed ? '✓' : '○'}
                   </span>
-                  <span className={`truncate flex-1 ${task.completed ? 'line-through opacity-60' : ''}`}>
+                  <span className={`truncate flex-1 min-w-0 ${task.completed ? 'line-through opacity-60' : ''}`}>
                     {task.title}
                   </span>
+                  <TaskDateChips task={task} />
                   {task.priority && (
                     <span
-                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono uppercase ${
-                        task.priority === 'high'
-                          ? 'bg-red-950 text-red-300 border border-red-800'
-                          : task.priority === 'normal'
-                          ? 'bg-blue-950 text-blue-300 border border-blue-800'
-                          : 'bg-gray-800 text-gray-400'
-                      }`}
+                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono uppercase shrink-0 ${PRIORITY_BADGE_CLASS[task.priority]}`}
                     >
                       {task.priority}
                     </span>

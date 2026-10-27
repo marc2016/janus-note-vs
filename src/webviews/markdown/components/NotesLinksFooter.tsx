@@ -230,7 +230,7 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
               <PillWithTooltip
                 category="Ordner-Aufgabenliste (Companion)"
                 description={`Gemeinsame Aufgabenliste (tasks.json) dieses Ordners: ${tasksCompanion.openCount} offen, ${tasksCompanion.completedCount} erledigt (${tasksCompanion.totalCount} gesamt).`}
-                actionHint="Klicken, um das Aufgaben-Board dieses Ordners zu öffnen"
+                actionHint="Klicken, um die Aufgaben dieses Ordners zu öffnen"
               >
                 <Badge
                   variant="outline"

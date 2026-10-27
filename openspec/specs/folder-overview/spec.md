@@ -33,15 +33,31 @@ The system SHALL display all Markdown notes directly contained within the folder
 - **THEN** system prompts for a note title and creates the new note directly inside the active folder, opening it in the editor
 
 ### Requirement: Folder Tasks Summary
-The system SHALL aggregate and display the task progress and status overview from the folder's `tasks.json` companion file (when present), providing a button to open the full folder Task Board editor.
+The system SHALL aggregate and display the task progress and status overview from the folder's `tasks.json` companion file (when present), providing a button to open the folder task list. Each task in the preview SHALL show its due date and scheduled date when set, using the same German short date format and overdue hints as the task list. The preview is read-only for dates.
 
 #### Scenario: Displaying task status
 - **WHEN** the folder contains a `tasks.json` with 2 open tasks and 1 completed task
 - **THEN** the Folder Overview renders a task status summary card showing 1/3 completed tasks and lists the open tasks
 
+#### Scenario: Displaying task dates in the preview
+- **WHEN** a previewed task has `dueDate: "2026-11-05"` and `scheduledDate: "2026-11-02"` and the current year is 2026
+- **THEN** the task row shows a "Geplant" chip with `02.11.` and a "Fällig" chip with `05.11.`
+
+#### Scenario: Overdue task in the preview
+- **WHEN** a previewed open task has a due date before today
+- **THEN** its due date chip is marked as overdue in the same way as in the task list
+
+#### Scenario: Task without dates
+- **WHEN** a previewed task has neither `dueDate` nor `scheduledDate`
+- **THEN** the task row shows no date chips and no action for adding a date
+
+#### Scenario: Priority badge
+- **WHEN** a previewed task has priority `high`, `medium`, or `low`
+- **THEN** the task row shows a priority badge with a distinct style for each of the three values
+
 #### Scenario: Opening task board from overview
-- **WHEN** user clicks the `Aufgaben-Board öffnen` action on the task card
-- **THEN** system opens the folder's `tasks.json` in the Janus Task Board editor (`janus.tasksEditor`)
+- **WHEN** user clicks the `Aufgaben` action in the folder header or `Zu den Aufgaben` on the task card
+- **THEN** system opens the folder task list for that folder (`janus.openFolderTasks`), creating the folder's `tasks.json` first if it does not exist
 
 ### Requirement: AI Folder Summarization with Subfolder Scope Toggle
 The system SHALL provide an AI summarization action in the Folder Overview that reads all Markdown notes within the folder, passes them to the active AI model, and displays a structured summary of key topics, milestones, and open items, with an optional toggle to include notes from subdirectories.

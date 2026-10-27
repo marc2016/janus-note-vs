@@ -487,7 +487,7 @@
             },
             "tasks": {
               "type": "array",
-              "description": "Array of task items with id, title, completed, status",
+              "description": "Array of task items with id, title, completed, status, and optional priority, dueDate, scheduledDate, note",
               "items": {
                 "type": "object",
                 "properties": {
@@ -507,6 +507,26 @@
                       "in_progress",
                       "done"
                     ]
+                  },
+                  "priority": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high"
+                    ]
+                  },
+                  "dueDate": {
+                    "type": "string",
+                    "description": "Deadline as YYYY-MM-DD"
+                  },
+                  "scheduledDate": {
+                    "type": "string",
+                    "description": "Day the task is planned to be worked on, as YYYY-MM-DD"
+                  },
+                  "note": {
+                    "type": "string",
+                    "description": "File name of the note the task belongs to"
                   }
                 },
                 "required": [

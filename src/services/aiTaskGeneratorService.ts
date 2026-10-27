@@ -8,7 +8,8 @@ import { TaskItem, TaskItemSchema, TaskPrioritySchema } from '../models/tasks';
 const ExtractedTaskSchema = z.object({
   title: z.string().min(1),
   priority: TaskPrioritySchema.optional().default('medium'),
-  dueDate: z.string().optional(),
+  dueDate: z.string().nullish(),
+  scheduledDate: z.string().nullish(),
 });
 
 const ExtractedTasksResponseSchema = z.union([
@@ -24,7 +25,7 @@ export interface GenerateTasksResult {
   totalTasks: number;
 }
 
-export function normalizeDueDate(raw?: string): string | undefined {
+export function normalizeTaskDate(raw?: string | null): string | undefined {
   if (!raw) return undefined;
   const trimmed = raw.trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
@@ -43,12 +44,18 @@ export function normalizeDueDate(raw?: string): string | undefined {
   return undefined;
 }
 
+/** Today's local date as `YYYY-MM-DD`. */
+function localIsoDate(now: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 /**
  * Extracts a JSON object or array from an LLM response that may contain Markdown code fences or surrounding text.
  */
 export function parseAiExtractedTasks(
   rawResponse: string
-): Array<{ title: string; priority: 'low' | 'medium' | 'high'; dueDate?: string }> {
+): Array<{ title: string; priority: 'low' | 'medium' | 'high'; dueDate?: string; scheduledDate?: string }> {
   const cleaned = rawResponse
     .replace(/```(?:json)?\s*/gi, '')
     .replace(/```/g, '')
@@ -86,7 +93,8 @@ export function parseAiExtractedTasks(
     .map((item) => ({
       title: item.title.trim(),
       priority: item.priority || 'medium',
-      dueDate: normalizeDueDate(item.dueDate),
+      dueDate: normalizeTaskDate(item.dueDate),
+      scheduledDate: normalizeTaskDate(item.scheduledDate),
     }))
     .filter((item) => item.title.length > 0);
 }
@@ -128,12 +136,15 @@ export class AiTaskGeneratorService {
       '1. Erstelle KEINE Duplikate zu bereits im Ordner vorhandenen Aufgaben.',
       '2. Behalte die Sprache der Notiz bei.',
       '3. Antworte AUSSCHLIESSLICH mit gültigem JSON im folgenden Format (ohne Markdown-Erklärungen):',
-      '{"tasks": [{"title": "Kurzer, prägnanter Aufgabentitel", "priority": "low" | "medium" | "high", "dueDate": "YYYY-MM-DD"}]}',
-      'Wenn für eine Aufgabe kein Fälligkeitsdatum genannt wird, lasse das Feld dueDate weg oder setze null.',
+      '{"tasks": [{"title": "Kurzer, prägnanter Aufgabentitel", "priority": "low" | "medium" | "high", "dueDate": "YYYY-MM-DD", "scheduledDate": "YYYY-MM-DD"}]}',
+      'dueDate ist die Frist, bis wann die Aufgabe erledigt sein muss (z.B. "bis", "Frist", "Abgabe").',
+      'scheduledDate ist der Tag, an dem laut Notiz an der Aufgabe gearbeitet wird (z.B. "am Montag kümmere ich mich darum").',
+      'Löse relative Angaben wie "nächsten Montag" anhand des heutigen Datums auf. Wird ein Datum nicht genannt, lasse das Feld weg oder setze null.',
       'Wenn keine neuen Aufgaben in der Notiz enthalten sind, antworte mit {"tasks": []}.',
     ].join('\n');
 
     const userPrompt = [
+      `Heutiges Datum: ${localIsoDate()}`,
       `Notiz-Datei: ${noteFileName}`,
       '',
       'Bereits vorhandene Aufgaben im Ordner:',
@@ -164,6 +175,7 @@ export class AiTaskGeneratorService {
         status: 'todo',
         priority: candidate.priority,
         dueDate: candidate.dueDate,
+        scheduledDate: candidate.scheduledDate,
         note: noteFileName,
         createdAt: now,
       });

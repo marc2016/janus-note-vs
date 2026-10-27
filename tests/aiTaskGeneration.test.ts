@@ -111,6 +111,70 @@ describe('aiTaskGeneration', () => {
       ]);
     });
 
+    it('extracts both due and scheduled dates', () => {
+      const raw = JSON.stringify({
+        tasks: [{ title: 'Angebot schreiben', priority: 'medium', scheduledDate: '03.11.2026', dueDate: '2026-11-07' }],
+      });
+      expect(parseAiExtractedTasks(raw)).toEqual([
+        { title: 'Angebot schreiben', priority: 'medium', scheduledDate: '2026-11-03', dueDate: '2026-11-07' },
+      ]);
+    });
+
+    it('accepts null dates instead of discarding the response', () => {
+      const raw = JSON.stringify({
+        tasks: [{ title: 'Ohne Datum', priority: 'low', dueDate: null, scheduledDate: null }],
+      });
+      const tasks = parseAiExtractedTasks(raw);
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0].dueDate).toBeUndefined();
+      expect(tasks[0].scheduledDate).toBeUndefined();
+    });
+
+    it('drops an unparseable scheduledDate but keeps the task', () => {
+      const raw = JSON.stringify({
+        tasks: [{ title: 'Irgendwann', priority: 'low', scheduledDate: 'nächste Woche' }],
+      });
+      const tasks = parseAiExtractedTasks(raw);
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0].title).toBe('Irgendwann');
+      expect(tasks[0].scheduledDate).toBeUndefined();
+    });
+
+    it('sends today\'s date to the model and stores the returned scheduledDate', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 9, 27, 10, 0));
+      try {
+        const aiModelService = new AiModelService(mockContext);
+        const folderTasksService = new FolderTasksService();
+        const generator = new AiTaskGeneratorService(aiModelService, folderTasksService);
+
+        vi.spyOn(folderTasksService, 'readFolderCompanion').mockResolvedValue({
+          version: 1,
+          title: 'Aufgaben',
+          tasks: [],
+        });
+        const writeSpy = vi
+          .spyOn(folderTasksService, 'writeFolderCompanion')
+          .mockResolvedValue(undefined);
+        const completeSpy = vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue(
+          JSON.stringify({
+            tasks: [{ title: 'Angebot schreiben', priority: 'medium', scheduledDate: '2026-11-03', dueDate: '2026-11-07' }],
+          })
+        );
+
+        await generator.generateTasksForNote(
+          vscode.Uri.file('/workspace/notes/projekt/angebot.md'),
+          'Am 03.11. kümmere ich mich um das Angebot, Abgabe ist der 07.11.'
+        );
+
+        expect(completeSpy.mock.calls[0][1]).toContain('Heutiges Datum: 2026-10-27');
+        const written = writeSpy.mock.calls[0][1] as any;
+        expect(written.tasks[0]).toMatchObject({ scheduledDate: '2026-11-03', dueDate: '2026-11-07' });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('extracts new tasks from note and deduplicates against existing folder tasks.json', async () => {
       const aiModelService = new AiModelService(mockContext);
       const folderTasksService = new FolderTasksService();
