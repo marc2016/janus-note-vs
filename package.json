@@ -213,6 +213,11 @@
         "icon": "$(dashboard)"
       },
       {
+        "command": "janus.openNoteGraph",
+        "title": "Janus: Notiz-Netzwerk öffnen",
+        "icon": "$(type-hierarchy)"
+      },
+      {
         "command": "janus.selectAiModel",
         "title": "Janus: KI-Modell auswählen / konfigurieren",
         "icon": "$(sparkle)"

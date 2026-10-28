@@ -107,6 +107,10 @@ export const FolderOverviewApp: React.FC = () => {
     });
   };
 
+  const handleOpenNoteGraph = () => {
+    getVsCodeApi()?.postMessage({ type: 'openNoteGraph' });
+  };
+
   const handleOpenFolderTasks = () => {
     if (!data?.folderUri) return;
     getVsCodeApi()?.postMessage({
@@ -222,6 +226,18 @@ export const FolderOverviewApp: React.FC = () => {
 
         {/* Action buttons */}
         <div className="flex items-center gap-2">
+          {data.isNotesRoot && (
+            <button
+              onClick={handleOpenNoteGraph}
+              title="Alle Notizen und ihre Verknüpfungen als Netzwerk anzeigen"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded bg-[var(--vscode-button-secondaryBackground,#3a3d41)] text-[var(--vscode-button-secondaryForeground,#ffffff)] hover:bg-[var(--vscode-button-secondaryHoverBackground,#45494e)] transition-colors cursor-pointer"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M17 16l-4-4V8.82C14.16 8.4 15 7.3 15 6c0-1.66-1.34-3-3-3S9 4.34 9 6c0 1.3.84 2.4 2 2.82V12l-4 4H3v5h5v-3.05l4-4.2 4 4.2V21h5v-5h-4z" />
+              </svg>
+              <span>Netzwerk</span>
+            </button>
+          )}
           {data.mode !== 'multi' && (
             <button
               onClick={handleCreateNote}

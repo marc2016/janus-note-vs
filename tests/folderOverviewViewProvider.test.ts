@@ -156,6 +156,28 @@ describe('FolderOverviewViewProvider', () => {
     expect(executeSpy).toHaveBeenCalledWith('vscode.openWith', noteUri, MarkdownEditorProvider.viewType);
   });
 
+  it('marks only the notes root overview with isNotesRoot', async () => {
+    const notesRoot = vscode.Uri.file('/workspace/notes');
+    const rootAwareProvider = new FolderOverviewViewProvider(
+      mockContext,
+      aiFolderSummaryService,
+      folderTasksService,
+      undefined,
+      () => notesRoot
+    );
+    vi.spyOn(vscode.workspace.fs, 'readDirectory').mockResolvedValue([]);
+
+    expect((await rootAwareProvider.getFolderOverviewData(notesRoot)).isNotesRoot).toBe(true);
+    expect((await rootAwareProvider.getFolderOverviewData(folderUri)).isNotesRoot).toBe(false);
+    expect((await provider.getFolderOverviewData(notesRoot)).isNotesRoot).toBe(false);
+  });
+
+  it('opens the note graph on openNoteGraph message', async () => {
+    const executeSpy = vi.spyOn(vscode.commands, 'executeCommand');
+    await provider.handleMessage({ type: 'openNoteGraph' });
+    expect(executeSpy).toHaveBeenCalledWith('janus.openNoteGraph');
+  });
+
   it('handles copyToClipboard message', async () => {
     const clipboardSpy = vi.spyOn(vscode.env.clipboard, 'writeText');
     const toastSpy = vi.spyOn(vscode.window, 'showInformationMessage');

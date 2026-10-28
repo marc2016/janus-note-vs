@@ -5,6 +5,7 @@ import {
   NotesTreeDataProvider,
   AllTasksTreeItem,
   CalendarTreeItem,
+  NoteGraphTreeItem,
   FolderTasksTreeItem,
   FolderTreeItem,
   NoteTreeItem,
@@ -102,8 +103,8 @@ describe('NotesTreeDataProvider', () => {
 
     const items = await provider.getChildren();
 
-    // Should contain: AllTasksTreeItem, CalendarTreeItem, subfolder (FolderTreeItem), architecture.markdown (NoteTreeItem), meeting.md (NoteTreeItem)
-    expect(items.length).toBe(5);
+    // Should contain: AllTasksTreeItem, CalendarTreeItem, NoteGraphTreeItem, subfolder (FolderTreeItem), architecture.markdown (NoteTreeItem), meeting.md (NoteTreeItem)
+    expect(items.length).toBe(6);
 
     const allTasksItem = items[0] as AllTasksTreeItem;
     expect(allTasksItem instanceof AllTasksTreeItem).toBe(true);
@@ -116,19 +117,24 @@ describe('NotesTreeDataProvider', () => {
     expect(calendarItem.label).toBe('Kalender');
     expect(calendarItem.command?.command).toBe('janus.openCalendar');
 
-    const folderItem = items[2] as FolderTreeItem;
+    const graphItem = items[2] as NoteGraphTreeItem;
+    expect(graphItem instanceof NoteGraphTreeItem).toBe(true);
+    expect(graphItem.label).toBe('Netzwerk');
+    expect(graphItem.command?.command).toBe('janus.openNoteGraph');
+
+    const folderItem = items[3] as FolderTreeItem;
     expect(folderItem instanceof FolderTreeItem).toBe(true);
     expect(folderItem.label).toBe('subfolder');
     expect(folderItem.collapsibleState).toBe(vscode.TreeItemCollapsibleState.Collapsed);
 
-    const note1 = items[3] as NoteTreeItem;
+    const note1 = items[4] as NoteTreeItem;
     expect(note1 instanceof NoteTreeItem).toBe(true);
     expect(note1.label).toBe('architecture.markdown');
     expect(note1.collapsibleState).toBe(vscode.TreeItemCollapsibleState.None);
     expect(note1.command?.command).toBe('vscode.openWith');
     expect(note1.command?.arguments).toEqual([note1.uri, 'janus.markdownEditor']);
 
-    const note2 = items[4] as NoteTreeItem;
+    const note2 = items[5] as NoteTreeItem;
     expect(note2 instanceof NoteTreeItem).toBe(true);
     expect(note2.label).toBe('meeting.md');
     expect(note2.collapsibleState).toBe(vscode.TreeItemCollapsibleState.Collapsed);
@@ -370,6 +376,10 @@ describe('NotesTreeDataProvider', () => {
       const calendarItem = await provider.getTreeItemForUri(vscode.Uri.parse('janus-calendar:///all'));
       expect(calendarItem instanceof CalendarTreeItem).toBe(true);
 
+      // Note graph URI scheme
+      const noteGraphItem = await provider.getTreeItemForUri(vscode.Uri.parse('janus-graph:///all'));
+      expect(noteGraphItem instanceof NoteGraphTreeItem).toBe(true);
+
       // Tasks URI scheme
       const allTasksItem = await provider.getTreeItemForUri(vscode.Uri.parse('janus-tasks:///all'));
       expect(allTasksItem instanceof AllTasksTreeItem).toBe(true);
@@ -429,6 +439,14 @@ describe('NotesTreeDataProvider', () => {
         },
       };
       expect(getActiveNoteUri()?.toString()).toBe('janus-tasks:///all');
+
+      // 7. TabGroups activeTab with TabInputWebview for the note graph
+      (vscode.window as any).tabGroups.activeTabGroup = {
+        activeTab: {
+          input: new vscode.TabInputWebview('janus.noteGraph'),
+        },
+      };
+      expect(getActiveNoteUri()?.toString()).toBe('janus-graph:///all');
 
       // Cleanup
       (vscode.window as any).activeTextEditor = undefined;

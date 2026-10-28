@@ -50,6 +50,8 @@ export interface FolderOverviewData {
   subfolderCount: number;
   selectedCount?: number;
   canIncludeSubfolders?: boolean;
+  /** True when a folder-mode overview shows the configured notes root. */
+  isNotesRoot?: boolean;
   defaultSaveLocation?: string;
   selectionItems?: Array<{ uri: string; isFolder: boolean }>;
 }
@@ -93,7 +95,8 @@ export class FolderOverviewViewProvider {
     private readonly context: vscode.ExtensionContext,
     private readonly aiFolderSummaryService: AiFolderSummaryService,
     private readonly folderTasksService: FolderTasksService = new FolderTasksService(),
-    private readonly onDidMutate?: () => void
+    private readonly onDidMutate?: () => void,
+    private readonly getNotesRootUri?: () => vscode.Uri | undefined
   ) {}
 
   public getActivePanel(): vscode.WebviewPanel | undefined {
@@ -286,6 +289,7 @@ export class FolderOverviewViewProvider {
       tasks: tasksSummary,
       subfolderCount,
       canIncludeSubfolders: subfolderCount > 0,
+      isNotesRoot: this.getNotesRootUri?.()?.fsPath === folderUri.fsPath,
     };
   }
 
@@ -487,6 +491,11 @@ export class FolderOverviewViewProvider {
           const targetUri = this.resolveUri(message.noteUri);
           await vscode.commands.executeCommand('vscode.openWith', targetUri, MarkdownEditorProvider.viewType);
         }
+        break;
+      }
+
+      case 'openNoteGraph': {
+        await vscode.commands.executeCommand('janus.openNoteGraph');
         break;
       }
 

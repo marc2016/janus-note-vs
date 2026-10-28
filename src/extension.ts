@@ -11,6 +11,7 @@ import { CalendarViewProvider } from './editors/calendarViewProvider';
 import { CalendarDayDetailsViewProvider } from './editors/calendarDayDetailsViewProvider';
 import { SettingsViewProvider } from './editors/settingsViewProvider';
 import { FolderOverviewViewProvider } from './editors/folderOverviewViewProvider';
+import { NoteGraphViewProvider } from './editors/noteGraphViewProvider';
 import { ExportCompendiumViewProvider } from './editors/exportCompendiumViewProvider';
 import { ChatViewProvider } from './editors/chatViewProvider';
 import { collectMarkdownNotesFromSelection } from './services/noteLinkService';
@@ -63,6 +64,9 @@ export function getActiveNoteUri(): vscode.Uri | undefined {
       }
       if (input.viewType === GlobalTasksViewProvider.viewType) {
         return vscode.Uri.parse('janus-tasks:///all');
+      }
+      if (input.viewType === NoteGraphViewProvider.viewType) {
+        return vscode.Uri.parse('janus-graph:///all');
       }
     }
 
@@ -157,9 +161,11 @@ export function activate(context: vscode.ExtensionContext) {
     context,
     aiFolderSummaryService,
     folderTasksService,
-    () => notesTreeDataProvider.refresh()
+    () => notesTreeDataProvider.refresh(),
+    () => companionManager.getNotesRootUri()
   );
   const exportCompendiumViewProvider = new ExportCompendiumViewProvider(context);
+  const noteGraphViewProvider = new NoteGraphViewProvider(context, companionManager);
   const chatViewProvider = new ChatViewProvider(
     context,
     companionManager,
@@ -423,6 +429,12 @@ export function activate(context: vscode.ExtensionContext) {
       }
       await vscode.commands.executeCommand('vscode.openWith', tasksUri, TasksEditorProvider.viewType);
       scheduleSyncSidebarSelection(tasksUri);
+    }),
+    vscode.commands.registerCommand('janus.openNoteGraph', async () => {
+      await noteGraphViewProvider.open();
+      if (noteGraphViewProvider.getActivePanel()) {
+        scheduleSyncSidebarSelection(vscode.Uri.parse('janus-graph:///all'));
+      }
     }),
     vscode.commands.registerCommand('janus.openFolderOverview', async (item?: NotesTreeItem | vscode.Uri) => {
       let folderUri: vscode.Uri | undefined;

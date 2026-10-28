@@ -38,6 +38,7 @@ async function build() {
       folderOverview: 'src/webviews/folderOverview/index.tsx',
       exportCompendium: 'src/webviews/exportCompendium/index.tsx',
       chat: 'src/webviews/chat/index.tsx',
+      noteGraph: 'src/webviews/noteGraph/index.tsx',
     },
     bundle: true,
     format: 'iife',

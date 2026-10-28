@@ -15,6 +15,7 @@ import { CalendarService } from '../services/calendarService';
 export type NotesTreeItem =
   | AllTasksTreeItem
   | CalendarTreeItem
+  | NoteGraphTreeItem
   | FolderTasksTreeItem
   | FolderTreeItem
   | NoteTreeItem
@@ -39,6 +40,24 @@ export class CalendarTreeItem extends vscode.TreeItem {
     this.command = {
       command: 'janus.openCalendar',
       title: 'Kalender öffnen',
+    };
+  }
+}
+
+export class NoteGraphTreeItem extends vscode.TreeItem {
+  public readonly uri: vscode.Uri;
+
+  constructor(notesRootUri?: vscode.Uri) {
+    super('Netzwerk', vscode.TreeItemCollapsibleState.None);
+
+    this.uri = notesRootUri || vscode.Uri.parse('janus-graph:///all');
+    this.id = 'janus:noteGraph';
+    this.contextValue = 'janusNoteGraph';
+    this.iconPath = new vscode.ThemeIcon('type-hierarchy');
+    this.tooltip = 'Notiz-Netzwerk (alle Notizen und ihre Verknüpfungen)';
+    this.command = {
+      command: 'janus.openNoteGraph',
+      title: 'Notiz-Netzwerk öffnen',
     };
   }
 }
@@ -218,6 +237,7 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
 
     if (
       element instanceof CalendarTreeItem ||
+      element instanceof NoteGraphTreeItem ||
       element instanceof AllTasksTreeItem ||
       element instanceof LinkedFolderTreeItem
     ) {
@@ -313,6 +333,10 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
       return new CalendarTreeItem(eventCount, status.notesRootUri);
     }
 
+    if (uri.scheme === 'janus-graph') {
+      return new NoteGraphTreeItem(status.notesRootUri);
+    }
+
     if (uri.scheme === 'janus-tasks') {
       const totalOpen = await this.folderTasksService.countTotalOpenTasks(status.notesRootUri);
       return new AllTasksTreeItem(totalOpen, status.notesRootUri);
@@ -358,7 +382,8 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
         const eventCount = await this.calendarService.countCalendarEntries(status.notesRootUri);
         const calendarItem = new CalendarTreeItem(eventCount, status.notesRootUri);
         const dirItems = await this.readDirectoryItems(status.notesRootUri, false, false);
-        items.push(allTasksItem, calendarItem, ...dirItems);
+        const noteGraphItem = new NoteGraphTreeItem(status.notesRootUri);
+        items.push(allTasksItem, calendarItem, noteGraphItem, ...dirItems);
       }
 
       for (const incUri of includedUris) {
