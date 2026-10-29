@@ -18,6 +18,8 @@ import { AiInboxSorterService, SortInboxResult } from '../services/aiInboxSorter
 import { TasksEditorProvider } from './tasksEditorProvider';
 import { ChartEditorProvider } from './chartEditorProvider';
 import { WebviewSyncTracker } from './webviewSyncTracker';
+import { isDailyNotePath } from '../services/dailyNotePaths';
+import { resolveSortedLinks } from '../services/sortedLinkService';
 
 /**
  * Reports the outcome of an inbox sorting run, shared by the `janus.sortInbox` command and the
@@ -27,23 +29,29 @@ export function showInboxSortResult(result: SortInboxResult): void {
   if (result.cancelled) {
     return;
   }
+  const isDaily = result.source === 'daily';
   if (result.skippedEmpty) {
     void vscode.window.showInformationMessage(
-      'Die Inbox (inbox.md) ist leer – es gibt keine Einträge zum Einsortieren.'
+      isDaily
+        ? 'Die Tagesnotiz enthält keine neuen Einträge zum Einsortieren.'
+        : 'Die Inbox (inbox.md) ist leer – es gibt keine Einträge zum Einsortieren.'
     );
     return;
   }
 
   const changedHint =
     result.skippedChanged.length > 0
-      ? ` ${result.skippedChanged.length} Abschnitt(e) wurden währenddessen geändert und nicht verschoben.`
+      ? ` ${result.skippedChanged.length} Abschnitt(e) wurden währenddessen geändert und nicht ${isDaily ? 'kopiert' : 'verschoben'}.`
       : '';
 
   if (result.sortedItems.length > 0) {
     const firstTarget = result.sortedItems[0];
+    const summary = isDaily
+      ? `${result.sortedItems.length} Abschnitt(e) einsortiert und verlinkt.`
+      : `${result.sortedItems.length} Abschnitt(e) einsortiert, ${result.remainingBlockCount} in der Inbox verblieben.`;
     void vscode.window
       .showInformationMessage(
-        `${result.sortedItems.length} Abschnitt(e) einsortiert, ${result.remainingBlockCount} in der Inbox verblieben.${changedHint}`,
+        `${summary}${changedHint}`,
         'Notiz öffnen'
       )
       .then((action) => {
@@ -58,7 +66,9 @@ export function showInboxSortResult(result: SortInboxResult): void {
   } else if (changedHint) {
     void vscode.window.showInformationMessage(`Keine Abschnitte einsortiert.${changedHint}`);
   } else {
-    void vscode.window.showInformationMessage('Keine sortierbaren Abschnitte in der Inbox erkannt.');
+    void vscode.window.showInformationMessage(
+      `Keine sortierbaren Abschnitte in der ${isDaily ? 'Tagesnotiz' : 'Inbox'} erkannt.`
+    );
   }
 }
 
@@ -146,6 +156,29 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     });
   }
 
+  /** Which kind of sorting the footer offers for a note: `inbox.md`, a daily note, or none. */
+  getSortSource(uri: vscode.Uri): 'inbox' | 'daily' | undefined {
+    const notesRoot = this.companionManager.getNotesRootUri(uri);
+    if (!notesRoot) {
+      return undefined;
+    }
+    const relPath = path.relative(notesRoot.fsPath, uri.fsPath).replace(/\\/g, '/');
+    if (relPath.toLowerCase() === 'inbox.md') {
+      return 'inbox';
+    }
+    return isDailyNotePath(relPath) ? 'daily' : undefined;
+  }
+
+  /** Sends display data for the `-> [[target]]` lines of a daily note to the webview. */
+  async sendSortedLinks(document: vscode.TextDocument, webviewPanel: vscode.WebviewPanel): Promise<void> {
+    const notesRoot = this.companionManager.getNotesRootUri(document.uri);
+    if (!notesRoot) return;
+    const date = isDailyNotePath(path.relative(notesRoot.fsPath, document.uri.fsPath).replace(/\\/g, '/'));
+    if (!date) return;
+    const links = await resolveSortedLinks(document.getText(), notesRoot, date);
+    void webviewPanel.webview.postMessage({ type: 'sortedLinks', links });
+  }
+
   async resolveCustomTextEditor(
     document: vscode.TextDocument,
     webviewPanel: vscode.WebviewPanel,
@@ -188,6 +221,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
           type: 'updateLinks',
           linksData,
         });
+        void this.sendSortedLinks(document, webviewPanel);
       } catch (err) {
         console.warn('Failed to compute note links data:', err);
       }
@@ -309,6 +343,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
 
     if (message.type === 'ready') {
       updateWebview?.();
+      void webviewPanel.webview.postMessage({ type: 'sortSource', source: this.getSortSource(document.uri) ?? null });
       if (sendLinksUpdate) {
         void sendLinksUpdate();
       } else {
@@ -415,12 +450,19 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     if (message.type === 'sortAiInbox') {
+      const sortSource = this.getSortSource(document.uri);
+      if (!sortSource) {
+        return;
+      }
       void webviewPanel.webview.postMessage({
         type: 'aiInboxSorting',
         isSorting: true,
       });
       try {
-        const result = await this.aiInboxSorterService.sortInbox(document.uri, document);
+        const result =
+          sortSource === 'daily'
+            ? await this.aiInboxSorterService.sortDailyNote(document.uri, document)
+            : await this.aiInboxSorterService.sortInbox(document.uri, document);
         void webviewPanel.webview.postMessage({
           type: 'aiInboxSorting',
           isSorting: false,
@@ -441,7 +483,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         const msg = err?.message || String(err);
         void vscode.window
           .showErrorMessage(
-            `KI-Inbox-Sortierung fehlgeschlagen: ${msg}`,
+            `${sortSource === 'daily' ? 'KI-Sortierung der Tagesnotiz' : 'KI-Inbox-Sortierung'} fehlgeschlagen: ${msg}`,
             'KI-Modell konfigurieren'
           )
           .then((choice) => {

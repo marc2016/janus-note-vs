@@ -100,4 +100,41 @@ describe('NotesLinksFooter Component', () => {
     expect(markup).toContain('SourceNote');
     expect(markup).not.toContain('SourceNote :');
   });
+
+  describe('sort button', () => {
+    const linksData: NoteLinksData = {
+      noteUri: 'file:///workspace/notes/inbox.md',
+      companions: {},
+      outgoingLinks: [],
+      backlinks: [],
+    };
+
+    it('shows Inbox einsortieren by default', () => {
+      const markup = renderToStaticMarkup(
+        <NotesLinksFooter linksData={linksData} onOpenLink={() => {}} onAddLink={() => {}} onSortAiInbox={() => {}} />
+      );
+      expect(markup).toContain('Inbox einsortieren');
+    });
+
+    it('shows Tagesnotiz einsortieren for daily notes', () => {
+      const markup = renderToStaticMarkup(
+        <NotesLinksFooter
+          linksData={linksData}
+          onOpenLink={() => {}}
+          onAddLink={() => {}}
+          onSortAiInbox={() => {}}
+          sortLabel="Tagesnotiz einsortieren"
+        />
+      );
+      expect(markup).toContain('Tagesnotiz einsortieren');
+      expect(markup).not.toContain('Inbox einsortieren');
+    });
+
+    it('shows no sort button without a sort handler', () => {
+      const markup = renderToStaticMarkup(
+        <NotesLinksFooter linksData={linksData} onOpenLink={() => {}} onAddLink={() => {}} />
+      );
+      expect(markup).not.toContain('einsortieren');
+    });
+  });
 });

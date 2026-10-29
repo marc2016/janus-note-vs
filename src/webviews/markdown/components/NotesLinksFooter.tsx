@@ -62,6 +62,8 @@ export interface NotesLinksFooterProps {
   onCreateCompanion?: (companionType: 'tasks' | 'chart') => void;
   onGenerateAiTasks?: () => void;
   onSortAiInbox?: () => void;
+  /** Label of the sort button: `Inbox einsortieren` or `Tagesnotiz einsortieren`. */
+  sortLabel?: string;
   isGeneratingTasks?: boolean;
   isSortingInbox?: boolean;
 }
@@ -103,6 +105,7 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
   onCreateCompanion,
   onGenerateAiTasks,
   onSortAiInbox,
+  sortLabel = 'Inbox einsortieren',
   isGeneratingTasks = false,
   isSortingInbox = false,
 }) => {
@@ -169,14 +172,18 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
                 disabled={isSortingInbox}
                 onClick={onSortAiInbox}
                 className="h-6 px-2.5 text-[11px] font-medium"
-                title="Inhalte aus inbox.md mit der aktiven KI thematisch in bestehende oder neue Notizen und Ordner einsortieren"
+                title={
+                  sortLabel === 'Tagesnotiz einsortieren'
+                    ? 'Abschnitte dieser Tagesnotiz mit der aktiven KI in passende Notizen kopieren und hier verlinken'
+                    : 'Inhalte aus inbox.md mit der aktiven KI thematisch in bestehende oder neue Notizen und Ordner einsortieren'
+                }
               >
                 <MdiIcon
                   path={isSortingInbox ? mdiLoading : mdiInboxArrowDown}
                   size={12}
                   className={isSortingInbox ? 'animate-spin' : ''}
                 />
-                <span>{isSortingInbox ? 'Sortiere...' : 'Inbox einsortieren'}</span>
+                <span>{isSortingInbox ? 'Sortiere...' : sortLabel}</span>
               </Button>
             )}
 

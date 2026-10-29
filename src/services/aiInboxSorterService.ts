@@ -10,6 +10,8 @@ import {
   formatRelativePathWithLocalizedRoot,
   getLocalizedRootFolderLabel,
 } from '../commands/notesRootCommands';
+import { DAILY_NOTES_FOLDER, isDailyNotePath } from './dailyNotePaths';
+import { SORTED_LINK_RE } from './sortedLinkScan';
 
 const RawInboxSortItemSchema = z.object({
   block: z.coerce.number().int().positive(),
@@ -30,6 +32,9 @@ export interface InboxBlock {
   index: number;
   text: string;
   heading?: string;
+  /** 0-based line of the block's first and last non-blank line, relative to the split body. */
+  startLine?: number;
+  endLine?: number;
 }
 
 export interface InboxSortProposal {
@@ -45,13 +50,15 @@ export interface ExecutedInboxSortItem extends InboxSortProposal {
 }
 
 export interface SortInboxResult {
+  /** The sorted note: `inbox.md` or a daily note. */
   inboxUri: vscode.Uri;
+  source: 'inbox' | 'daily';
   sortedItems: ExecutedInboxSortItem[];
   /** Blocks the AI model did not assign to a valid target. */
   unassignedBlocks: InboxBlock[];
   /** Selected proposals that were not executed because their block changed during sorting. */
   skippedChanged: InboxSortProposal[];
-  /** Blocks left in inbox.md after sorting. */
+  /** Blocks left in inbox.md after sorting, or blocks of a daily note still without a link. */
   remainingBlockCount: number;
   skippedEmpty?: boolean;
   cancelled?: boolean;
@@ -72,7 +79,11 @@ const MAX_BLOCK_PROMPT_CHARS = 2000;
 
 const FENCE_RE = /^\s*(```|~~~)/;
 const BLOCK_HEADING_RE = /^#{2,6}\s+(.+?)\s*$/;
-const SORT_TIMESTAMP_SUFFIX_RE = /\s*\(\d{4}-\d{2}-\d{2} \d{2}:\d{2}\)\s*$/;
+const SORT_TIMESTAMP_SUFFIX_RE = /\s*\(\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\)\s*$/;
+
+function isJournalPath(relativePath: string): boolean {
+  return relativePath.replace(/\\/g, '/').split('/')[0].toLowerCase() === DAILY_NOTES_FOLDER;
+}
 
 function mapSegmentToCanonicalRootFolder(segment: string): DefaultRootFolder | null {
   const lower = segment.trim().toLowerCase();
@@ -142,6 +153,11 @@ export function sanitizeRelativeNotePath(rawPath: string): string | null {
   }
 
   if (segments.length === 1 && segments[0].toLowerCase() === 'inbox.md') {
+    return null;
+  }
+
+  // Daily notes are never sort targets
+  if (segments[0].toLowerCase() === DAILY_NOTES_FOLDER) {
     return null;
   }
 
@@ -218,8 +234,8 @@ export function splitInboxBlocks(body: string): InboxBlock[] {
   const fenced = markFencedLines(lines);
   const headingMode = lines.some((line, i) => !fenced[i] && BLOCK_HEADING_RE.test(line));
 
-  const chunks: string[][] = [];
-  let current: string[] = [];
+  const chunks: number[][] = [];
+  let current: number[] = [];
   const flush = () => {
     if (current.length > 0) {
       chunks.push(current);
@@ -232,26 +248,29 @@ export function splitInboxBlocks(body: string): InboxBlock[] {
       if (!fenced[i] && BLOCK_HEADING_RE.test(line)) {
         flush();
       }
-      current.push(line);
+      current.push(i);
     } else if (!fenced[i] && line.trim() === '') {
       flush();
     } else {
-      current.push(line);
+      current.push(i);
     }
   });
   flush();
 
   const blocks: InboxBlock[] = [];
   for (const chunk of chunks) {
-    const text = chunk.join('\n').trim();
-    if (!text) {
+    const contentLines = chunk.filter((i) => lines[i].trim() !== '');
+    if (contentLines.length === 0) {
       continue;
     }
+    const text = chunk.map((i) => lines[i]).join('\n').trim();
     const headingMatch = headingMode ? text.split('\n')[0].match(BLOCK_HEADING_RE) : null;
     blocks.push({
       index: blocks.length + 1,
       text,
       heading: headingMatch ? headingMatch[1].trim() : undefined,
+      startLine: contentLines[0],
+      endLine: contentLines[contentLines.length - 1],
     });
   }
   return blocks;
@@ -264,6 +283,61 @@ function normalizeBlockText(text: string): string {
     .map((line) => line.replace(/\s+$/, ''))
     .join('\n')
     .trim();
+}
+
+export { SORTED_LINK_RE };
+
+function hasSortedLink(text: string): boolean {
+  const lines = text.split('\n');
+  const fenced = markFencedLines(lines);
+  return lines.some((line, i) => !fenced[i] && SORTED_LINK_RE.test(line.trim()));
+}
+
+/**
+ * Splits a daily note into the blocks that still need sorting. Frontmatter and the first `#`
+ * heading are blanked out (not removed), so `startLine`/`endLine` are line numbers of the file.
+ * A paragraph consisting only of link lines belongs to the block before it, and blocks that
+ * already contain a link line are dropped.
+ */
+export function splitDailyNoteBlocks(text: string): InboxBlock[] {
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  if (lines[0]?.replace(/^﻿/, '').trim() === '---') {
+    const close = lines.findIndex((line, i) => i > 0 && /^(---|\.\.\.)\s*$/.test(line));
+    if (close > 0) {
+      lines.fill('', 0, close + 1);
+    }
+  }
+  const fenced = markFencedLines(lines);
+  const titleIdx = lines.findIndex((line, i) => !fenced[i] && /^#\s+/.test(line));
+  if (titleIdx !== -1) {
+    lines[titleIdx] = '';
+  }
+
+  const merged: InboxBlock[] = [];
+  for (const block of splitInboxBlocks(lines.join('\n'))) {
+    const linkOnly = block.text.split('\n').every((line) => SORTED_LINK_RE.test(line.trim()));
+    const previous = merged[merged.length - 1];
+    if (linkOnly && previous) {
+      previous.text = `${previous.text}\n\n${block.text}`;
+      previous.endLine = block.endLine;
+      continue;
+    }
+    merged.push({ ...block });
+  }
+
+  return merged
+    .filter((block) => !hasSortedLink(block.text))
+    .map((block, i) => ({ ...block, index: i + 1 }));
+}
+
+/** Inserts `-> [[target]]` after each given block end line (bottom-up), keeping the file's line ending. */
+export function insertSortedLinks(text: string, links: Array<{ endLine: number; target: string }>): string {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  for (const link of [...links].sort((a, b) => b.endLine - a.endLine)) {
+    lines.splice(link.endLine + 1, 0, '', `-> [[${link.target}]]`);
+  }
+  return lines.join(eol);
 }
 
 function fallbackBlockTitle(block: InboxBlock): string {
@@ -292,7 +366,7 @@ export async function collectNoteOutlines(
       uri,
       relativePath: path.relative(notesRootUri.fsPath, uri.fsPath).replace(/\\/g, '/'),
     }))
-    .filter((n) => n.relativePath.toLowerCase() !== 'inbox.md')
+    .filter((n) => n.relativePath.toLowerCase() !== 'inbox.md' && !isJournalPath(n.relativePath))
     .sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 
   const outlines: NoteOutline[] = [];
@@ -362,15 +436,16 @@ export function formatInboxTimestamp(date: Date = new Date()): string {
 }
 
 /**
- * Formats an inbox section for appending to an existing note with a heading
- * containing the topic (`title`), date, and time: `## <Thema> (YYYY-MM-DD HH:mm)`.
+ * Formats a sorted section for appending to an existing note with a heading containing the topic
+ * (`title`) and a suffix: `## <Thema> (YYYY-MM-DD HH:mm)` for the inbox, `## <Thema> (YYYY-MM-DD)`
+ * for daily notes.
  */
 export function formatAppendedInboxSection(
   title: string,
   rawContent: string,
-  now: Date = new Date()
+  suffix: string = formatInboxTimestamp()
 ): string {
-  const timestamp = formatInboxTimestamp(now);
+  const timestamp = suffix;
   const trimmed = rawContent.trim();
   const leadingHeadingMatch = trimmed.match(/^#{1,6}\s+([^\n]+)\n*([\s\S]*)$/);
   if (leadingHeadingMatch) {
@@ -450,6 +525,14 @@ export function parseAiInboxSortItems(rawResponse: string, blocks: InboxBlock[])
   return results;
 }
 
+type SortSource =
+  | { kind: 'inbox'; uri: vscode.Uri; relPath: string; openDoc?: vscode.TextDocument }
+  | { kind: 'daily'; uri: vscode.Uri; relPath: string; openDoc?: vscode.TextDocument; date: string };
+
+function matchingDocument(doc: vscode.TextDocument | undefined, uri: vscode.Uri): vscode.TextDocument | undefined {
+  return doc && path.normalize(doc.uri.fsPath) === path.normalize(uri.fsPath) ? doc : undefined;
+}
+
 export class AiInboxSorterService {
   constructor(
     private readonly aiModelService: AiModelService,
@@ -509,14 +592,57 @@ export class AiInboxSorterService {
     }
 
     const inboxUri = vscode.Uri.joinPath(notesRootUri, 'inbox.md');
-    const openInboxDoc =
-      openInboxDocument &&
-      path.normalize(openInboxDocument.uri.fsPath) === path.normalize(inboxUri.fsPath)
-        ? openInboxDocument
-        : undefined;
+    return this.runSort(
+      notesRootUri,
+      { kind: 'inbox', uri: inboxUri, relPath: 'inbox.md', openDoc: matchingDocument(openInboxDocument, inboxUri) },
+      token
+    );
+  }
+
+  /**
+   * Sorts a daily note (`journal/YYYY-MM-DD.md`): copies each block into its target note and
+   * inserts a `-> [[target]]` line below it instead of removing it. Blocks that already have such
+   * a line are skipped.
+   */
+  public async sortDailyNote(
+    noteUri: vscode.Uri,
+    openDocument?: vscode.TextDocument,
+    token?: vscode.CancellationToken
+  ): Promise<SortInboxResult> {
+    const notesRootUri = this.companionManager.getNotesRootUri(noteUri);
+    if (!notesRootUri) {
+      throw new Error('Kein Notizen-Ordner im Workspace gefunden.');
+    }
+    const relPath = path.relative(notesRootUri.fsPath, noteUri.fsPath).replace(/\\/g, '/');
+    const date = isDailyNotePath(relPath);
+    if (!date) {
+      throw new Error('Diese Notiz ist keine Tagesnotiz.');
+    }
+    return this.runSort(
+      notesRootUri,
+      { kind: 'daily', uri: noteUri, relPath, date, openDoc: matchingDocument(openDocument, noteUri) },
+      token
+    );
+  }
+
+  private readSourceBlocks(source: SortSource, text: string): InboxBlock[] {
+    return source.kind === 'inbox'
+      ? splitInboxBlocks(extractMeaningfulInboxBody(text))
+      : splitDailyNoteBlocks(text);
+  }
+
+  private async runSort(
+    notesRootUri: vscode.Uri,
+    source: SortSource,
+    token?: vscode.CancellationToken
+  ): Promise<SortInboxResult> {
+    const inboxUri = source.uri;
+    const openInboxDoc = source.openDoc;
+    const isDaily = source.kind === 'daily';
 
     const emptyResult = (blocks: InboxBlock[], extra: Partial<SortInboxResult> = {}): SortInboxResult => ({
       inboxUri,
+      source: source.kind,
       sortedItems: [],
       unassignedBlocks: blocks,
       skippedChanged: [],
@@ -525,7 +651,7 @@ export class AiInboxSorterService {
     });
 
     const rawInboxText = await this.readInboxText(inboxUri, openInboxDoc);
-    const blocks = splitInboxBlocks(extractMeaningfulInboxBody(rawInboxText ?? ''));
+    const blocks = this.readSourceBlocks(source, rawInboxText ?? '');
     if (blocks.length === 0) {
       return emptyResult([], { skippedEmpty: true });
     }
@@ -536,7 +662,7 @@ export class AiInboxSorterService {
     try {
       const rootEntries = await vscode.workspace.fs.readDirectory(notesRootUri);
       for (const [name, type] of rootEntries) {
-        if (!name.startsWith('.') && type === vscode.FileType.Directory) {
+        if (!name.startsWith('.') && type === vscode.FileType.Directory && !isJournalPath(name)) {
           existingFolderSet.add(name);
         }
       }
@@ -583,7 +709,7 @@ export class AiInboxSorterService {
       '1. Gib den Text der Blöcke NICHT zurück – referenziere jeden Block nur über seine Nummer (`block`).',
       '2. `title` ist eine kurze Themenbeschreibung des Blocks (wird als Überschrift verwendet).',
       '3. Verwende für `targetRelativePath` IMMER einen Pfad, der mit `meetings/`, `projects/` oder `knowledge/` beginnt und auf `.md` endet.',
-      '4. Lass Blöcke weg, die du keinem sinnvollen Ziel zuordnen kannst – sie bleiben in der Inbox.',
+      `4. Lass Blöcke weg, die du keinem sinnvollen Ziel zuordnen kannst – sie bleiben ${isDaily ? 'unverändert in der Tagesnotiz' : 'in der Inbox'}.`,
       '5. Antworte AUSSCHLIESSLICH mit gültigem JSON im folgenden Format (ohne Markdown-Erklärungen):',
       '{"items": [{"block": 1, "title": "Kurze Beschreibung", "action": "append" | "create", "targetRelativePath": "projects/Projektname/Notiz.md"}]}',
       'Wenn keine Blöcke zugeordnet werden können, antworte mit {"items": []}.',
@@ -596,7 +722,7 @@ export class AiInboxSorterService {
       'Bestehende Notizen im Notizen-Verzeichnis (Pfad — "Titel": Überschriften):',
       notesText,
       '',
-      'Blöcke aus inbox.md:',
+      `Blöcke aus ${source.relPath}:`,
       blocksText,
     ].join('\n');
 
@@ -638,7 +764,9 @@ export class AiInboxSorterService {
 
       if (unassignedBlocks.length > 0) {
         quickPickItems.push({
-          label: `${unassignedBlocks.length} Abschnitt(e) ohne Vorschlag bleiben in der Inbox`,
+          label: isDaily
+            ? `${unassignedBlocks.length} Abschnitt(e) ohne Vorschlag bleiben ohne Link in der Tagesnotiz`
+            : `${unassignedBlocks.length} Abschnitt(e) ohne Vorschlag bleiben in der Inbox`,
           kind: vscode.QuickPickItemKind.Separator,
         });
       }
@@ -652,9 +780,10 @@ export class AiInboxSorterService {
 
       const picked = await vscode.window.showQuickPick(quickPickItems, {
         canPickMany: true,
-        title: 'KI Inbox-Sortierung – Vorschau bestätigen',
-        placeHolder:
-          'Wähle die Abschnitte aus, die einsortiert werden sollen (Bestehende Dateien werden nur ergänzt, nichts wird gelöscht)',
+        title: isDaily ? 'KI Tagesnotiz-Sortierung – Vorschau bestätigen' : 'KI Inbox-Sortierung – Vorschau bestätigen',
+        placeHolder: isDaily
+          ? 'Wähle die Abschnitte aus, die kopiert und in der Tagesnotiz verlinkt werden sollen (Bestehende Dateien werden nur ergänzt)'
+          : 'Wähle die Abschnitte aus, die einsortiert werden sollen (Bestehende Dateien werden nur ergänzt, nichts wird gelöscht)',
       });
 
       if (!picked) {
@@ -676,11 +805,10 @@ export class AiInboxSorterService {
 
     // Re-read the inbox: the user may have edited it while the AI request or preview was pending.
     // Only blocks whose text is still present are written, and only those are removed afterwards.
-    const currentBlocks = splitInboxBlocks(
-      extractMeaningfulInboxBody((await this.readInboxText(inboxUri, openInboxDoc)) ?? '')
-    );
+    const currentText = (await this.readInboxText(inboxUri, openInboxDoc)) ?? '';
+    const currentBlocks = this.readSourceBlocks(source, currentText);
     const consumed = new Set<number>();
-    const executable: Array<{ proposal: InboxSortProposal; text: string }> = [];
+    const executable: Array<{ proposal: InboxSortProposal; text: string; block: InboxBlock }> = [];
     const skippedChanged: InboxSortProposal[] = [];
     for (const proposal of selectedProposals) {
       const key = normalizeBlockText(proposal.block.text);
@@ -692,11 +820,14 @@ export class AiInboxSorterService {
         continue;
       }
       consumed.add(matchIdx);
-      executable.push({ proposal, text: currentBlocks[matchIdx].text });
+      executable.push({ proposal, text: currentBlocks[matchIdx].text, block: currentBlocks[matchIdx] });
     }
 
+    const headingSuffix = source.kind === 'daily' ? source.date : formatInboxTimestamp();
     const sortedItems: ExecutedInboxSortItem[] = [];
-    for (const { proposal: item, text } of executable) {
+    const links: Array<{ endLine: number; target: string }> = [];
+    for (const { proposal: item, text, block } of executable) {
+      links.push({ endLine: block.endLine ?? 0, target: item.targetRelativePath.replace(/\.(md|markdown)$/i, '') });
       const segments = item.targetRelativePath.split('/');
       const targetUri = vscode.Uri.joinPath(notesRootUri, ...segments);
       if (segments.length > 1) {
@@ -711,7 +842,7 @@ export class AiInboxSorterService {
         const existingText = Buffer.from(existingBytes).toString('utf-8');
         const trimmedExisting = existingText.replace(/\s+$/, '');
         const separator = trimmedExisting.length > 0 ? '\n\n' : '';
-        const formattedSection = formatAppendedInboxSection(item.title, text);
+        const formattedSection = formatAppendedInboxSection(item.title, text, headingSuffix);
         const updatedText = `${trimmedExisting}${separator}${formattedSection}\n`;
         await vscode.workspace.fs.writeFile(targetUri, Buffer.from(updatedText, 'utf-8'));
 
@@ -740,8 +871,9 @@ export class AiInboxSorterService {
     }
 
     const remainingBlocks = currentBlocks.filter((_, i) => !consumed.has(i));
-    const updatedInboxContent =
-      remainingBlocks.length > 0
+    const updatedInboxContent = isDaily
+      ? insertSortedLinks(currentText, links)
+      : remainingBlocks.length > 0
         ? `# Inbox\n\n${remainingBlocks.map((b) => b.text).join('\n\n')}\n`
         : '# Inbox\n\n';
 
@@ -762,6 +894,7 @@ export class AiInboxSorterService {
 
     return {
       inboxUri,
+      source: source.kind,
       sortedItems,
       unassignedBlocks,
       skippedChanged,

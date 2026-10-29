@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { FolderTasksService } from './folderTasksService';
 import { isMarkdownNote } from '../companion/companionPaths';
-import { isDailyNotePath } from './dailyNoteService';
+import { isDailyNotePath } from './dailyNotePaths';
 
 export type CalendarEntryKind = 'note' | 'task';
 export type TaskDateKind = 'due' | 'scheduled';

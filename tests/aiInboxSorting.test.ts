@@ -8,6 +8,8 @@ import {
   extractMeaningfulInboxBody,
   splitInboxBlocks,
   collectNoteOutlines,
+  formatAppendedInboxSection,
+  splitDailyNoteBlocks,
 } from '../src/services/aiInboxSorterService';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -82,6 +84,18 @@ describe('aiInboxSorting', () => {
       expect(sanitizeRelativeNotePath('../outside.md')).toBeNull();
       expect(sanitizeRelativeNotePath('inbox.md')).toBeNull();
       expect(sanitizeRelativeNotePath('INBOX')).toBeNull();
+    });
+
+    it('ignores proposals into the journal folder', () => {
+      expect(sanitizeRelativeNotePath('journal/2026-10-28.md')).toBeNull();
+      expect(sanitizeRelativeNotePath('Journal/notizen')).toBeNull();
+
+      const blocks = splitInboxBlocks('Gedanke');
+      const items = parseAiInboxSortItems(
+        JSON.stringify({ items: [{ block: 1, title: 'X', action: 'append', targetRelativePath: 'journal/2026-10-28.md' }] }),
+        blocks
+      );
+      expect(items).toEqual([]);
     });
 
     it('parses block assignments wrapped in code fences', () => {
@@ -208,13 +222,39 @@ describe('aiInboxSorting', () => {
       const blankInFence = splitInboxBlocks('Text\n~~~\nzeile 1\n\nzeile 2\n~~~\n\nNächster');
       expect(blankInFence.map((b) => b.text)).toEqual(['Text\n~~~\nzeile 1\n\nzeile 2\n~~~', 'Nächster']);
     });
+
+    it('reports the first and last non-blank line of each block', () => {
+      const headingBlocks = splitInboxBlocks('Intro\n\n## A\na\n\n\n## B\nb\n');
+      expect(headingBlocks.map((b) => [b.startLine, b.endLine])).toEqual([
+        [0, 0],
+        [2, 3],
+        [6, 7],
+      ]);
+
+      const paragraphBlocks = splitInboxBlocks('\nErster\n\n- a\n- b');
+      expect(paragraphBlocks.map((b) => [b.startLine, b.endLine])).toEqual([
+        [1, 1],
+        [3, 4],
+      ]);
+    });
+  });
+
+  describe('formatAppendedInboxSection', () => {
+    it('uses the given suffix in the heading', () => {
+      expect(formatAppendedInboxSection('Thema', '## Call mit Anna\nText', '2026-10-27')).toBe(
+        '## Call mit Anna (2026-10-27)\n\nText'
+      );
+      expect(formatAppendedInboxSection('Heartbeat', 'Absatz', '2026-10-29 07:30')).toBe(
+        '## Heartbeat (2026-10-29 07:30)\n\nAbsatz'
+      );
+    });
   });
 
   describe('collectNoteOutlines', () => {
     it('collects title and ## headings without sort timestamps', async () => {
       fsMap.set(
         '/workspace/projects/App-Launch/app-launch.md',
-        '# App-Launch\n\n## Push-Notifications\n```\n## im Code\n```\n## Beta-Feedback (2026-10-20 09:15)\n'
+        '# App-Launch\n\n## Push-Notifications\n```\n## im Code\n```\n## Beta-Feedback (2026-10-20 09:15)\n## Call mit Anna (2026-10-27)\n'
       );
       fsMap.set('/workspace/knowledge/ohne-titel.md', 'Nur Text\n## Abschnitt');
       const outlines = await collectNoteOutlines(vscode.Uri.file('/workspace'), [
@@ -227,9 +267,19 @@ describe('aiInboxSorting', () => {
         {
           relativePath: 'projects/App-Launch/app-launch.md',
           title: 'App-Launch',
-          headings: ['Push-Notifications', 'Beta-Feedback'],
+          headings: ['Push-Notifications', 'Beta-Feedback', 'Call mit Anna'],
         },
       ]);
+    });
+
+    it('does not offer daily notes as targets', async () => {
+      fsMap.set('/workspace/journal/2026-10-28.md', '# Mittwoch\n## Call');
+      fsMap.set('/workspace/knowledge/a.md', '# A');
+      const outlines = await collectNoteOutlines(vscode.Uri.file('/workspace'), [
+        vscode.Uri.file('/workspace/journal/2026-10-28.md'),
+        vscode.Uri.file('/workspace/knowledge/a.md'),
+      ]);
+      expect(outlines.map((o) => o.relativePath)).toEqual(['knowledge/a.md']);
     });
 
     it('only sends paths for notes beyond the outline limit', async () => {
@@ -481,6 +531,152 @@ describe('aiInboxSorting', () => {
     });
   });
 
+  describe('splitDailyNoteBlocks', () => {
+    it('leaves out frontmatter and the title heading', () => {
+      const text = '---\ndate: 2026-10-29\n---\n# Donnerstag, 29.10.2026\n\n## Call\nText\n\n## Idee\nDark Mode\n';
+      const blocks = splitDailyNoteBlocks(text);
+      expect(blocks.map((b) => b.text)).toEqual(['## Call\nText', '## Idee\nDark Mode']);
+      // Line numbers refer to the file
+      expect(blocks.map((b) => [b.startLine, b.endLine])).toEqual([
+        [5, 6],
+        [8, 9],
+      ]);
+    });
+
+    it('skips blocks that already have a link line', () => {
+      const text = '# Donnerstag\n\n## Call\nText\n\n-> [[projects/app]]\n\n## Idee\nDark Mode\n';
+      expect(splitDailyNoteBlocks(text).map((b) => [b.index, b.text])).toEqual([[1, '## Idee\nDark Mode']]);
+    });
+
+    it('keeps a link line with its paragraph when there are no ## headings', () => {
+      const text = '# Donnerstag\n\nErster Gedanke\n\n-> [[knowledge/erster]]\n\nZweiter Gedanke\n';
+      expect(splitDailyNoteBlocks(text).map((b) => b.text)).toEqual(['Zweiter Gedanke']);
+    });
+
+    it('does not treat a link line inside fenced code as a marker', () => {
+      const text = '## Beispiel\n```\n-> [[x]]\n```\n';
+      expect(splitDailyNoteBlocks(text)).toHaveLength(1);
+    });
+  });
+
+  describe('AiInboxSorterService.sortDailyNote', () => {
+    const dailyPath = '/workspace/journal/2026-10-27.md';
+    const dailyUri = vscode.Uri.file(dailyPath);
+    const assign = (...items: Array<[number, string, ('append' | 'create')?]>) =>
+      JSON.stringify({
+        items: items.map(([block, target, action]) => ({
+          block,
+          title: `Titel ${block}`,
+          action: action ?? 'append',
+          targetRelativePath: target,
+        })),
+      });
+
+    beforeEach(() => {
+      __setConfigStore({ 'janus.ai.inboxSortConfirm': false });
+      vi.spyOn(vscode.workspace.fs, 'readDirectory').mockResolvedValue([]);
+    });
+
+    it('copies a block into the target and links it in the daily note', async () => {
+      fsMap.set(dailyPath, '---\ndate: 2026-10-27\n---\n# Dienstag, 27.10.2026\n\n## Call mit Anna\nBackend auf Postgres umstellen\n\n## Notiz\nBleibt hier\n');
+      fsMap.set('/workspace/projects/App-Launch/architektur.md', '# Architektur\n');
+      fsMap.set('/workspace/inbox.md', '# Inbox\n\nUnberührt\n');
+      const aiModelService = new AiModelService(mockContext);
+      vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue(assign([1, 'projects/App-Launch/architektur.md']));
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+
+      const result = await sorter.sortDailyNote(dailyUri);
+
+      expect(result.source).toBe('daily');
+      expect(result.sortedItems).toHaveLength(1);
+      expect(fsMap.get('/workspace/projects/App-Launch/architektur.md')).toBe(
+        '# Architektur\n\n## Call mit Anna (2026-10-27)\n\nBackend auf Postgres umstellen\n'
+      );
+      expect(fsMap.get(dailyPath)).toBe(
+        '---\ndate: 2026-10-27\n---\n# Dienstag, 27.10.2026\n\n## Call mit Anna\nBackend auf Postgres umstellen\n\n-> [[projects/App-Launch/architektur]]\n\n## Notiz\nBleibt hier\n'
+      );
+      expect(fsMap.get('/workspace/inbox.md')).toBe('# Inbox\n\nUnberührt\n');
+    });
+
+    it('creates a new note and links it', async () => {
+      fsMap.set(dailyPath, '# Dienstag\n\nDark Mode für die App\n');
+      const aiModelService = new AiModelService(mockContext);
+      vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue(assign([1, 'knowledge/dark-mode.md', 'create']));
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+
+      await sorter.sortDailyNote(dailyUri);
+
+      expect(fsMap.get('/workspace/knowledge/dark-mode.md')).toBe('# dark-mode\n\nDark Mode für die App\n');
+      expect(fsMap.get(dailyPath)).toBe('# Dienstag\n\nDark Mode für die App\n\n-> [[knowledge/dark-mode]]\n');
+    });
+
+    it('links only confirmed blocks and keeps the line ending', async () => {
+      __setConfigStore({ 'janus.ai.inboxSortConfirm': true });
+      fsMap.set(dailyPath, '## Eins\r\na\r\n\r\n## Zwei\r\nb\r\n\r\n## Drei\r\nc\r\n');
+      const aiModelService = new AiModelService(mockContext);
+      vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue(
+        assign([1, 'knowledge/eins.md', 'create'], [2, 'knowledge/zwei.md', 'create'])
+      );
+      vi.spyOn(vscode.window, 'showQuickPick').mockImplementation(async (items: any) =>
+        items.filter((item: any) => item.proposal?.block.index === 2)
+      );
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+
+      const result = await sorter.sortDailyNote(dailyUri);
+
+      expect(result.sortedItems.map((i) => i.targetRelativePath)).toEqual(['knowledge/zwei.md']);
+      expect(fsMap.has('/workspace/knowledge/eins.md')).toBe(false);
+      expect(fsMap.get(dailyPath)).toBe('## Eins\r\na\r\n\r\n## Zwei\r\nb\r\n\r\n-> [[knowledge/zwei]]\r\n\r\n## Drei\r\nc\r\n');
+    });
+
+    it('only sorts new blocks on a second run', async () => {
+      fsMap.set(dailyPath, '## Call\nText\n\n-> [[projects/app]]\n\n## Idee\nDark Mode\n');
+      const aiModelService = new AiModelService(mockContext);
+      const promptSpy = vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue('{"items": []}');
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+
+      await sorter.sortDailyNote(dailyUri);
+
+      const userPrompt = promptSpy.mock.calls[0][1];
+      expect(userPrompt).toContain('Blöcke aus journal/2026-10-27.md:');
+      expect(userPrompt).toContain('[Block 1]\n## Idee\nDark Mode');
+      expect(userPrompt).not.toContain('## Call');
+    });
+
+    it('reports nothing to sort without calling the AI model', async () => {
+      fsMap.set(dailyPath, '---\ndate: 2026-10-27\n---\n# Dienstag\n\n## Call\nText\n\n-> [[projects/app]]\n');
+      const aiModelService = new AiModelService(mockContext);
+      const promptSpy = vi.spyOn(aiModelService, 'completePrompt');
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+
+      const result = await sorter.sortDailyNote(dailyUri);
+
+      expect(result.skippedEmpty).toBe(true);
+      expect(promptSpy).not.toHaveBeenCalled();
+    });
+
+    it('neither copies nor links a block that changed during sorting', async () => {
+      fsMap.set(dailyPath, '## Call\nText\n');
+      const aiModelService = new AiModelService(mockContext);
+      vi.spyOn(aiModelService, 'completePrompt').mockImplementation(async () => {
+        fsMap.set(dailyPath, '## Call\nText geändert\n');
+        return assign([1, 'knowledge/call.md', 'create']);
+      });
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+
+      const result = await sorter.sortDailyNote(dailyUri);
+
+      expect(result.skippedChanged).toHaveLength(1);
+      expect(fsMap.has('/workspace/knowledge/call.md')).toBe(false);
+      expect(fsMap.get(dailyPath)).toBe('## Call\nText geändert\n');
+    });
+
+    it('rejects notes that are not daily notes', async () => {
+      const sorter = new AiInboxSorterService(new AiModelService(mockContext), new CompanionManager());
+      await expect(sorter.sortDailyNote(vscode.Uri.file('/workspace/projects/app.md'))).rejects.toThrow('keine Tagesnotiz');
+    });
+  });
+
   describe('MarkdownEditorProvider sortAiInbox Webview Message', () => {
     it('handles sortAiInbox message and resets aiInboxSorting loading state', async () => {
       const companionManager = new CompanionManager();
@@ -539,6 +735,91 @@ describe('aiInboxSorting', () => {
         '1 Abschnitt(e) einsortiert, 1 in der Inbox verblieben.',
         'Notiz öffnen'
       );
+    });
+
+    it('routes the footer button by the open note', async () => {
+      const companionManager = new CompanionManager();
+      const aiModelService = new AiModelService(mockContext);
+      const aiInboxSorterService = new AiInboxSorterService(aiModelService, companionManager);
+      const emptyDaily = {
+        inboxUri: vscode.Uri.file('/workspace/journal/2026-10-29.md'),
+        source: 'daily' as const,
+        sortedItems: [],
+        unassignedBlocks: [],
+        skippedChanged: [],
+        remainingBlockCount: 0,
+        skippedEmpty: true,
+      };
+      const dailySpy = vi.spyOn(aiInboxSorterService, 'sortDailyNote').mockResolvedValue(emptyDaily);
+      const inboxSpy = vi.spyOn(aiInboxSorterService, 'sortInbox').mockResolvedValue({ ...emptyDaily, source: 'inbox' });
+      const infoSpy = vi.spyOn(vscode.window, 'showInformationMessage');
+      const provider = new MarkdownEditorProvider(
+        mockContext,
+        companionManager,
+        aiModelService,
+        { generateTasksForNote: vi.fn() } as any,
+        aiInboxSorterService
+      );
+      const panel = { webview: { postMessage: vi.fn() } } as any;
+      const doc = (p: string) => ({ uri: vscode.Uri.file(p), getText: () => '' }) as any;
+
+      expect(provider.getSortSource(vscode.Uri.file('/workspace/inbox.md'))).toBe('inbox');
+      expect(provider.getSortSource(vscode.Uri.file('/workspace/journal/2026-10-29.md'))).toBe('daily');
+      expect(provider.getSortSource(vscode.Uri.file('/workspace/projects/App-Launch/architektur.md'))).toBeUndefined();
+
+      const dailyDoc = doc('/workspace/journal/2026-10-29.md');
+      await provider.handleWebviewMessage({ type: 'sortAiInbox' }, dailyDoc, panel);
+      expect(dailySpy).toHaveBeenCalledWith(dailyDoc.uri, dailyDoc);
+      expect(inboxSpy).not.toHaveBeenCalled();
+      expect(infoSpy).toHaveBeenCalledWith('Die Tagesnotiz enthält keine neuen Einträge zum Einsortieren.');
+
+      dailySpy.mockClear();
+      panel.webview.postMessage.mockClear();
+      await provider.handleWebviewMessage({ type: 'sortAiInbox' }, doc('/workspace/projects/app.md'), panel);
+      expect(dailySpy).not.toHaveBeenCalled();
+      expect(inboxSpy).not.toHaveBeenCalled();
+      expect(panel.webview.postMessage).not.toHaveBeenCalled();
+    });
+
+    it('tells the webview which sort button to show', async () => {
+      const companionManager = new CompanionManager();
+      const aiModelService = new AiModelService(mockContext);
+      vi.spyOn(aiModelService, 'getActiveModelInfo').mockResolvedValue(undefined as any);
+      const provider = new MarkdownEditorProvider(mockContext, companionManager, aiModelService);
+      const panel = { webview: { postMessage: vi.fn() } } as any;
+
+      await provider.handleWebviewMessage(
+        { type: 'ready' },
+        { uri: vscode.Uri.file('/workspace/journal/2026-10-29.md'), getText: () => '' } as any,
+        panel,
+        () => {},
+        async () => {},
+        async () => {}
+      );
+
+      expect(panel.webview.postMessage).toHaveBeenCalledWith({ type: 'sortSource', source: 'daily' });
+    });
+
+    it('reports a daily note sort as copied and linked', () => {
+      const infoSpy = vi.spyOn(vscode.window, 'showInformationMessage').mockResolvedValue(undefined);
+      markdownEditorModule.showInboxSortResult({
+        inboxUri: vscode.Uri.file('/workspace/journal/2026-10-29.md'),
+        source: 'daily',
+        sortedItems: [
+          {
+            block: { index: 1, text: 'x' },
+            title: 'x',
+            action: 'create',
+            targetRelativePath: 'knowledge/x.md',
+            targetUri: vscode.Uri.file('/workspace/knowledge/x.md'),
+            effectiveAction: 'create',
+          },
+        ],
+        unassignedBlocks: [],
+        skippedChanged: [],
+        remainingBlockCount: 2,
+      });
+      expect(infoSpy).toHaveBeenCalledWith('1 Abschnitt(e) einsortiert und verlinkt.', 'Notiz öffnen');
     });
 
     it('mentions blocks that changed during sorting', () => {

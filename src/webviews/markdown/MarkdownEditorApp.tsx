@@ -21,6 +21,7 @@ import { LinkCandidate } from '../../companion/noteLinking';
 import { styledLists } from './extensions/styledLists';
 import { styledTables } from './extensions/styledTables';
 import { clickableLinks } from './extensions/clickableLinks';
+import { setSortedLinks, sortedLinks, sortedLinksCompartment, sortedLinksField } from './extensions/sortedLinks';
 import { lineHighlightExtension, setHighlightLine } from './extensions/lineHighlight';
 import {
   MarkdownToolbar,
@@ -204,6 +205,7 @@ export const MarkdownEditorApp: React.FC = () => {
   const [linksData, setLinksData] = useState<NoteLinksData | null>(null);
   const [isGeneratingTasks, setIsGeneratingTasks] = useState<boolean>(false);
   const [isSortingInbox, setIsSortingInbox] = useState<boolean>(false);
+  const [sortSource, setSortSource] = useState<'inbox' | 'daily' | null>(null);
   const [datePickerState, setDatePickerState] = useState<{
     isOpen: boolean;
     position: { top: number; left: number };
@@ -289,6 +291,21 @@ export const MarkdownEditorApp: React.FC = () => {
     }
   }, [effectiveIsDark, editorView]);
 
+  // Render `-> [[target]]` lines as cards only in daily notes
+  useEffect(() => {
+    if (editorView) {
+      editorView.dispatch({
+        effects: sortedLinksCompartment.reconfigure(
+          sortSource === 'daily'
+            ? sortedLinks({
+                onOpen: (target, line) => handleOpenLinkRef.current(target, undefined, line, 'wiki'),
+              })
+            : []
+        ),
+      });
+    }
+  }, [sortSource, editorView]);
+
   // Update CodeMirror syntax visibility when syntaxMode changes
   useEffect(() => {
     if (editorView) {
@@ -320,6 +337,8 @@ export const MarkdownEditorApp: React.FC = () => {
         styledLists(),
         taskCheckboxes(),
         styledTables(),
+        sortedLinksField,
+        sortedLinksCompartment.of([]),
         lineHighlightExtension(),
         slashCommands({
           onOpenDatePicker: (pos, coords) => datePickerHandlerRef.current(pos, coords),
@@ -425,6 +444,10 @@ export const MarkdownEditorApp: React.FC = () => {
         setIsGeneratingTasks(Boolean(message.isGenerating));
       } else if (message.type === 'aiInboxSorting') {
         setIsSortingInbox(Boolean(message.isSorting));
+      } else if (message.type === 'sortSource') {
+        setSortSource(message.source === 'inbox' || message.source === 'daily' ? message.source : null);
+      } else if (message.type === 'sortedLinks' && Array.isArray(message.links)) {
+        editorViewRef.current?.dispatch({ effects: setSortedLinks.of(message.links) });
       } else if (message.type === 'revealLine') {
         const rawLine = typeof message.line === 'number' ? message.line : parseInt(message.line, 10);
         if (!isNaN(rawLine) && rawLine > 0) {
@@ -625,7 +648,8 @@ export const MarkdownEditorApp: React.FC = () => {
         onAddLink={handleAddLink}
         onCreateCompanion={handleCreateCompanion}
         onGenerateAiTasks={handleGenerateAiTasks}
-        onSortAiInbox={handleSortAiInbox}
+        onSortAiInbox={sortSource ? handleSortAiInbox : undefined}
+        sortLabel={sortSource === 'daily' ? 'Tagesnotiz einsortieren' : 'Inbox einsortieren'}
         isGeneratingTasks={isGeneratingTasks}
         isSortingInbox={isSortingInbox}
       />
