@@ -1,3 +1,7 @@
+---
+title: App-Launch Architektur
+aliases: [Systemdesign, Backend-Architektur]
+---
 # System-Architektur (App-Launch)
 
 Diese Notiz beschreibt die Backend- und Sync-Architektur für den [[app-launch]].
@@ -13,4 +17,3 @@ Diese Notiz beschreibt die Backend- und Sync-Architektur für den [[app-launch]]
 
 - Rate-Limiting am API-Gateway auf 120 Requests pro Minute pro Nutzer begrenzen.
 - Automatisiertes Backup-Skript für die PostgreSQL-Hauptdatenbank einrichten.
-
