@@ -12,6 +12,7 @@ import {
   mdiCalendarAlert,
   mdiCalendarClock,
   mdiAlertCircleOutline,
+  mdiNotebookOutline,
 } from '@mdi/js';
 import { CalendarEntryData, CalendarInitialData, getVsCodeApi } from './CalendarMonthApp';
 
@@ -56,6 +57,7 @@ export const CalendarDayDetailsApp: React.FC<{ initialData?: CalendarInitialData
 }) => {
   const [selectedDate, setSelectedDate] = useState<string>(() => initialData.selectedDate || '');
   const [events, setEvents] = useState<CalendarEntryData[]>(() => initialData.events || []);
+  const [dailyNote, setDailyNote] = useState<{ date: string; exists: boolean } | undefined>();
 
   useEffect(() => {
     const api = getVsCodeApi();
@@ -72,6 +74,9 @@ export const CalendarDayDetailsApp: React.FC<{ initialData?: CalendarInitialData
         if (Array.isArray(msg.events)) {
           setEvents(msg.events);
         }
+        if (msg.type === 'updateDayDetails') {
+          setDailyNote(msg.dailyNote);
+        }
       }
     };
 
@@ -86,6 +91,11 @@ export const CalendarDayDetailsApp: React.FC<{ initialData?: CalendarInitialData
       note: notePath,
       line,
     });
+  };
+
+  const handleOpenDailyNote = () => {
+    if (!dailyNote) return;
+    getVsCodeApi()?.postMessage({ type: 'openDailyNote', date: dailyNote.date });
   };
 
   const handleToggleTask = (task: CalendarEntryData) => {
@@ -221,6 +231,18 @@ export const CalendarDayDetailsApp: React.FC<{ initialData?: CalendarInitialData
           {dayEvents.length} Einträge
         </Badge>
       </header>
+
+      {dailyNote && dailyNote.date === selectedDate && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleOpenDailyNote}
+          className="self-start h-6 px-2 mb-3 text-[11px] gap-1.5 hover:border-[var(--vscode-focusBorder,#007acc)]"
+        >
+          <MdiIcon path={mdiNotebookOutline} size={13} />
+          <span>{dailyNote.exists ? 'Tagesnotiz öffnen' : 'Tagesnotiz anlegen'}</span>
+        </Button>
+      )}
 
       {dayEvents.length === 0 ? (
         <Card className="border-dashed">

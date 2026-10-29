@@ -69,6 +69,61 @@ End of notes.
     expect(events[3].title).toBe('Release v1.0');
   });
 
+  describe('daily notes', () => {
+    const dailyUri = vscode.Uri.file('/workspace/notes/journal/2026-10-29.md');
+
+    it('shows a daily note without a date in its content on its date', () => {
+      const events = extractNoteEventsFromMarkdown('# Donnerstag\n\nEin ruhiger Tag.\n', dailyUri, dummyRootUri);
+      expect(events).toEqual([
+        expect.objectContaining({
+          kind: 'note',
+          date: '2026-10-29',
+          title: 'Donnerstag',
+          notePath: 'journal/2026-10-29.md',
+          line: 1,
+        }),
+      ]);
+    });
+
+    it('falls back to the title Tagesnotiz without a heading', () => {
+      const events = extractNoteEventsFromMarkdown('Nur Text.\n', dailyUri, dummyRootUri);
+      expect(events.map((e) => [e.date, e.title])).toEqual([['2026-10-29', 'Tagesnotiz']]);
+    });
+
+    it('shows one entry when the frontmatter date is the same day', () => {
+      const events = extractNoteEventsFromMarkdown('---\ndate: 2026-10-29\n---\n# Donnerstag\n', dailyUri, dummyRootUri);
+      expect(events.filter((e) => e.date === '2026-10-29')).toHaveLength(1);
+    });
+
+    it('shows one entry for the default daily note content', () => {
+      const content = '---\ndate: 2026-10-29\n---\n# Donnerstag, 29.10.2026\n\n';
+      const events = extractNoteEventsFromMarkdown(content, dailyUri, dummyRootUri);
+      expect(events.filter((e) => e.date === '2026-10-29')).toHaveLength(1);
+    });
+
+    it('keeps a same-day appointment in the text of a daily note', () => {
+      const content = '# Donnerstag, 29.10.2026\n\n- 29.10.2026 14:00 Call mit Anna\n';
+      const events = extractNoteEventsFromMarkdown(content, dailyUri, dummyRootUri);
+      expect(events.map((e) => [e.date, e.title, e.time])).toEqual([
+        ['2026-10-29', 'Donnerstag, 29.10.2026', undefined],
+        ['2026-10-29', 'Call mit Anna', '14:00'],
+      ]);
+    });
+
+    it('keeps appointments inside a daily note on their own days', () => {
+      const events = extractNoteEventsFromMarkdown('# Donnerstag\n\nReview am 05.11.2026\n', dailyUri, dummyRootUri);
+      expect(events.map((e) => [e.date, e.title])).toEqual([
+        ['2026-10-29', 'Donnerstag'],
+        ['2026-11-05', expect.stringContaining('Review')],
+      ]);
+    });
+
+    it('ignores date-named files outside journal/', () => {
+      const other = vscode.Uri.file('/workspace/notes/projects/2026-10-29.md');
+      expect(extractNoteEventsFromMarkdown('# Plan\n', other, dummyRootUri)).toEqual([]);
+    });
+  });
+
   it('ignores dates inside URLs and ignores code blocks', () => {
     const markdown = `
 Check out https://github.com/org/repo/commit/2026-10-24 for details.

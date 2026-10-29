@@ -3,6 +3,7 @@ import * as path from 'path';
 import { CalendarService, CalendarEntry } from '../services/calendarService';
 import { FolderTasksService } from '../services/folderTasksService';
 import { MarkdownEditorProvider } from './markdownEditorProvider';
+import { dailyNoteExists, openOrCreateDailyNote, parseDailyNoteDate } from '../services/dailyNoteService';
 
 export class CalendarDayDetailsViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'janus.calendarDayDetailsView';
@@ -78,7 +79,16 @@ export class CalendarDayDetailsViewProvider implements vscode.WebviewViewProvide
       type: 'updateDayDetails',
       date: this.selectedDate,
       events,
+      dailyNote: await this.getDailyNoteState(),
     });
+  }
+
+  private async getDailyNoteState(): Promise<{ date: string; exists: boolean } | undefined> {
+    const date = this.selectedDate ? parseDailyNoteDate(this.selectedDate) : undefined;
+    if (!this.currentNotesRootUri || !date || !this.selectedDate) {
+      return undefined;
+    }
+    return { date: this.selectedDate, exists: await dailyNoteExists(this.currentNotesRootUri, date) };
   }
 
   async handleMessage(message: any): Promise<void> {
@@ -112,6 +122,20 @@ export class CalendarDayDetailsViewProvider implements vscode.WebviewViewProvide
       } catch {
         vscode.window.showErrorMessage(`Notiz konnte nicht geöffnet werden: ${message.note}`);
       }
+      return;
+    }
+
+    if (message.type === 'openDailyNote' && typeof message.date === 'string') {
+      const date = parseDailyNoteDate(message.date);
+      if (!this.currentNotesRootUri || !date) {
+        return;
+      }
+      try {
+        await openOrCreateDailyNote(this.currentNotesRootUri, date);
+      } catch {
+        vscode.window.showErrorMessage(`Tagesnotiz konnte nicht geöffnet werden: ${message.date}`);
+      }
+      await this.refresh();
       return;
     }
 

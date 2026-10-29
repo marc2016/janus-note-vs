@@ -243,6 +243,11 @@
         "icon": "$(file-code)"
       },
       {
+        "command": "janus.openDailyNote",
+        "title": "Janus: Tagesnotiz öffnen",
+        "icon": "$(notebook)"
+      },
+      {
         "command": "janus.exportNoteToPdf",
         "title": "Janus: Als PDF exportieren...",
         "icon": "$(file-pdf)"
@@ -271,19 +276,24 @@
           "group": "navigation@1"
         },
         {
-          "command": "janus.createFolder",
+          "command": "janus.openDailyNote",
           "when": "view == janus.notesView && janus.isInitialized",
           "group": "navigation@2"
         },
         {
+          "command": "janus.createFolder",
+          "when": "view == janus.notesView && janus.isInitialized",
+          "group": "navigation@3"
+        },
+        {
           "command": "janus.refreshNotesTree",
           "when": "view == janus.notesView",
-          "group": "navigation@3"
+          "group": "navigation@4"
         },
         {
           "command": "janus.openSettings",
           "when": "view == janus.notesView",
-          "group": "navigation@4"
+          "group": "navigation@5"
         },
         {
           "command": "janus.editTemplates",

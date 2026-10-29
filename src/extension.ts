@@ -44,6 +44,7 @@ import {
   createNoteCommand,
   renameItemCommand,
   editTemplatesCommand,
+  openDailyNoteCommand,
   deleteItemCommand,
 } from './commands/notesFileCommands';
 import {
@@ -379,6 +380,7 @@ export function activate(context: vscode.ExtensionContext) {
       createNoteCommand(item, notesTreeView, companionManager, notesTreeDataProvider)
     ),
     vscode.commands.registerCommand('janus.editTemplates', () => editTemplatesCommand(companionManager)),
+    vscode.commands.registerCommand('janus.openDailyNote', () => openDailyNoteCommand(companionManager)),
     vscode.commands.registerCommand('janus.renameItem', (item?: NotesTreeItem) =>
       renameItemCommand(item, notesTreeView, companionManager, notesTreeDataProvider)
     ),

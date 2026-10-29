@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { FolderTasksService } from './folderTasksService';
 import { isMarkdownNote } from '../companion/companionPaths';
+import { isDailyNotePath } from './dailyNoteService';
 
 export type CalendarEntryKind = 'note' | 'task';
 export type TaskDateKind = 'due' | 'scheduled';
@@ -105,6 +106,20 @@ export function extractNoteEventsFromMarkdown(
     }
   }
 
+  // Daily notes (journal/YYYY-MM-DD.md) appear on their date even without a date in the content
+  const dailyNoteDate = isDailyNotePath(noteRelPath);
+  if (dailyNoteDate && !events.some((e) => e.date === dailyNoteDate)) {
+    events.push({
+      id: `ev-daily-${noteRelPath}`,
+      kind: 'note',
+      date: dailyNoteDate,
+      title: headingMatch ? headingMatch[1].trim() : 'Tagesnotiz',
+      noteUri: noteUri.toString(),
+      notePath: noteRelPath,
+      line: 1,
+    });
+  }
+
   // 2. Scan lines
   const lines = content.split(/\r?\n/);
   let inCodeBlock = false;
@@ -205,6 +220,12 @@ export function extractNoteEventsFromMarkdown(
     }
   }
 
+  // A daily note's own date in a heading (e.g. `# Donnerstag, 29.10.2026`) is not an appointment
+  if (dailyNoteDate) {
+    return events.filter(
+      (e) => !(e.date === dailyNoteDate && e.id.startsWith(`ev-${noteRelPath}-`) && /^#+\s/.test(lines[(e.line ?? 0) - 1] ?? ''))
+    );
+  }
   return events;
 }
 

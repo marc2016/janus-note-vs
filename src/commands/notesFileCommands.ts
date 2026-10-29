@@ -17,6 +17,7 @@ import {
   reportLinkUpdates,
 } from '../services/linkRewriteService';
 import { applyTemplate, createTemplate, listTemplates } from '../services/noteTemplateService';
+import { openOrCreateDailyNote } from '../services/dailyNoteService';
 
 /**
  * Resolves the target directory URI for creating files or folders.
@@ -385,6 +386,18 @@ export async function deleteItemCommand(
  * Command to open a note template from `<notesRoot>/.templates`, or create a new one
  * with example content. The folder is hidden in the Notes view, so this is the way in.
  */
+export async function openDailyNoteCommand(
+  companionManager: CompanionManager,
+  now: Date = new Date()
+): Promise<vscode.Uri | undefined> {
+  const notesRoot = companionManager.getNotesRootUri();
+  if (!notesRoot) {
+    vscode.window.showInformationMessage('Bitte richte zuerst einen Notizen-Ordner ein, um die Tagesnotiz zu öffnen.');
+    return undefined;
+  }
+  return openOrCreateDailyNote(notesRoot, now);
+}
+
 export async function editTemplatesCommand(companionManager: CompanionManager): Promise<vscode.Uri | undefined> {
   const notesRoot = companionManager.getNotesRootUri();
   if (!notesRoot) {

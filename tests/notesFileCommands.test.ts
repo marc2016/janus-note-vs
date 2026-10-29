@@ -13,6 +13,7 @@ import {
   renameItemCommand,
   deleteItemCommand,
   editTemplatesCommand,
+  openDailyNoteCommand,
 } from '../src/commands/notesFileCommands';
 import { MarkdownEditorProvider } from '../src/editors/markdownEditorProvider';
 import {
@@ -514,6 +515,37 @@ describe('notesFileCommands', () => {
 
       expect(notes.map((n) => n.fsPath)).toEqual(['/workspace/project/notes/plan.md']);
       expect(treeItems.map((i: any) => i.uri?.fsPath)).not.toContain(templatesDir);
+    });
+  });
+
+  describe('openDailyNoteCommand', () => {
+    it("opens today's daily note in the Janus editor", async () => {
+      vi.spyOn(vscode.workspace.fs, 'readDirectory').mockRejectedValue(new Error('Not found'));
+      vi.spyOn(vscode.workspace.fs, 'stat').mockRejectedValue(new Error('Not found'));
+      vi.spyOn(vscode.workspace.fs, 'createDirectory').mockResolvedValue();
+      const write = vi.spyOn(vscode.workspace.fs, 'writeFile').mockResolvedValue();
+      const execSpy = vi.spyOn(vscode.commands, 'executeCommand').mockResolvedValue(undefined);
+
+      await openDailyNoteCommand(companionManager, new Date(2026, 9, 29, 7, 10));
+
+      const expectedPath = '/workspace/project/notes/journal/2026-10-29.md';
+      expect(write).toHaveBeenCalledWith(expect.objectContaining({ fsPath: expectedPath }), expect.anything());
+      expect(execSpy).toHaveBeenCalledWith(
+        'vscode.openWith',
+        expect.objectContaining({ fsPath: expectedPath }),
+        MarkdownEditorProvider.viewType
+      );
+    });
+
+    it('asks to set up a notes folder first and creates nothing without a notes root', async () => {
+      vi.spyOn(companionManager, 'getNotesRootUri').mockReturnValue(undefined);
+      const info = vi.spyOn(vscode.window, 'showInformationMessage').mockResolvedValue(undefined);
+      const write = vi.spyOn(vscode.workspace.fs, 'writeFile').mockResolvedValue();
+
+      expect(await openDailyNoteCommand(companionManager)).toBeUndefined();
+
+      expect(info).toHaveBeenCalledWith(expect.stringContaining('Bitte richte zuerst einen Notizen-Ordner ein'));
+      expect(write).not.toHaveBeenCalled();
     });
   });
 
