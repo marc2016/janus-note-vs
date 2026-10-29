@@ -206,6 +206,162 @@ describe('notesFileCommands', () => {
     });
   });
 
+  describe('renameItemCommand link updates', () => {
+    const root = '/workspace/project/notes';
+    let files: Record<string, string>;
+
+    /** Backs workspace.fs with an in-memory notes collection. */
+    function mockFileSystem() {
+      vi.spyOn(vscode.workspace.fs, 'readDirectory').mockImplementation(async (uri: any) => {
+        const prefix = `${uri.fsPath}/`;
+        const entries = new Map<string, vscode.FileType>();
+        for (const filePath of Object.keys(files)) {
+          if (!filePath.startsWith(prefix)) continue;
+          const [name, ...rest] = filePath.slice(prefix.length).split('/');
+          entries.set(name, rest.length > 0 ? vscode.FileType.Directory : vscode.FileType.File);
+        }
+        return [...entries];
+      });
+      vi.spyOn(vscode.workspace.fs, 'readFile').mockImplementation(async (uri: any) => {
+        if (!(uri.fsPath in files)) throw new Error('Not found');
+        return Buffer.from(files[uri.fsPath]);
+      });
+      vi.spyOn(vscode.workspace.fs, 'writeFile').mockImplementation(async (uri: any, content: any) => {
+        files[uri.fsPath] = Buffer.from(content).toString('utf-8');
+      });
+      vi.spyOn(vscode.workspace.fs, 'stat').mockImplementation(async (uri: any) => {
+        if (uri.fsPath in files) return {} as any;
+        throw new Error('Not found');
+      });
+      vi.spyOn(vscode.workspace.fs, 'rename').mockImplementation(async (from: any, to: any) => {
+        for (const filePath of Object.keys(files)) {
+          if (filePath === from.fsPath || filePath.startsWith(`${from.fsPath}/`)) {
+            files[to.fsPath + filePath.slice(from.fsPath.length)] = files[filePath];
+            delete files[filePath];
+          }
+        }
+      });
+    }
+
+    function openDocument(fsPath: string, text: string, isDirty: boolean) {
+      const doc = {
+        uri: vscode.Uri.file(fsPath),
+        isDirty,
+        getText: () => text,
+        positionAt: (offset: number) => {
+          const before = text.slice(0, offset).split('\n');
+          return new vscode.Position(before.length - 1, before[before.length - 1].length);
+        },
+        save: vi.fn(async () => true),
+      };
+      (vscode.workspace as any).textDocuments = [doc];
+      return doc;
+    }
+
+    beforeEach(() => {
+      files = {
+        [`${root}/inbox.md`]: '# Inbox',
+        [`${root}/meetings/kickoff.md`]: '# Kickoff\n\nSelbst: [[kickoff#L1]]',
+        [`${root}/projects/plan.md`]: 'Siehe [[kickoff]] und [K](../meetings/kickoff.md).\n\n```\n[[kickoff]]\n```',
+      };
+      (vscode.workspace as any).textDocuments = [];
+      mockFileSystem();
+    });
+
+    const kickoffItem = () => new NoteTreeItem(vscode.Uri.file(`${root}/meetings/kickoff.md`));
+
+    it('rewrites links in notes that are not open and in the renamed note itself', async () => {
+      vi.spyOn(vscode.window, 'showInputBox').mockResolvedValue('start');
+      const infoSpy = vi.spyOn(vscode.window, 'showInformationMessage');
+
+      await renameItemCommand(kickoffItem(), undefined, companionManager, notesTreeDataProvider);
+
+      expect(files[`${root}/projects/plan.md`]).toBe(
+        'Siehe [[start]] und [K](../meetings/start.md).\n\n```\n[[kickoff]]\n```'
+      );
+      expect(files[`${root}/meetings/start.md`]).toBe('# Kickoff\n\nSelbst: [[start#L1]]');
+      expect(infoSpy).toHaveBeenCalledWith('3 Links in 2 Notizen aktualisiert.');
+    });
+
+    it('applies document edits to a dirty open note and keeps it unsaved', async () => {
+      const planPath = `${root}/projects/plan.md`;
+      const unsaved = 'Neu getippt. [[kickoff]]';
+      const doc = openDocument(planPath, unsaved, true);
+      const applySpy = vi.spyOn(vscode.workspace, 'applyEdit').mockResolvedValue(true);
+      vi.spyOn(vscode.window, 'showInputBox').mockResolvedValue('start');
+
+      await renameItemCommand(kickoffItem(), undefined, companionManager, notesTreeDataProvider);
+
+      const edit = applySpy.mock.calls[0][0] as any;
+      expect(edit.entries).toHaveLength(1);
+      expect(edit.entries[0].newText).toBe('start');
+      expect(edit.entries[0].range.start).toEqual(new vscode.Position(0, unsaved.indexOf('kickoff')));
+      expect(doc.save).not.toHaveBeenCalled();
+      // The file on disk is left to the editor; it is not overwritten with stale content
+      expect(files[planPath]).toContain('[[kickoff]] und');
+    });
+
+    it('saves an open note that had no unsaved changes', async () => {
+      const doc = openDocument(`${root}/projects/plan.md`, '[[kickoff]]', false);
+      vi.spyOn(vscode.workspace, 'applyEdit').mockResolvedValue(true);
+      vi.spyOn(vscode.window, 'showInputBox').mockResolvedValue('start');
+
+      await renameItemCommand(kickoffItem(), undefined, companionManager, notesTreeDataProvider);
+
+      expect(doc.save).toHaveBeenCalled();
+    });
+
+    it('rewrites path links when a folder is renamed', async () => {
+      files[`${root}/index.md`] = '[[meetings/kickoff]] [[kickoff]]';
+      vi.spyOn(vscode.window, 'showInputBox').mockResolvedValue('treffen');
+
+      await renameItemCommand(
+        new FolderTreeItem(vscode.Uri.file(`${root}/meetings`)),
+        undefined,
+        companionManager,
+        notesTreeDataProvider
+      );
+
+      expect(files[`${root}/index.md`]).toBe('[[treffen/kickoff]] [[kickoff]]');
+      expect(files[`${root}/projects/plan.md`]).toContain('[K](../treffen/kickoff.md)');
+    });
+
+    it('changes nothing when the name prompt is cancelled', async () => {
+      vi.spyOn(vscode.window, 'showInputBox').mockResolvedValue(undefined);
+      const before = { ...files };
+
+      await renameItemCommand(kickoffItem(), undefined, companionManager, notesTreeDataProvider);
+
+      expect(files).toEqual(before);
+    });
+
+    it('changes no link when the rename fails', async () => {
+      vi.spyOn(vscode.window, 'showInputBox').mockResolvedValue('start');
+      vi.spyOn(vscode.workspace.fs, 'rename').mockRejectedValue(new Error('EACCES'));
+      const before = { ...files };
+
+      await expect(
+        renameItemCommand(kickoffItem(), undefined, companionManager, notesTreeDataProvider)
+      ).rejects.toThrow('EACCES');
+      expect(files).toEqual(before);
+    });
+
+    it('shows no message when no link points to the renamed note', async () => {
+      vi.spyOn(vscode.window, 'showInputBox').mockResolvedValue('archiv');
+      const infoSpy = vi.spyOn(vscode.window, 'showInformationMessage');
+
+      await renameItemCommand(
+        new NoteTreeItem(vscode.Uri.file(`${root}/inbox.md`)),
+        undefined,
+        companionManager,
+        notesTreeDataProvider
+      );
+
+      expect(files[`${root}/archiv.md`]).toBe('# Inbox');
+      expect(infoSpy).not.toHaveBeenCalled();
+    });
+  });
+
   describe('deleteItemCommand', () => {
     it('asks confirmation and deletes note with all companions to trash', async () => {
       const noteUri = vscode.Uri.file('/workspace/project/notes/trash-me.md');

@@ -9,6 +9,13 @@ import {
   NotesTreeDataProvider,
 } from '../ui/notesTreeDataProvider';
 import { MarkdownEditorProvider } from '../editors/markdownEditorProvider';
+import {
+  RenameOperation,
+  RenamePlan,
+  applyLinkRewritePlan,
+  planLinkUpdatesForRename,
+  reportLinkUpdates,
+} from '../services/linkRewriteService';
 
 /**
  * Resolves the target directory URI for creating files or folders.
@@ -146,8 +153,37 @@ export async function createNoteCommand(
 }
 
 /**
+ * Plans link updates for a rename. Failures must never block the rename itself.
+ */
+async function planLinkUpdates(
+  op: RenameOperation,
+  companionManager: CompanionManager
+): Promise<RenamePlan | undefined> {
+  const scopeUri = vscode.Uri.file(op.oldPath);
+  const roots = companionManager.getAllNotesRoots(scopeUri);
+  if (roots.length === 0) {
+    return undefined;
+  }
+  try {
+    return await planLinkUpdatesForRename(op, roots, companionManager.getNotesRootUri(scopeUri));
+  } catch (err) {
+    console.warn('Failed to plan link updates for rename:', err);
+    return undefined;
+  }
+}
+
+async function applyLinkUpdates(plan: RenamePlan | undefined): Promise<void> {
+  if (!plan || (plan.files.length === 0 && plan.skipped === 0)) {
+    return;
+  }
+  const result = await applyLinkRewritePlan(plan);
+  reportLinkUpdates(result, plan.skipped);
+}
+
+/**
  * Command to rename an item (folder or note) in the Janus notes tree.
- * Automatically synchronizes companion files (*.tasks.json, *.chart.json) when renaming a note.
+ * Automatically synchronizes companion files (*.tasks.json, *.chart.json) when renaming a note,
+ * and rewrites links that pointed to the renamed note or to notes inside the renamed folder.
  */
 export async function renameItemCommand(
   item: NotesTreeItem | undefined,
@@ -193,8 +229,14 @@ export async function renameItemCommand(
       // Destination does not exist
     }
 
+    const linkPlan = await planLinkUpdates(
+      { oldPath: targetItem.uri.fsPath, newPath: destFolderUri.fsPath, isFolder: true },
+      companionManager
+    );
+
     await vscode.workspace.fs.rename(targetItem.uri, destFolderUri);
     notesTreeDataProvider.refresh();
+    await applyLinkUpdates(linkPlan);
     return;
   }
 
@@ -241,6 +283,10 @@ export async function renameItemCommand(
 
     const companionStatus = await companionManager.getCompanionStatus(targetItem.uri);
     const newBaseName = path.basename(finalNewName, path.extname(finalNewName));
+    const linkPlan = await planLinkUpdates(
+      { oldPath: targetItem.uri.fsPath, newPath: destNoteUri.fsPath, isFolder: false },
+      companionManager
+    );
 
     await vscode.workspace.fs.rename(targetItem.uri, destNoteUri);
 
@@ -255,6 +301,7 @@ export async function renameItemCommand(
     }
 
     notesTreeDataProvider.refresh();
+    await applyLinkUpdates(linkPlan);
   }
 }
 

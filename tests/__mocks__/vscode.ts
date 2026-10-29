@@ -179,7 +179,8 @@ export const workspace = {
     dispose: () => {},
   }),
   onDidChangeTextDocument: () => ({ dispose: () => {} }),
-  applyEdit: async () => true,
+  textDocuments: [] as any[],
+  applyEdit: async (_edit?: any) => true,
   registerTextDocumentContentProvider: () => ({ dispose: () => {} }),
   openTextDocument: async (uri: Uri) => ({ uri }),
 };
@@ -322,7 +323,10 @@ export class CancellationTokenSource {
 }
 
 export class WorkspaceEdit {
-  replace() {}
+  entries: Array<{ uri: Uri; range: Range; newText: string }> = [];
+  replace(uri: Uri, range: Range, newText: string) {
+    this.entries.push({ uri, range, newText });
+  }
 }
 
 export const env = {
