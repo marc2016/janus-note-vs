@@ -55,3 +55,10 @@ graph LR
     Tag -->|Tagesnotiz einsortieren| Notizen
     Notizen --> Aufgaben[Aufgaben generieren]
 ```
+
+## 10. KI direkt im Editor
+- **Diagramm ändern:** Klicke bei einem Diagramm oben rechts auf **„KI"** und beschreibe im Chat, was sich ändern soll (z. B. „Füge nach Notizen einen Schritt Kalender hinzu"). Mit **„Übernehmen"** landet der Vorschlag im Diagramm, `Cmd+Z` macht es rückgängig.
+- **Neues Diagramm:** Tippe `/ki-diagramm` in eine leere Zeile. Die KI kennt den Abschnitt, in dem du gerade bist – schreib im Chat z. B. „Mach daraus ein Ablaufdiagramm".
+- **Text markieren:** Markiere den folgenden Absatz. Im kleinen Popup kannst du ihn **zusammenfassen** (mit „Darunter einfügen" als Callout) oder direkt ein **Diagramm erstellen** lassen. Ein Beispiel für ein so erzeugtes Diagramm findest du in [[ollama-models]].
+
+Zum Ausprobieren: Neue Gedanken landen zuerst in der Inbox oder in der Tagesnotiz. Einmal am Tag sortiert die KI sie in Projekt- und Wissensnotizen ein; in der Tagesnotiz bleibt dabei ein Link stehen, wohin jeder Abschnitt kopiert wurde. Aus den einsortierten Notizen lassen sich anschließend Aufgaben generieren, die im Kalender und in der Aufgabenübersicht erscheinen. Wiederkehrende Strukturen wie Meetings oder Projekte startest du mit einer Vorlage, und Diagramme halten die wichtigsten Abläufe fest.
