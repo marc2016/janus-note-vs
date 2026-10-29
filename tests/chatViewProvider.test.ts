@@ -473,4 +473,106 @@ describe('ChatViewProvider', () => {
       expect(mockAiModelService.completePrompt.mock.calls[0][0]).not.toContain('Mermaid-Diagramm');
     });
   });
+
+  describe('selected text', () => {
+    const noteUri = vscode.Uri.file('/workspace/notes/plan.md');
+    const selected = 'Der Client nutzt Delta-Sync über WebSockets. Konflikte werden über Versionen gelöst.';
+
+    const setup = async () => {
+      const provider = new ChatViewProvider(
+        mockContext,
+        mockCompanionManager,
+        mockSearchService,
+        mockFolderTasksService,
+        mockAiModelService
+      );
+      const applier = {
+        replaceMermaidCode: vi.fn(async () => 'ok' as const),
+        insertAfterText: vi.fn(async () => 'ok' as const),
+      };
+      provider.setDiagramApplier(applier);
+      await provider.resolveWebviewView(mockWebviewView, {} as any, {} as any);
+      return { provider, applier };
+    };
+    const lastAssistant = (provider: ChatViewProvider) => provider.getHistory().filter((m) => m.sender === 'assistant').at(-1)!;
+
+    it('summarizes a selection right away', async () => {
+      const { provider } = await setup();
+      mockAiModelService.completePrompt.mockResolvedValue('Delta-Sync über WebSockets, Konflikte per Version.');
+
+      await provider.startSelectionSummary({ noteUri: noteUri.toString(), text: selected, fromLine: 12, toLine: 15 });
+
+      expect(mockWebviewView.webview.postMessage).toHaveBeenCalledWith({
+        type: 'diagramContext',
+        context: { label: 'Auswahl · plan.md, Zeilen 12–15', line: 12 },
+      });
+      expect(mockAiModelService.completePrompt.mock.calls[0][1]).toContain(selected);
+      expect(lastAssistant(provider).text).toBe('Delta-Sync über WebSockets, Konflikte per Version.');
+      expect(lastAssistant(provider).actions?.map((a) => [a.label, a.actionType])).toEqual([
+        ['Darunter einfügen', 'insertSummary'],
+        ['Kopieren', 'copySummary'],
+      ]);
+    });
+
+    it('refines with the previous summary', async () => {
+      const { provider } = await setup();
+      mockAiModelService.completePrompt.mockResolvedValue('Erste Fassung.');
+      await provider.startSelectionSummary({ noteUri: noteUri.toString(), text: selected, fromLine: 12, toLine: 15 });
+      mockAiModelService.completePrompt.mockClear();
+      mockAiModelService.completePrompt.mockResolvedValue('- Delta-Sync\n- Versionen');
+
+      await provider.processUserMessage('Als Stichpunkte');
+
+      const userPrompt = mockAiModelService.completePrompt.mock.calls[0][1];
+      expect(userPrompt).toContain(selected);
+      expect(userPrompt).toContain('Erste Fassung.');
+      expect(userPrompt).toContain('Als Stichpunkte');
+      expect(lastAssistant(provider).actions).toHaveLength(2);
+    });
+
+    it('inserts below the selection and reports the result', async () => {
+      const { provider, applier } = await setup();
+      mockAiModelService.completePrompt.mockResolvedValue('Kurz.');
+      await provider.startSelectionSummary({ noteUri: noteUri.toString(), text: selected, fromLine: 12, toLine: 15 });
+      const [insert, copy] = lastAssistant(provider).actions!;
+
+      await provider.handleMessage({ type: 'insertSummary', proposalId: insert.proposalId });
+      expect(applier.insertAfterText).toHaveBeenCalledWith(
+        expect.objectContaining({ fsPath: noteUri.fsPath }),
+        selected,
+        '> [!NOTE]\n> **Zusammenfassung:** Kurz.',
+        12
+      );
+      expect(lastAssistant(provider).text).toBe('Zusammenfassung eingefügt.');
+
+      applier.insertAfterText.mockResolvedValue('changed' as any);
+      await provider.handleMessage({ type: 'insertSummary', proposalId: insert.proposalId });
+      expect(lastAssistant(provider).text).toContain('nicht mehr gefunden');
+
+      const write = vi.spyOn(vscode.env.clipboard, 'writeText').mockResolvedValue();
+      await provider.handleMessage({ type: 'copySummary', proposalId: copy.proposalId });
+      expect(write).toHaveBeenCalledWith('Kurz.');
+    });
+
+    it('uses the selected text instead of the section for diagrams', async () => {
+      const text = '## Kapitel\nAnderer Text im Abschnitt.\n\nMarkierter Absatz.\n```mermaid\ngraph TD\n    A[Neues Diagramm]\n```\n';
+      (vscode.workspace as any).openTextDocument = vi.fn(async () => ({ uri: noteUri, getText: () => text }));
+      const { provider } = await setup();
+      provider.setDiagramContext({
+        noteUri: noteUri.toString(),
+        code: 'graph TD\n    A[Neues Diagramm]',
+        line: 5,
+        sourceText: 'Markierter Absatz.',
+      });
+      mockAiModelService.completePrompt.mockResolvedValue('Ok.');
+
+      await provider.processUserMessage('Als Ablauf');
+
+      const userPrompt = mockAiModelService.completePrompt.mock.calls[0][1];
+      expect(userPrompt).toContain('Markierter Text aus der Notiz:');
+      expect(userPrompt).toContain('Markierter Absatz.');
+      expect(userPrompt).not.toContain('Anderer Text im Abschnitt.');
+    });
+  });
 });
+

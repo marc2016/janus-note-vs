@@ -24,6 +24,7 @@ import { clickableLinks } from './extensions/clickableLinks';
 import { setSortedLinks, sortedLinks, sortedLinksCompartment, sortedLinksField } from './extensions/sortedLinks';
 import { imagePaste, insertSavedImage, rejectPendingImage } from './extensions/imagePaste';
 import { inlineImages, setImageContext } from './extensions/inlineImages';
+import { insertAfterAnchor, selectionActions } from './extensions/selectionActions';
 import { applyMermaidReplacement, createMermaidRenderer, mermaidDiagrams, setMermaidTheme } from './extensions/mermaidBlocks';
 import { lineHighlightExtension, setHighlightLine } from './extensions/lineHighlight';
 import {
@@ -367,6 +368,11 @@ export const MarkdownEditorApp: React.FC = () => {
         sortedLinksCompartment.of([]),
         imagePaste({ postMessage: (message) => getVsCodeApi()?.postMessage(message) }),
         inlineImages(),
+        selectionActions({
+          onSummarize: (selection) => getVsCodeApi()?.postMessage({ type: 'summarizeSelection', ...selection }),
+          onDiagram: ({ blockFrom, text }) =>
+            getVsCodeApi()?.postMessage({ type: 'diagramFromSelection', blockFrom, text }),
+        }),
         mermaidDiagrams(mermaidRenderer, {
           onAiEdit: (blockFrom) => getVsCodeApi()?.postMessage({ type: 'editDiagramWithAi', blockFrom }),
         }),
@@ -485,6 +491,13 @@ export const MarkdownEditorApp: React.FC = () => {
         setIsSortingInbox(Boolean(message.isSorting));
       } else if (message.type === 'sortSource') {
         setSortSource(message.source === 'inbox' || message.source === 'daily' ? message.source : null);
+      } else if (message.type === 'insertAfterText' && typeof message.insert === 'string') {
+        const view = editorViewRef.current;
+        getVsCodeApi()?.postMessage({
+          type: 'textInserted',
+          requestId: message.requestId,
+          result: view ? insertAfterAnchor(view, message) : 'missing',
+        });
       } else if (message.type === 'replaceMermaidCode' && typeof message.newCode === 'string') {
         const view = editorViewRef.current;
         const reply = (result: string) =>

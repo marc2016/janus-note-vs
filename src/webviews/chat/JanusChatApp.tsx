@@ -49,7 +49,9 @@ export interface ChatAction {
     | 'sortInbox'
     | 'openSettings'
     | 'applyDiagram'
-    | 'copyDiagramCode';
+    | 'copyDiagramCode'
+    | 'insertSummary'
+    | 'copySummary';
   uri?: string;
   proposalId?: string;
 }
@@ -66,13 +68,13 @@ export const DiagramContextChip: React.FC<{ context: DiagramContextInfo; onRemov
 }) => (
   <div className="flex items-center gap-1.5 mb-1.5 px-2 py-1 rounded-md border border-[var(--vscode-focusBorder,#007acc)] bg-[var(--vscode-editorWidget-background,rgba(127,127,127,0.12))] text-[11px]">
     <MdiIcon path={mdiSitemapOutline} size={13} className="shrink-0 text-[var(--vscode-focusBorder,#007acc)]" />
-    <span className="truncate flex-1" title="Nachrichten ändern dieses Diagramm">
+    <span className="truncate flex-1" title="Nachrichten beziehen sich auf diesen Kontext">
       {context.label}
     </span>
     <button
       type="button"
       onClick={onRemove}
-      title="Diagramm-Kontext entfernen"
+      title="Kontext entfernen"
       aria-label="Diagramm-Kontext entfernen"
       className="shrink-0 opacity-70 hover:opacity-100 cursor-pointer"
     >

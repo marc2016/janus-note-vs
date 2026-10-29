@@ -5,8 +5,14 @@ import { isMarkdownNote } from '../companion/companionPaths';
 import { JanusSearchService } from '../services/janusSearchService';
 import { FolderTasksService } from '../services/folderTasksService';
 import { AiModelService, AiModelInfo } from '../services/aiModelService';
-import { MarkdownEditorProvider, MermaidReplaceResult } from './markdownEditorProvider';
-import { extractMermaidCode, isMermaidPlaceholder, locateMermaidBlock, sectionAround } from '../services/markdownScan';
+import { InsertTextResult, MarkdownEditorProvider, MermaidReplaceResult } from './markdownEditorProvider';
+import {
+  extractMermaidCode,
+  formatSummaryCallout,
+  isMermaidPlaceholder,
+  locateMermaidBlock,
+  sectionAround,
+} from '../services/markdownScan';
 
 export interface ChatSourceNote {
   title: string;
@@ -25,7 +31,9 @@ export interface ChatAction {
     | 'sortInbox'
     | 'openSettings'
     | 'applyDiagram'
-    | 'copyDiagramCode';
+    | 'copyDiagramCode'
+    | 'insertSummary'
+    | 'copySummary';
   uri?: string;
   /** Diagram proposal the action refers to (`applyDiagram`, `copyDiagramCode`). */
   proposalId?: string;
@@ -37,12 +45,43 @@ export interface DiagramContext {
   code: string;
   /** 1-based line of the opening fence. */
   line: number;
+  /** Selected text the diagram is made from; replaces the note section as context. */
+  sourceText?: string;
+}
+
+/** Text selected in the editor that the chat summarizes. */
+export interface SelectionContext {
+  noteUri: string;
+  text: string;
+  /** 1-based lines of the selection. */
+  fromLine: number;
+  toLine: number;
+  lastSummary?: string;
 }
 
 /** Applies a diagram proposal to the note (implemented by the Janus Markdown Editor). */
 export interface DiagramApplier {
   replaceMermaidCode(uri: vscode.Uri, baseCode: string, newCode: string, line?: number): Promise<MermaidReplaceResult>;
+  insertAfterText(uri: vscode.Uri, anchorText: string, insert: string, line?: number): Promise<InsertTextResult>;
 }
+
+interface SummaryProposal {
+  noteUri: string;
+  anchorText: string;
+  line: number;
+  summary: string;
+}
+
+const MAX_SELECTION_PROMPT_CHARS = 8000;
+
+/** The request sent automatically when a diagram is created from a selection. */
+export const DIAGRAM_FROM_SELECTION_REQUEST = 'Erstelle ein Diagramm aus dem markierten Text.';
+
+const SUMMARY_RESULT_TEXT: Record<InsertTextResult, string> = {
+  ok: 'Zusammenfassung eingefügt.',
+  changed: 'Der markierte Text wurde in der Notiz nicht mehr gefunden – nichts eingefügt.',
+  missing: 'Die Notiz konnte nicht geöffnet werden – nichts eingefügt.',
+};
 
 interface DiagramProposal {
   noteUri: string;
@@ -76,6 +115,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private diagramContext?: DiagramContext;
   private diagramApplier?: DiagramApplier;
   private readonly diagramProposals = new Map<string, DiagramProposal>();
+  private selectionContext?: SelectionContext;
+  private readonly summaryProposals = new Map<string, SummaryProposal>();
   private focusInputPending = false;
 
   constructor(
@@ -110,7 +151,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   /** Attaches a diagram to the chat; following messages are change requests for it. */
   public setDiagramContext(context: DiagramContext): void {
     this.diagramContext = context;
+    this.selectionContext = undefined;
     this.sendDiagramContext();
+  }
+
+  public getSelectionContext(): SelectionContext | undefined {
+    return this.selectionContext;
+  }
+
+  /** Attaches selected text to the chat and summarizes it right away. */
+  public async startSelectionSummary(context: SelectionContext): Promise<void> {
+    this.selectionContext = { ...context };
+    this.diagramContext = undefined;
+    this.sendDiagramContext();
+    await this.processUserMessage('Zusammenfassen');
   }
 
   /** Puts the cursor into the chat input (after the chat view itself was focused). */
@@ -122,12 +176,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   public clearDiagramContext(): void {
     this.diagramContext = undefined;
+    this.selectionContext = undefined;
     this.sendDiagramContext();
   }
 
   private sendDiagramContext(): void {
     if (!this.view) return;
     const context = this.diagramContext;
+    const selection = this.selectionContext;
+    if (selection) {
+      const lines = selection.fromLine === selection.toLine ? `Zeile ${selection.fromLine}` : `Zeilen ${selection.fromLine}–${selection.toLine}`;
+      void this.view.webview.postMessage({
+        type: 'diagramContext',
+        context: { label: `Auswahl · ${path.basename(vscode.Uri.parse(selection.noteUri).fsPath)}, ${lines}`, line: selection.fromLine },
+      });
+      return;
+    }
     void this.view.webview.postMessage({
       type: 'diagramContext',
       context: context
@@ -257,6 +321,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         await this.applyDiagramProposal(message.proposalId);
         break;
 
+      case 'insertSummary':
+        await this.insertSummaryProposal(message.proposalId);
+        break;
+
+      case 'copySummary': {
+        const proposal = this.summaryProposals.get(message.proposalId);
+        if (proposal) {
+          await vscode.env.clipboard.writeText(proposal.summary);
+          vscode.window.setStatusBarMessage('Zusammenfassung kopiert', 2500);
+        }
+        break;
+      }
+
       case 'copyDiagramCode': {
         const proposal = this.diagramProposals.get(message.proposalId);
         if (proposal) {
@@ -346,7 +423,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         actions?: ChatAction[];
       };
 
-      if (this.diagramContext && !text.startsWith('/')) {
+      if (this.selectionContext && !text.startsWith('/')) {
+        assistantResult = await this.handleSelectionRequest(text, this.selectionContext);
+      } else if (this.diagramContext && !text.startsWith('/')) {
         assistantResult = await this.handleDiagramRequest(text, this.diagramContext);
       } else if (text === '/help' || text.startsWith('/help ')) {
         assistantResult = this.handleHelpCommand();
@@ -418,7 +497,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.sendDiagramContext();
 
     const isNew = isMermaidPlaceholder(block.code);
-    const section = sectionAround(noteText, block.from, block.to);
+    const section = context.sourceText?.trim() || sectionAround(noteText, block.from, block.to);
     const systemPrompt = (
       isNew
         ? [
@@ -436,7 +515,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       .join('\n');
     const userPrompt = [
       ...(isNew ? [] : ['Aktuelles Diagramm:', '```mermaid', block.code, '```', '']),
-      ...(section ? ['Abschnitt der Notiz:', '"""', section, '"""', ''] : []),
+      ...(section
+        ? [context.sourceText ? 'Markierter Text aus der Notiz:' : 'Abschnitt der Notiz:', '"""', section, '"""', '']
+        : []),
       `Anweisung: ${request}`,
     ].join('\n');
     const answer = await this.aiModelService.completePrompt(systemPrompt, userPrompt);
@@ -462,6 +543,67 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         { label: 'Code kopieren', actionType: 'copyDiagramCode', proposalId },
       ],
     };
+  }
+
+  /** Summarizes the selected text, or refines the previous summary with a follow-up request. */
+  private async handleSelectionRequest(
+    request: string,
+    context: SelectionContext
+  ): Promise<{ text: string; actions?: ChatAction[] }> {
+    const shortened = context.text.length > MAX_SELECTION_PROMPT_CHARS;
+    const text = shortened ? context.text.slice(0, MAX_SELECTION_PROMPT_CHARS) : context.text;
+    const systemPrompt = [
+      'Du fasst einen markierten Text aus einer Notiz zusammen.',
+      'Antworte auf Deutsch nur mit der Zusammenfassung selbst: kurz, sachlich, ohne Einleitung wie „Hier ist“. Behalte Fakten, Namen, Zahlen und Termine bei.',
+      'Wenn der Nutzer eine Änderung wünscht (z. B. kürzer, als Stichpunkte), passe die vorherige Zusammenfassung entsprechend an.',
+    ].join('\n');
+    const isFirst = !context.lastSummary;
+    const userPrompt = [
+      'Markierter Text:',
+      '"""',
+      text,
+      '"""',
+      ...(context.lastSummary ? ['', 'Bisherige Zusammenfassung:', '"""', context.lastSummary, '"""'] : []),
+      '',
+      isFirst && request === 'Zusammenfassen' ? 'Fasse den Text zusammen.' : `Wunsch: ${request}`,
+    ].join('\n');
+    const answer = (await this.aiModelService.completePrompt(systemPrompt, userPrompt)).trim();
+
+    if (this.selectionContext === context) {
+      this.selectionContext = { ...context, lastSummary: answer };
+    }
+    const proposalId = `summary-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    this.summaryProposals.set(proposalId, {
+      noteUri: context.noteUri,
+      anchorText: context.text,
+      line: context.fromLine,
+      summary: answer,
+    });
+    while (this.summaryProposals.size > MAX_DIAGRAM_PROPOSALS) {
+      this.summaryProposals.delete(this.summaryProposals.keys().next().value!);
+    }
+    return {
+      text: shortened ? `${answer}\n\n_Die Auswahl wurde für die KI auf ${MAX_SELECTION_PROMPT_CHARS} Zeichen gekürzt._` : answer,
+      actions: [
+        { label: 'Darunter einfügen', actionType: 'insertSummary', proposalId },
+        { label: 'Kopieren', actionType: 'copySummary', proposalId },
+      ],
+    };
+  }
+
+  private async insertSummaryProposal(proposalId: unknown): Promise<void> {
+    const proposal = typeof proposalId === 'string' ? this.summaryProposals.get(proposalId) : undefined;
+    if (!proposal || !this.diagramApplier) {
+      this.addAssistantMessage(SUMMARY_RESULT_TEXT.missing);
+      return;
+    }
+    const result = await this.diagramApplier.insertAfterText(
+      vscode.Uri.parse(proposal.noteUri),
+      proposal.anchorText,
+      formatSummaryCallout(proposal.summary),
+      proposal.line
+    );
+    this.addAssistantMessage(SUMMARY_RESULT_TEXT[result]);
   }
 
   private async applyDiagramProposal(proposalId: unknown): Promise<void> {

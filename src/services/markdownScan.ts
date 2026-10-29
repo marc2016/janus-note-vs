@@ -319,3 +319,11 @@ export function sectionAround(text: string, blockFrom: number, blockTo: number, 
     .trim();
   return section.length > maxChars ? `${section.slice(0, maxChars).trimEnd()}…` : section;
 }
+
+/** A summary as a `> [!NOTE]` callout starting with `**Zusammenfassung:**`. */
+export function formatSummaryCallout(summary: string): string {
+  const lines = summary.trim().replace(/\r\n/g, '\n').split('\n');
+  const [first, ...rest] = lines;
+  const body = [`**Zusammenfassung:** ${first}`.trimEnd(), ...rest];
+  return ['> [!NOTE]', ...body.map((line) => (line.trim() ? `> ${line}` : '>'))].join('\n');
+}

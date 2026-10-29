@@ -75,6 +75,7 @@ export function showInboxSortResult(result: SortInboxResult): void {
 }
 
 export type MermaidReplaceResult = 'ok' | 'changed' | 'missing' | 'invalid';
+export type InsertTextResult = 'ok' | 'changed' | 'missing';
 
 export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'janus.markdownEditor';
@@ -91,6 +92,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   private readonly _readyPanels = new Set<string>();
   private readonly _readyWaiters = new Map<string, Array<() => void>>();
   private readonly _pendingMermaidReplacements = new Map<number, (result: MermaidReplaceResult) => void>();
+  private readonly _pendingTextInsertions = new Map<number, (result: InsertTextResult) => void>();
   private _mermaidRequestId = 0;
 
   public setPendingLineReveal(uri: vscode.Uri, line: number): void {
@@ -257,6 +259,42 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         baseCode: block.code,
         newCode,
       });
+    });
+  }
+
+  /**
+   * Inserts `insert` on its own lines after the text `anchorText` (the occurrence nearest to
+   * `line`), through the editor webview as one undoable edit. Opens the note if needed.
+   */
+  async insertAfterText(
+    uri: vscode.Uri,
+    anchorText: string,
+    insert: string,
+    line = 1,
+    timeoutMs = 10000
+  ): Promise<InsertTextResult> {
+    const document = await vscode.workspace.openTextDocument(uri);
+    if (!document.getText().includes(anchorText)) {
+      return 'changed';
+    }
+    if (!this._activePanels.has(uri.toString())) {
+      await vscode.commands.executeCommand('vscode.openWith', uri, MarkdownEditorProvider.viewType);
+    }
+    const panel = await this.waitForReadyPanel(uri, timeoutMs);
+    if (!panel) {
+      return 'missing';
+    }
+    const requestId = ++this._mermaidRequestId;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this._pendingTextInsertions.delete(requestId);
+        resolve('missing');
+      }, timeoutMs);
+      this._pendingTextInsertions.set(requestId, (result) => {
+        clearTimeout(timer);
+        resolve(result);
+      });
+      void panel.webview.postMessage({ type: 'insertAfterText', requestId, anchorText, insert, line });
     });
   }
 
@@ -592,14 +630,23 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       return;
     }
 
+    if (message.type === 'textInserted' && typeof message.requestId === 'number') {
+      this._pendingTextInsertions.get(message.requestId)?.(message.result);
+      this._pendingTextInsertions.delete(message.requestId);
+      return;
+    }
+
     if (message.type === 'mermaidCodeReplaced' && typeof message.requestId === 'number') {
       this._pendingMermaidReplacements.get(message.requestId)?.(message.result);
       this._pendingMermaidReplacements.delete(message.requestId);
       return;
     }
 
-    if (message.type === 'editDiagramWithAi' && typeof message.blockFrom === 'number') {
-      // A block inserted by `/ki-diagramm` reaches the document through the sync a moment later
+    if (
+      (message.type === 'editDiagramWithAi' || message.type === 'diagramFromSelection') &&
+      typeof message.blockFrom === 'number'
+    ) {
+      // A block inserted in the webview reaches the document through the sync a moment later
       const findBlock = () =>
         findFencedBlocks(document.getText()).find((b) => b.info === 'mermaid' && b.from === message.blockFrom);
       let block = findBlock();
@@ -613,8 +660,21 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
           noteUri: document.uri.toString(),
           code: block.code,
           line: text.slice(0, block.from).split('\n').length,
+          ...(message.type === 'diagramFromSelection' && typeof message.text === 'string'
+            ? { sourceText: message.text }
+            : {}),
         });
       }
+      return;
+    }
+
+    if (message.type === 'summarizeSelection' && typeof message.text === 'string') {
+      await vscode.commands.executeCommand('janus.summarizeSelection', {
+        noteUri: document.uri.toString(),
+        text: message.text,
+        fromLine: Number(message.fromLine) || 1,
+        toLine: Number(message.toLine) || Number(message.fromLine) || 1,
+      });
       return;
     }
 

@@ -13,7 +13,12 @@ import { SettingsViewProvider } from './editors/settingsViewProvider';
 import { FolderOverviewViewProvider } from './editors/folderOverviewViewProvider';
 import { NoteGraphViewProvider } from './editors/noteGraphViewProvider';
 import { ExportCompendiumViewProvider } from './editors/exportCompendiumViewProvider';
-import { ChatViewProvider, DiagramContext } from './editors/chatViewProvider';
+import {
+  ChatViewProvider,
+  DIAGRAM_FROM_SELECTION_REQUEST,
+  DiagramContext,
+  SelectionContext,
+} from './editors/chatViewProvider';
 import { collectMarkdownNotesFromSelection } from './services/noteLinkService';
 import { FolderTasksService } from './services/folderTasksService';
 import { CalendarService } from './services/calendarService';
@@ -251,6 +256,9 @@ export function activate(context: vscode.ExtensionContext) {
     markdownEditor.disposable,
     vscode.commands.registerCommand('janus.editDiagramWithAi', (diagram: DiagramContext) =>
       openChatForDiagram(chatViewProvider, diagram)
+    ),
+    vscode.commands.registerCommand('janus.summarizeSelection', (selection: SelectionContext) =>
+      openChatForSelection(chatViewProvider, selection)
     )
   );
 
@@ -673,4 +681,15 @@ export async function openChatForDiagram(chat: ChatViewProvider, diagram: Diagra
   chat.setDiagramContext(diagram);
   await vscode.commands.executeCommand('janus.chatView.focus');
   chat.focusInput();
+  // From the selection popup: build the diagram from the selected text right away
+  if (diagram.sourceText) {
+    await chat.processUserMessage(DIAGRAM_FROM_SELECTION_REQUEST);
+  }
+}
+
+/** Shows the Janus chat and summarizes the selected text there (from the editor's selection popup). */
+export async function openChatForSelection(chat: ChatViewProvider, selection: SelectionContext): Promise<void> {
+  await vscode.commands.executeCommand('janus.chatView.focus');
+  chat.focusInput();
+  await chat.startSelectionSummary(selection);
 }
