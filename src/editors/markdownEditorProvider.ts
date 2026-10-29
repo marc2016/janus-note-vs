@@ -805,7 +805,10 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     const nonce = getNonce();
 
     const initialContent = document.getText() || '';
-    const initialJson = JSON.stringify({ content: initialContent }).replace(/</g, '\\u003c');
+    const mermaidScriptUri = webview
+      .asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webviews', 'mermaid.min.js'))
+      .toString();
+    const initialJson = JSON.stringify({ content: initialContent, mermaidScriptUri }).replace(/</g, '\\u003c');
 
     return `<!DOCTYPE html>
 <html lang="en">

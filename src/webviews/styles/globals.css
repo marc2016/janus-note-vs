@@ -324,3 +324,90 @@ body.vscode-high-contrast-light .janus-pill-backlink:hover {
   text-decoration: none !important;
   font-size: 0.85em;
 }
+
+/* Mermaid diagrams in the editor */
+.cm-mermaid {
+  position: relative;
+  margin: 6px 0 10px;
+  padding: 12px 12px 10px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.25));
+  border-radius: 8px;
+  background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.06));
+}
+
+/* Code view: the code lines and the preview below share one frame */
+.cm-mermaid-code {
+  border-top: 1px dashed var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.25));
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  margin-top: 0;
+}
+
+.cm-line.cm-mermaid-code-line {
+  padding-left: 12px;
+  padding-right: 12px;
+  border-left: 1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.25));
+  border-right: 1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.25));
+  background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.06));
+}
+
+.cm-line.cm-mermaid-code-first {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.25));
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+}
+
+.cm-mermaid-body {
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+  min-height: 2rem;
+}
+
+.cm-mermaid-body svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.cm-mermaid-pending {
+  opacity: 0.5;
+  font-size: 0.85em;
+  transition: opacity 150ms ease;
+}
+
+.cm-mermaid-error {
+  width: 100%;
+  white-space: pre-wrap;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.85em;
+  color: var(--vscode-errorForeground, #f14c4c);
+}
+
+.cm-mermaid-toggle {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--vscode-button-secondaryForeground, inherit);
+  background: var(--vscode-button-secondaryBackground, rgba(127, 127, 127, 0.2));
+  opacity: 0.75;
+}
+
+.cm-mermaid:hover .cm-mermaid-toggle {
+  opacity: 1;
+}
+
+.cm-mermaid-toggle-icon {
+  width: 13px;
+  height: 13px;
+}

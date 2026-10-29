@@ -24,6 +24,7 @@ import { clickableLinks } from './extensions/clickableLinks';
 import { setSortedLinks, sortedLinks, sortedLinksCompartment, sortedLinksField } from './extensions/sortedLinks';
 import { imagePaste, insertSavedImage, rejectPendingImage } from './extensions/imagePaste';
 import { inlineImages, setImageContext } from './extensions/inlineImages';
+import { createMermaidRenderer, mermaidDiagrams, setMermaidTheme } from './extensions/mermaidBlocks';
 import { lineHighlightExtension, setHighlightLine } from './extensions/lineHighlight';
 import {
   MarkdownToolbar,
@@ -61,6 +62,16 @@ function getInitialContent(): string {
     }
   } catch {}
   return '# Welcome to Janus Note\n\nStart typing your markdown note here...';
+}
+
+function getMermaidScriptUri(): string {
+  try {
+    const el = document.getElementById('initial-data');
+    const parsed = el?.textContent ? JSON.parse(el.textContent) : undefined;
+    return typeof parsed?.mermaidScriptUri === 'string' ? parsed.mermaidScriptUri : '';
+  } catch {
+    return '';
+  }
 }
 
 function detectIsDark(): boolean {
@@ -119,6 +130,17 @@ function getEditorTheme(isDark: boolean) {
       },
       '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
         backgroundColor: isDark ? 'rgba(59, 130, 246, 0.35)' : 'rgba(59, 130, 246, 0.25)',
+      },
+      // Draw the (translucent) selection above the text: code spans have their own background,
+      // which would otherwise hide a selection drawn behind them
+      '& > .cm-scroller > .cm-selectionLayer': {
+        zIndex: '1 !important',
+        pointerEvents: 'none',
+      },
+      // CodeMirror's base theme paints an opaque selection color with a more specific selector;
+      // above the text it must stay translucent
+      '& > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
+        backgroundColor: `${isDark ? 'rgba(59, 130, 246, 0.3)' : 'rgba(59, 130, 246, 0.22)'} !important`,
       },
       '.cm-activeLine': {
         backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.03)',
@@ -289,7 +311,7 @@ export const MarkdownEditorApp: React.FC = () => {
   useEffect(() => {
     if (editorView) {
       editorView.dispatch({
-        effects: themeCompartment.reconfigure(getEditorTheme(effectiveIsDark)),
+        effects: [themeCompartment.reconfigure(getEditorTheme(effectiveIsDark)), setMermaidTheme.of(effectiveIsDark)],
       });
     }
   }, [effectiveIsDark, editorView]);
@@ -344,6 +366,7 @@ export const MarkdownEditorApp: React.FC = () => {
         sortedLinksCompartment.of([]),
         imagePaste({ postMessage: (message) => getVsCodeApi()?.postMessage(message) }),
         inlineImages(),
+        mermaidDiagrams(createMermaidRenderer(getMermaidScriptUri())),
         lineHighlightExtension(),
         slashCommands({
           onOpenDatePicker: (pos, coords) => datePickerHandlerRef.current(pos, coords),

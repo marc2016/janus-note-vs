@@ -201,3 +201,55 @@ export function findLinkOccurrences(
 
   return results.sort((a, b) => a.start - b.start);
 }
+
+export interface FencedBlock {
+  /** First word of the info string, lower-cased (`mermaid`, `js`, …); empty without one. */
+  info: string;
+  /** Start of the opening fence line and end of the closing fence line. */
+  from: number;
+  to: number;
+  /** Range of the code between the fence lines (empty when the block has no code lines). */
+  codeFrom: number;
+  codeTo: number;
+  code: string;
+}
+
+/**
+ * Finds closed, top-level fenced code blocks. Text inside a block never starts another block,
+ * and an unclosed fence (e.g. one being typed) yields no block.
+ */
+export function findFencedBlocks(text: string): FencedBlock[] {
+  const blocks: FencedBlock[] = [];
+  const lines = text.split('\n');
+  let offset = 0;
+  let open: { char: string; length: number; from: number; codeFrom: number; info: string } | undefined;
+
+  for (const line of lines) {
+    const lineEnd = offset + line.length;
+    const fenceMatch = line.match(FENCE_RE);
+    if (open) {
+      if (
+        fenceMatch &&
+        fenceMatch[1][0] === open.char &&
+        fenceMatch[1].length >= open.length &&
+        line.slice(fenceMatch[0].length).trim() === ''
+      ) {
+        const codeTo = Math.max(open.codeFrom, offset - 1);
+        blocks.push({
+          info: open.info,
+          from: open.from,
+          to: lineEnd,
+          codeFrom: open.codeFrom,
+          codeTo,
+          code: text.slice(open.codeFrom, codeTo),
+        });
+        open = undefined;
+      }
+    } else if (fenceMatch) {
+      const info = line.slice(fenceMatch[0].length).trim().split(/\s+/)[0]?.toLowerCase() ?? '';
+      open = { char: fenceMatch[1][0], length: fenceMatch[1].length, from: offset, codeFrom: lineEnd + 1, info };
+    }
+    offset = lineEnd + 1;
+  }
+  return blocks;
+}

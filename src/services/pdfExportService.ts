@@ -239,6 +239,8 @@ export function resolveImageSource(src: string, noteFilePath?: string): string {
 export function findLocalMermaidScript(): string | null {
   // Check common node_modules paths
   const candidatePaths = [
+    // Copy shipped with the extension (dist/extension.js -> dist/webviews/)
+    path.join(__dirname, 'webviews/mermaid.min.js'),
     path.join(__dirname, '../../node_modules/mermaid/dist/mermaid.min.js'),
     path.join(__dirname, '../node_modules/mermaid/dist/mermaid.min.js'),
     path.join(process.cwd(), 'node_modules/mermaid/dist/mermaid.min.js'),

@@ -13,8 +13,15 @@ function buildTailwind() {
   });
 }
 
+// The editor loads Mermaid lazily from this copy; node_modules is not shipped with the extension.
+function copyMermaid() {
+  fs.mkdirSync('dist/webviews', { recursive: true });
+  fs.copyFileSync('node_modules/mermaid/dist/mermaid.min.js', 'dist/webviews/mermaid.min.js');
+}
+
 async function build() {
   buildTailwind();
+  copyMermaid();
 
   const extensionCtx = await esbuild.context({
     entryPoints: ['src/extension.ts'],
