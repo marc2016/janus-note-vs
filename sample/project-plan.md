@@ -36,3 +36,9 @@ Klicke auf die folgenden Links, um das automatische Springen zur Zeile und die H
 
 ## 7. Umbenennen mit Link-Aktualisierung
 - Benenne z. B. [[design-system]] in der Notizen-Ansicht um: Alle Links darauf (etwa in [[kickoff]] und [[sprint-review]]) werden automatisch angepasst.
+
+## 8. Bilder einfügen
+- Kopiere einen Screenshot und füge ihn mit `Cmd+V` in eine Notiz ein, oder ziehe Bilder aus dem Finder hinein. Sie landen im Ordner `assets/` neben der Notiz, und der Link wird automatisch eingefügt.
+- Das Bild erscheint direkt unter seiner Zeile. Setzt du den Cursor auf die Zeile, siehst du den Markdown-Link zum Bearbeiten:
+
+![Sync-Skizze](assets/sync-skizze.svg)
