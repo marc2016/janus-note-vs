@@ -42,3 +42,16 @@ Klicke auf die folgenden Links, um das automatische Springen zur Zeile und die H
 - Das Bild erscheint direkt unter seiner Zeile. Setzt du den Cursor auf die Zeile, siehst du den Markdown-Link zum Bearbeiten:
 
 ![Sync-Skizze](assets/sync-skizze.svg)
+
+## 9. Mermaid-Diagramme
+- ```` ```mermaid ````-Blöcke erscheinen im Editor direkt als Diagramm. Mit dem Schalter **„Code"** oben rechts siehst du den Quelltext und darunter eine Live-Vorschau, **„Diagramm"** klappt den Code wieder ein.
+- Ein neues Diagramm legst du mit `/chart` an. Ein Sequenzdiagramm findest du in [[architektur]].
+
+```mermaid
+graph LR
+    Gedanke --> Inbox[inbox.md]
+    Gedanke --> Tag[Tagesnotiz]
+    Inbox -->|Inbox einsortieren| Notizen[Projekt- und Wissensnotizen]
+    Tag -->|Tagesnotiz einsortieren| Notizen
+    Notizen --> Aufgaben[Aufgaben generieren]
+```
