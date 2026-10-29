@@ -5,7 +5,7 @@ import { CompanionCodeLensProvider } from './companion/companionCodeLensProvider
 import { CompanionWatcher } from './companion/companionWatcher';
 import { TasksEditorProvider } from './editors/tasksEditorProvider';
 import { ChartEditorProvider } from './editors/chartEditorProvider';
-import { MarkdownEditorProvider } from './editors/markdownEditorProvider';
+import { MarkdownEditorProvider, showInboxSortResult } from './editors/markdownEditorProvider';
 import { GlobalTasksViewProvider } from './editors/globalTasksViewProvider';
 import { CalendarViewProvider } from './editors/calendarViewProvider';
 import { CalendarDayDetailsViewProvider } from './editors/calendarDayDetailsViewProvider';
@@ -503,34 +503,7 @@ export function activate(context: vscode.ExtensionContext) {
           vscode.window.activeTextEditor?.document
         );
         notesTreeDataProvider.refresh();
-        if (result.cancelled) {
-          return;
-        }
-        if (result.skippedEmpty) {
-          void vscode.window.showInformationMessage(
-            'Die Inbox (inbox.md) ist leer – es gibt keine Einträge zum Einsortieren.'
-          );
-        } else if (result.sortedItems.length > 0) {
-          const firstTarget = result.sortedItems[0];
-          void vscode.window
-            .showInformationMessage(
-              `${result.sortedItems.length} Abschnitt(e) aus der Inbox einsortiert.`,
-              'Notiz öffnen'
-            )
-            .then((action) => {
-              if (action === 'Notiz öffnen' && firstTarget) {
-                void vscode.commands.executeCommand(
-                  'vscode.openWith',
-                  firstTarget.targetUri,
-                  MarkdownEditorProvider.viewType
-                );
-              }
-            });
-        } else {
-          void vscode.window.showInformationMessage(
-            'Keine sortierbaren Abschnitte in der Inbox erkannt.'
-          );
-        }
+        showInboxSortResult(result);
       } catch (err: any) {
         vscode.window.showErrorMessage(
           `KI-Inbox-Sortierung fehlgeschlagen: ${err?.message || String(err)}`

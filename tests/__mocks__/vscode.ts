@@ -121,6 +121,11 @@ export function __getConfigStore() {
   return _configStore;
 }
 
+export enum QuickPickItemKind {
+  Separator = -1,
+  Default = 0,
+}
+
 export enum FileType {
   Unknown = 0,
   File = 1,

@@ -12,10 +12,53 @@ import {
 import { findLinkCandidatesInRoot } from '../companion/noteLinking';
 import { AiModelService } from '../services/aiModelService';
 import { AiTaskGeneratorService } from '../services/aiTaskGeneratorService';
-import { AiInboxSorterService } from '../services/aiInboxSorterService';
+import { AiInboxSorterService, SortInboxResult } from '../services/aiInboxSorterService';
 import { TasksEditorProvider } from './tasksEditorProvider';
 import { ChartEditorProvider } from './chartEditorProvider';
 import { WebviewSyncTracker } from './webviewSyncTracker';
+
+/**
+ * Reports the outcome of an inbox sorting run, shared by the `janus.sortInbox` command and the
+ * editor footer button.
+ */
+export function showInboxSortResult(result: SortInboxResult): void {
+  if (result.cancelled) {
+    return;
+  }
+  if (result.skippedEmpty) {
+    void vscode.window.showInformationMessage(
+      'Die Inbox (inbox.md) ist leer – es gibt keine Einträge zum Einsortieren.'
+    );
+    return;
+  }
+
+  const changedHint =
+    result.skippedChanged.length > 0
+      ? ` ${result.skippedChanged.length} Abschnitt(e) wurden währenddessen geändert und nicht verschoben.`
+      : '';
+
+  if (result.sortedItems.length > 0) {
+    const firstTarget = result.sortedItems[0];
+    void vscode.window
+      .showInformationMessage(
+        `${result.sortedItems.length} Abschnitt(e) einsortiert, ${result.remainingBlockCount} in der Inbox verblieben.${changedHint}`,
+        'Notiz öffnen'
+      )
+      .then((action) => {
+        if (action === 'Notiz öffnen') {
+          void vscode.commands.executeCommand(
+            'vscode.openWith',
+            firstTarget.targetUri,
+            MarkdownEditorProvider.viewType
+          );
+        }
+      });
+  } else if (changedHint) {
+    void vscode.window.showInformationMessage(`Keine Abschnitte einsortiert.${changedHint}`);
+  } else {
+    void vscode.window.showInformationMessage('Keine sortierbaren Abschnitte in der Inbox erkannt.');
+  }
+}
 
 export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'janus.markdownEditor';
@@ -384,34 +427,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         if (sendLinksUpdate) {
           void sendLinksUpdate();
         }
-        if (result.cancelled) {
-          return;
-        }
-        if (result.skippedEmpty) {
-          void vscode.window.showInformationMessage(
-            'Die Inbox (inbox.md) ist leer – es gibt keine Einträge zum Einsortieren.'
-          );
-        } else if (result.sortedItems.length > 0) {
-          const firstTarget = result.sortedItems[0];
-          void vscode.window
-            .showInformationMessage(
-              `${result.sortedItems.length} Abschnitt(e) aus der Inbox einsortiert.`,
-              'Notiz öffnen'
-            )
-            .then((action) => {
-              if (action === 'Notiz öffnen' && firstTarget) {
-                void vscode.commands.executeCommand(
-                  'vscode.openWith',
-                  firstTarget.targetUri,
-                  MarkdownEditorProvider.viewType
-                );
-              }
-            });
-        } else {
-          void vscode.window.showInformationMessage(
-            'Keine sortierbaren Abschnitte in der Inbox erkannt.'
-          );
-        }
+        showInboxSortResult(result);
       } catch (err: any) {
         void webviewPanel.webview.postMessage({
           type: 'aiInboxSorting',
