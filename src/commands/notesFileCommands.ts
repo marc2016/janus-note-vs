@@ -16,6 +16,7 @@ import {
   planLinkUpdatesForRename,
   reportLinkUpdates,
 } from '../services/linkRewriteService';
+import { applyTemplate, createTemplate, listTemplates } from '../services/noteTemplateService';
 
 /**
  * Resolves the target directory URI for creating files or folders.
@@ -143,7 +144,26 @@ export async function createNoteCommand(
   }
 
   const title = path.basename(finalNoteName, path.extname(finalNoteName));
-  const initialContent = `# ${title}\n\n`;
+  let initialContent = `# ${title}\n\n`;
+
+  const notesRoot = companionManager.getNotesRootUri();
+  const templates = notesRoot ? await listTemplates(notesRoot) : [];
+  if (templates.length > 0) {
+    const choice = await vscode.window.showQuickPick(
+      [
+        { label: 'Leere Notiz', description: 'Nur Titel-Überschrift' },
+        ...templates.map((t) => ({ label: t.name, description: 'Vorlage', template: t })),
+      ],
+      { placeHolder: 'Vorlage für die neue Notiz wählen' }
+    );
+    if (!choice) {
+      return undefined;
+    }
+    if ('template' in choice) {
+      const templateText = Buffer.from(await vscode.workspace.fs.readFile(choice.template.uri)).toString('utf8');
+      initialContent = applyTemplate(templateText, { title, now: new Date() });
+    }
+  }
 
   await vscode.workspace.fs.writeFile(newNoteUri, Buffer.from(initialContent, 'utf8'));
   notesTreeDataProvider.refresh();
@@ -359,4 +379,58 @@ export async function deleteItemCommand(
 
   notesTreeDataProvider.refresh();
   return true;
+}
+
+/**
+ * Command to open a note template from `<notesRoot>/.templates`, or create a new one
+ * with example content. The folder is hidden in the Notes view, so this is the way in.
+ */
+export async function editTemplatesCommand(companionManager: CompanionManager): Promise<vscode.Uri | undefined> {
+  const notesRoot = companionManager.getNotesRootUri();
+  if (!notesRoot) {
+    vscode.window.showInformationMessage('Bitte richte zuerst einen Notizen-Ordner ein, um Vorlagen zu bearbeiten.');
+    return undefined;
+  }
+
+  const templates = await listTemplates(notesRoot);
+  const NEW_TEMPLATE = '$(add) Neue Vorlage…';
+  const choice = await vscode.window.showQuickPick(
+    [...templates.map((t) => ({ label: t.name, template: t })), { label: NEW_TEMPLATE }],
+    { placeHolder: templates.length > 0 ? 'Vorlage zum Bearbeiten wählen' : 'Noch keine Vorlagen vorhanden' }
+  );
+  if (!choice) {
+    return undefined;
+  }
+
+  let targetUri: vscode.Uri;
+  if ('template' in choice) {
+    targetUri = choice.template.uri;
+  } else {
+    const name = await vscode.window.showInputBox({
+      prompt: 'Name der neuen Vorlage:',
+      placeHolder: 'z. B. meeting',
+      validateInput: (value: string) => {
+        const trimmed = value?.trim();
+        if (!trimmed) {
+          return 'Bitte einen Namen eingeben';
+        }
+        if (trimmed.includes('/') || trimmed.includes('\\')) {
+          return 'Der Name darf keine Schrägstriche (/ oder \\) enthalten';
+        }
+        return null;
+      },
+    });
+    if (!name) {
+      return undefined;
+    }
+    const created = await createTemplate(notesRoot, name.trim());
+    if (created === 'exists') {
+      vscode.window.showWarningMessage(`Die Vorlage "${name.trim()}" existiert bereits.`);
+      return undefined;
+    }
+    targetUri = created;
+  }
+
+  await vscode.commands.executeCommand('vscode.openWith', targetUri, MarkdownEditorProvider.viewType);
+  return targetUri;
 }

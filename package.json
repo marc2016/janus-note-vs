@@ -238,6 +238,11 @@
         "icon": "$(gear)"
       },
       {
+        "command": "janus.editTemplates",
+        "title": "Janus: Vorlagen bearbeiten",
+        "icon": "$(file-code)"
+      },
+      {
         "command": "janus.exportNoteToPdf",
         "title": "Janus: Als PDF exportieren...",
         "icon": "$(file-pdf)"
@@ -279,6 +284,11 @@
           "command": "janus.openSettings",
           "when": "view == janus.notesView",
           "group": "navigation@4"
+        },
+        {
+          "command": "janus.editTemplates",
+          "when": "view == janus.notesView && janus.isInitialized",
+          "group": "1_janus@1"
         }
       ],
       "view/item/context": [

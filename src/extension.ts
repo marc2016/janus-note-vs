@@ -43,6 +43,7 @@ import {
   createFolderCommand,
   createNoteCommand,
   renameItemCommand,
+  editTemplatesCommand,
   deleteItemCommand,
 } from './commands/notesFileCommands';
 import {
@@ -377,6 +378,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('janus.createNote', (item?: NotesTreeItem) =>
       createNoteCommand(item, notesTreeView, companionManager, notesTreeDataProvider)
     ),
+    vscode.commands.registerCommand('janus.editTemplates', () => editTemplatesCommand(companionManager)),
     vscode.commands.registerCommand('janus.renameItem', (item?: NotesTreeItem) =>
       renameItemCommand(item, notesTreeView, companionManager, notesTreeDataProvider)
     ),

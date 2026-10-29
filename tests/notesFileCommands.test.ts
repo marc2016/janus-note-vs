@@ -12,9 +12,15 @@ import {
   createNoteCommand,
   renameItemCommand,
   deleteItemCommand,
+  editTemplatesCommand,
 } from '../src/commands/notesFileCommands';
 import { MarkdownEditorProvider } from '../src/editors/markdownEditorProvider';
-import { extractDocumentLinks, loadAliasIndex, resolveOutgoingLink } from '../src/services/noteLinkService';
+import {
+  extractDocumentLinks,
+  findMarkdownNotesInRoot,
+  loadAliasIndex,
+  resolveOutgoingLink,
+} from '../src/services/noteLinkService';
 import { clearNoteMetadataCache } from '../src/services/noteMetadataService';
 import { __setConfigStore } from './__mocks__/vscode';
 
@@ -148,6 +154,51 @@ describe('notesFileCommands', () => {
 
       expect(created).toBeUndefined();
       expect(writeFileSpy).not.toHaveBeenCalled();
+    });
+
+    describe('with templates', () => {
+      beforeEach(() => {
+        vi.spyOn(vscode.window, 'showInputBox').mockResolvedValue('Sprint 12');
+        vi.spyOn(vscode.workspace.fs, 'stat').mockRejectedValue(new Error('File not found'));
+        vi.spyOn(vscode.workspace.fs, 'readDirectory').mockImplementation(async (uri: any) =>
+          uri.fsPath === '/workspace/project/notes/.templates' ? [['meeting.md', vscode.FileType.File]] : []
+        );
+        vi.spyOn(vscode.workspace.fs, 'readFile').mockResolvedValue(Buffer.from('# {{title}}\n\n## Agenda\n'));
+        vi.spyOn(vscode.commands, 'executeCommand').mockResolvedValue(undefined);
+      });
+
+      it('offers Leere Notiz first and creates the note from the chosen template', async () => {
+        const pickSpy = vi.spyOn(vscode.window, 'showQuickPick').mockImplementation(async (items: any) => items[1]);
+        const writeFileSpy = vi.spyOn(vscode.workspace.fs, 'writeFile').mockResolvedValue(undefined);
+
+        const created = await createNoteCommand(undefined, undefined, companionManager, notesTreeDataProvider);
+
+        expect((pickSpy.mock.calls[0][0] as any[]).map((i) => i.label)).toEqual(['Leere Notiz', 'meeting']);
+        expect(created?.fsPath).toBe('/workspace/project/notes/Sprint 12.md');
+        expect(writeFileSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ fsPath: '/workspace/project/notes/Sprint 12.md' }),
+          Buffer.from('# Sprint 12\n\n## Agenda\n', 'utf8')
+        );
+      });
+
+      it('creates a plain note when Leere Notiz is chosen', async () => {
+        vi.spyOn(vscode.window, 'showQuickPick').mockImplementation(async (items: any) => items[0]);
+        const writeFileSpy = vi.spyOn(vscode.workspace.fs, 'writeFile').mockResolvedValue(undefined);
+
+        await createNoteCommand(undefined, undefined, companionManager, notesTreeDataProvider);
+
+        expect(writeFileSpy).toHaveBeenCalledWith(expect.anything(), Buffer.from('# Sprint 12\n\n', 'utf8'));
+      });
+
+      it('creates nothing when the template choice is cancelled', async () => {
+        vi.spyOn(vscode.window, 'showQuickPick').mockResolvedValue(undefined);
+        const writeFileSpy = vi.spyOn(vscode.workspace.fs, 'writeFile');
+
+        const created = await createNoteCommand(undefined, undefined, companionManager, notesTreeDataProvider);
+
+        expect(created).toBeUndefined();
+        expect(writeFileSpy).not.toHaveBeenCalled();
+      });
     });
   });
 
@@ -387,6 +438,82 @@ describe('notesFileCommands', () => {
 
       expect(files[`${root}/archiv.md`]).toBe('# Inbox');
       expect(infoSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('editTemplatesCommand', () => {
+    const templatesDir = '/workspace/project/notes/.templates';
+
+    beforeEach(() => {
+      vi.spyOn(vscode.workspace.fs, 'readDirectory').mockImplementation(async (uri: any) =>
+        uri.fsPath === templatesDir ? [['meeting.md', vscode.FileType.File]] : []
+      );
+    });
+
+    it('opens the selected template in the Janus editor', async () => {
+      vi.spyOn(vscode.window, 'showQuickPick').mockImplementation(async (items: any) => items[0]);
+      const execSpy = vi.spyOn(vscode.commands, 'executeCommand').mockResolvedValue(undefined);
+
+      await editTemplatesCommand(companionManager);
+
+      expect(execSpy).toHaveBeenCalledWith(
+        'vscode.openWith',
+        expect.objectContaining({ fsPath: `${templatesDir}/meeting.md` }),
+        MarkdownEditorProvider.viewType
+      );
+    });
+
+    it('creates the first template in a new folder and opens it', async () => {
+      vi.spyOn(vscode.workspace.fs, 'readDirectory').mockRejectedValue(new Error('Not found'));
+      const pickSpy = vi.spyOn(vscode.window, 'showQuickPick').mockImplementation(async (items: any) => items[0]);
+      vi.spyOn(vscode.window, 'showInputBox').mockResolvedValue('meeting');
+      const mkdirSpy = vi.spyOn(vscode.workspace.fs, 'createDirectory').mockResolvedValue();
+      vi.spyOn(vscode.workspace.fs, 'stat').mockRejectedValue(new Error('Not found'));
+      const writeSpy = vi.spyOn(vscode.workspace.fs, 'writeFile').mockResolvedValue();
+      const execSpy = vi.spyOn(vscode.commands, 'executeCommand').mockResolvedValue(undefined);
+
+      await editTemplatesCommand(companionManager);
+
+      expect((pickSpy.mock.calls[0][0] as any[]).map((i) => i.label)).toEqual(['$(add) Neue Vorlage…']);
+      expect(mkdirSpy).toHaveBeenCalledWith(expect.objectContaining({ fsPath: templatesDir }));
+      expect(writeSpy).toHaveBeenCalledWith(expect.objectContaining({ fsPath: `${templatesDir}/meeting.md` }), expect.anything());
+      expect(execSpy).toHaveBeenCalledWith(
+        'vscode.openWith',
+        expect.objectContaining({ fsPath: `${templatesDir}/meeting.md` }),
+        MarkdownEditorProvider.viewType
+      );
+    });
+
+    it('does not overwrite an existing template', async () => {
+      vi.spyOn(vscode.window, 'showQuickPick').mockImplementation(async (items: any) => items[items.length - 1]);
+      vi.spyOn(vscode.window, 'showInputBox').mockResolvedValue('meeting');
+      vi.spyOn(vscode.workspace.fs, 'createDirectory').mockResolvedValue();
+      vi.spyOn(vscode.workspace.fs, 'stat').mockResolvedValue({} as any);
+      const writeSpy = vi.spyOn(vscode.workspace.fs, 'writeFile').mockResolvedValue();
+      const warnSpy = vi.spyOn(vscode.window, 'showWarningMessage');
+
+      await editTemplatesCommand(companionManager);
+
+      expect(writeSpy).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith('Die Vorlage "meeting" existiert bereits.');
+    });
+
+    it('keeps templates out of the notes collection', async () => {
+      vi.spyOn(vscode.workspace.fs, 'readDirectory').mockImplementation(async (uri: any) => {
+        if (uri.fsPath === '/workspace/project/notes') {
+          return [
+            ['.templates', vscode.FileType.Directory],
+            ['plan.md', vscode.FileType.File],
+          ];
+        }
+        return uri.fsPath === templatesDir ? [['meeting.md', vscode.FileType.File]] : [];
+      });
+
+      const notes = await findMarkdownNotesInRoot(vscode.Uri.file('/workspace/project/notes'));
+      const treeItems = await notesTreeDataProvider.getChildren(new FolderTreeItem(vscode.Uri.file('/workspace/project/notes')));
+
+      expect(notes.map((n) => n.fsPath)).toEqual(['/workspace/project/notes/plan.md']);
+      expect(treeItems.map((i: any) => i.uri?.fsPath)).not.toContain(templatesDir);
     });
   });
 
