@@ -232,7 +232,9 @@ export const MarkdownEditorApp: React.FC = () => {
   const flushPendingEditsRef = useRef(flushPendingEdits);
   flushPendingEditsRef.current = flushPendingEdits;
   const linkCandidatesRef = useRef<LinkCandidate[]>([]);
-  const handleOpenLinkRef = useRef<(target: string, viewType?: string) => void>(() => {});
+  const handleOpenLinkRef = useRef<
+    (target: string, viewType?: string, lineNumber?: number, linkType?: string) => void
+  >(() => {});
   const datePickerHandlerRef = useRef<
     (pos: number, coords: { top: number; left: number } | null) => void
   >(() => {});
@@ -312,7 +314,9 @@ export const MarkdownEditorApp: React.FC = () => {
         keymap.of(markdownEditorKeymap),
         markdown({ extensions: [Table] }),
         livePreview(syntaxMode),
-        clickableLinks({ onOpenLink: (target) => handleOpenLinkRef.current(target) }),
+        clickableLinks({
+          onOpenLink: (target, linkType) => handleOpenLinkRef.current(target, undefined, undefined, linkType),
+        }),
         styledLists(),
         taskCheckboxes(),
         styledTables(),
@@ -464,7 +468,7 @@ export const MarkdownEditorApp: React.FC = () => {
       e.preventDefault();
       e.stopPropagation();
 
-      handleOpenLink(target);
+      handleOpenLink(target, undefined, undefined, linkEl.getAttribute('data-link-type') ?? undefined);
     };
 
     container.addEventListener('click', handleContainerClick, { capture: true });
@@ -485,7 +489,7 @@ export const MarkdownEditorApp: React.FC = () => {
     }
   };
 
-  const handleOpenLink = (targetUri: string, viewType?: string, lineNumber?: number) => {
+  const handleOpenLink = (targetUri: string, viewType?: string, lineNumber?: number, linkType?: string) => {
     const api = getVsCodeApi();
     if (api) {
       api.postMessage({
@@ -493,6 +497,7 @@ export const MarkdownEditorApp: React.FC = () => {
         targetUri,
         viewType,
         lineNumber,
+        linkType,
       });
     }
   };

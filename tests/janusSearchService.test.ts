@@ -153,6 +153,43 @@ describe('JanusSearchService', () => {
     });
   });
 
+  describe('searchWorkspace with frontmatter', () => {
+    const files: Record<string, string> = {
+      '/workspace/notes/2026-10-29-sync.md': '---\ntitle: Wöchentlicher Sync\n---\n# Sync\n\nDeployment besprochen.',
+      '/workspace/notes/rest-schnittstelle.md': '---\naliases: [API]\n---\n# REST\n\nEndpunkte und Fehlercodes.',
+      '/workspace/notes/notizen.md': '# Notizen\n\nKurz die api erwähnt.',
+    };
+
+    const createService = () => {
+      const companionManager = new CompanionManager();
+      vi.spyOn(companionManager, 'getNotesRootUri').mockReturnValue(rootUri);
+      const folderTasksService = new FolderTasksService();
+      vi.spyOn(folderTasksService, 'loadAllTasks').mockResolvedValue([]);
+      vi.spyOn(vscode.workspace.fs, 'readDirectory').mockImplementation(async (uri: vscode.Uri) =>
+        uri.fsPath === '/workspace/notes'
+          ? Object.keys(files).map((f) => [f.split('/').pop()!, vscode.FileType.File] as [string, vscode.FileType])
+          : []
+      );
+      vi.spyOn(vscode.workspace.fs, 'readFile').mockImplementation(async (uri: vscode.Uri) =>
+        Buffer.from(files[uri.fsPath] ?? '', 'utf-8')
+      );
+      return new JanusSearchService(companionManager, folderTasksService);
+    };
+
+    it('uses the frontmatter title as result title', async () => {
+      const result = await createService().searchWorkspace('Deployment');
+      expect(result.noteMatches.map((m) => m.title)).toEqual(['Wöchentlicher Sync']);
+    });
+
+    it('scores aliases like the title', async () => {
+      const result = await createService().searchWorkspace('API');
+      expect(result.noteMatches[0].relativePath).toBe('rest-schnittstelle.md');
+      // Title weight (5), not body weight (2 per occurrence)
+      expect(result.noteMatches[0].score).toBe(5);
+      expect(result.noteMatches[1]).toMatchObject({ relativePath: 'notizen.md', score: 2 });
+    });
+  });
+
   describe('getSummarizeContext & getInboxContext', () => {
     it('aggregates all notes and tasks in a specified folder for getSummarizeContext', async () => {
       const companionManager = new CompanionManager();

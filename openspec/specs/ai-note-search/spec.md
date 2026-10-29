@@ -28,3 +28,13 @@ The system SHALL resolve a target note or folder path (relative to `notesRoot` o
 - **WHEN** context aggregation is requested for a folder path such as `projects/App-Launch`
 - **THEN** the system collects all Markdown notes and the `tasks.json` companion inside that folder and returns their structured content
 
+### Requirement: Frontmatter Title and Aliases in Search
+Note search results SHALL use a note's frontmatter `title` as the result title when it has one, falling back to its first `#` heading and then its file name. The frontmatter title and aliases SHALL be scored like the note title when ranking matches.
+
+#### Scenario: Result title from frontmatter
+- **WHEN** `2026-10-29-sync.md` has `title: Wöchentlicher Sync` and a first heading `# Sync`, and it matches a search
+- **THEN** the result is titled `Wöchentlicher Sync`
+
+#### Scenario: Finding a note by alias
+- **WHEN** `rest-schnittstelle.md` has `aliases: [API]`, the word `API` appears nowhere else in it, and the user searches for `API`
+- **THEN** `rest-schnittstelle.md` is returned with the weight of a title match

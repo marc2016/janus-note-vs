@@ -2,7 +2,7 @@ import { EditorView } from '@codemirror/view';
 import { Extension } from '@codemirror/state';
 
 export interface ClickableLinksOptions {
-  onOpenLink: (target: string) => void;
+  onOpenLink: (target: string, linkType?: string) => void;
 }
 
 /**
@@ -11,14 +11,14 @@ export interface ClickableLinksOptions {
  * modifier keys, while avoiding caret-placement interference during clicks.
  */
 export function clickableLinks(options: ClickableLinksOptions): Extension {
-  let pendingClick: { target: string; x: number; y: number } | null = null;
+  let pendingClick: { target: string; linkType?: string; x: number; y: number } | null = null;
   let lastOpenTime = 0;
 
-  const triggerOpen = (target: string) => {
+  const triggerOpen = (target: string, linkType?: string) => {
     const now = Date.now();
     if (now - lastOpenTime > 300) {
       lastOpenTime = now;
-      options.onOpenLink(target);
+      options.onOpenLink(target, linkType);
     }
   };
 
@@ -45,6 +45,7 @@ export function clickableLinks(options: ClickableLinksOptions): Extension {
 
       pendingClick = {
         target,
+        linkType: linkEl.getAttribute('data-link-type') ?? undefined,
         x: event.clientX,
         y: event.clientY,
       };
@@ -58,13 +59,13 @@ export function clickableLinks(options: ClickableLinksOptions): Extension {
       if (!pendingClick) return false;
 
       const dist = Math.hypot(event.clientX - pendingClick.x, event.clientY - pendingClick.y);
-      const target = pendingClick.target;
+      const { target, linkType } = pendingClick;
       pendingClick = null;
 
       if (dist < 10) {
         event.preventDefault();
         event.stopPropagation();
-        triggerOpen(target);
+        triggerOpen(target, linkType);
         return true;
       }
       return false;
@@ -82,7 +83,7 @@ export function clickableLinks(options: ClickableLinksOptions): Extension {
 
       event.preventDefault();
       event.stopPropagation();
-      triggerOpen(target);
+      triggerOpen(target, linkEl.getAttribute('data-link-type') ?? undefined);
       return true;
     },
   });

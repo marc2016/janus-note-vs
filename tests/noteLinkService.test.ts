@@ -8,7 +8,9 @@ import {
   parseLinkTargetAndLine,
   resolveOutgoingLink,
   collectMarkdownNotesFromSelection,
+  loadAliasIndex,
 } from '../src/services/noteLinkService';
+import { clearNoteMetadataCache } from '../src/services/noteMetadataService';
 import { CompanionManager } from '../src/companion/companionManager';
 import { __setConfigStore } from './__mocks__/vscode';
 
@@ -545,6 +547,117 @@ See [[src/service.ts:42]] and [Handler](src/handler.ts#L88) and regular [[Meetin
       expect(notes).toHaveLength(2);
       expect(notes.map((n) => n.fsPath)).toContain('/workspace/notes/project/note1.md');
       expect(notes.map((n) => n.fsPath)).toContain('/workspace/notes/project/sub/note2.markdown');
+    });
+  });
+  describe('frontmatter alias resolution', () => {
+    const root = '/workspace/notes';
+    let files: Record<string, string>;
+
+    beforeEach(() => {
+      clearNoteMetadataCache();
+      files = {
+        [`${root}/knowledge/rest-schnittstelle.md`]: '---\naliases: [API]\n---\n# REST',
+        [`${root}/plan.md`]: '# Plan\n\nZeile 3\nSiehe [[API]].\n',
+      };
+      vi.spyOn(vscode.workspace.fs, 'readDirectory').mockImplementation(async (uri: any) => {
+        const prefix = `${uri.fsPath}/`;
+        const entries = new Map<string, vscode.FileType>();
+        for (const filePath of Object.keys(files)) {
+          if (!filePath.startsWith(prefix)) continue;
+          const [name, ...rest] = filePath.slice(prefix.length).split('/');
+          entries.set(name, rest.length > 0 ? vscode.FileType.Directory : vscode.FileType.File);
+        }
+        return [...entries];
+      });
+      vi.spyOn(vscode.workspace.fs, 'readFile').mockImplementation(async (uri: any) => {
+        if (!(uri.fsPath in files)) throw new Error('Not found');
+        return Buffer.from(files[uri.fsPath]);
+      });
+      vi.spyOn(vscode.workspace.fs, 'stat').mockImplementation(async (uri: any) => {
+        if (uri.fsPath in files) return { type: vscode.FileType.File } as any;
+        throw new Error('Not found');
+      });
+    });
+
+    const notes = () => Object.keys(files).map((f) => vscode.Uri.file(f));
+    const resolve = async (text: string) => {
+      const [link] = extractDocumentLinks(text);
+      const workspaceNotes = notes();
+      return resolveOutgoingLink(
+        link,
+        vscode.Uri.file(`${root}/plan.md`),
+        notesRootUri,
+        workspaceNotes,
+        await loadAliasIndex(workspaceNotes)
+      );
+    };
+
+    it('resolves a wiki-link via an alias', async () => {
+      const resolved = await resolve('[[API]]');
+      expect(resolved.exists).toBe(true);
+      expect(resolved.relativePath).toBe('knowledge/rest-schnittstelle.md');
+    });
+
+    it('prefers a note with that file name over an alias', async () => {
+      files[`${root}/api.md`] = '# API';
+      const resolved = await resolve('[[API]]');
+      expect(resolved.relativePath).toBe('api.md');
+    });
+
+    it('resolves an alias with a line suffix', async () => {
+      const resolved = await resolve('[[api#L12]]');
+      expect(resolved.relativePath).toBe('knowledge/rest-schnittstelle.md');
+      expect(resolved.lineNumber).toBe(12);
+    });
+
+    it('does not resolve Markdown links via aliases', async () => {
+      const resolved = await resolve('[API](API.md)');
+      expect(resolved.exists).toBe(false);
+    });
+
+    it('marks alias links as existing in the footer data', async () => {
+      const data = await getNoteLinksData(
+        vscode.Uri.file(`${root}/plan.md`),
+        files[`${root}/plan.md`],
+        companionManager
+      );
+      expect(data.outgoingLinks).toEqual([
+        expect.objectContaining({ target: 'API', exists: true, relativePath: 'knowledge/rest-schnittstelle.md' }),
+      ]);
+    });
+
+    it('lists alias links as backlinks with their origin line', async () => {
+      const backlinks = await findBacklinks(vscode.Uri.file(`${root}/knowledge/rest-schnittstelle.md`), notesRootUri);
+      expect(backlinks.map((b) => [b.relativePath, b.lineNumber])).toEqual([['plan.md', 4]]);
+    });
+
+    it('does not count an alias link as backlink when a note with that name exists', async () => {
+      files[`${root}/api.md`] = '# API';
+      const backlinks = await findBacklinks(vscode.Uri.file(`${root}/knowledge/rest-schnittstelle.md`), notesRootUri);
+      expect(backlinks).toEqual([]);
+    });
+
+    it('opens the aliased note when a wiki-link is clicked, but not for a Markdown link', async () => {
+      const { MarkdownEditorProvider } = await import('../src/editors/markdownEditorProvider');
+      const provider = new MarkdownEditorProvider({ extensionUri: vscode.Uri.file('/ext') } as any, companionManager);
+      const doc = { uri: vscode.Uri.file(`${root}/plan.md`), getText: () => files[`${root}/plan.md`] } as any;
+      const panel = { webview: { postMessage: vi.fn() } } as any;
+      const execSpy = vi.spyOn(vscode.commands, 'executeCommand').mockResolvedValue(undefined);
+
+      await provider.handleWebviewMessage({ type: 'openLink', targetUri: 'API', linkType: 'wiki' }, doc, panel);
+      expect(execSpy).toHaveBeenCalledWith(
+        'vscode.openWith',
+        expect.objectContaining({ path: `${root}/knowledge/rest-schnittstelle.md` }),
+        'janus.markdownEditor'
+      );
+
+      execSpy.mockClear();
+      await provider.handleWebviewMessage({ type: 'openLink', targetUri: 'API.md', linkType: 'markdown' }, doc, panel);
+      expect(execSpy).not.toHaveBeenCalledWith(
+        'vscode.openWith',
+        expect.objectContaining({ path: `${root}/knowledge/rest-schnittstelle.md` }),
+        expect.anything()
+      );
     });
   });
 });

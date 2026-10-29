@@ -4,6 +4,7 @@ import { CompanionManager } from '../companion/companionManager';
 import { isMarkdownNote } from '../companion/companionPaths';
 import { FolderTasksService } from './folderTasksService';
 import { findMarkdownNotesInRoot } from './noteLinkService';
+import { parseFrontmatter } from './noteMetadataService';
 import { extractMeaningfulInboxBody } from './aiInboxSorterService';
 import { TaskItem, TaskPriority, TaskStatus } from '../models/tasks';
 
@@ -388,6 +389,9 @@ export class JanusSearchService {
       uri: vscode.Uri;
       content: string;
       headings: string[];
+      aliases: string[];
+      /** Offset after the frontmatter block, which is scored as title, not as body. */
+      bodyStart: number;
     }> = [];
 
     for (const uri of noteUris) {
@@ -402,8 +406,9 @@ export class JanusSearchService {
       const relPath = path.relative(notesRootUri.fsPath, uri.fsPath).replace(/\\/g, '/');
       const headings = extractMarkdownHeadings(content);
       const baseTitle = stripExtension(path.basename(uri.fsPath));
+      const frontmatter = parseFrontmatter(content);
       const h1Title = content.match(/^#\s+(.+)$/m)?.[1]?.trim();
-      const title = h1Title || baseTitle;
+      const title = frontmatter.title || h1Title || baseTitle;
 
       allNotesData.push({
         title,
@@ -411,6 +416,8 @@ export class JanusSearchService {
         uri,
         content,
         headings,
+        aliases: frontmatter.aliases,
+        bodyStart: frontmatter.bodyStart,
       });
     }
 
@@ -419,10 +426,13 @@ export class JanusSearchService {
 
     if (tokens.length > 0) {
       for (const note of allNotesData) {
-        const titleLower = `${note.title} ${stripExtension(path.basename(note.uri.fsPath))}`.toLowerCase();
+        // Aliases are alternative names of the note, so they score like the title
+        const titleLower = [note.title, stripExtension(path.basename(note.uri.fsPath)), ...note.aliases]
+          .join(' ')
+          .toLowerCase();
         const pathLower = note.relativePath.toLowerCase();
         const headingsLower = note.headings.join(' \n ').toLowerCase();
-        const bodyLower = note.content.toLowerCase();
+        const bodyLower = note.content.slice(note.bodyStart).toLowerCase();
 
         let score = 0;
 

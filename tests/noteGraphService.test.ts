@@ -136,4 +136,26 @@ describe('noteGraphService', () => {
     expect(byTitle.index.degree).toBe(3);
     expect(byTitle.kickoff.degree).toBe(1);
   });
+
+  it('labels nodes with the frontmatter title and resolves wiki-links via aliases', async () => {
+    mockFileSystem({
+      '/workspace/notes/2026-10-29-sync.md': '---\ntitle: Wöchentlicher Sync\n---\n',
+      '/workspace/notes/knowledge/rest-schnittstelle.md': '---\naliases: [API]\n---\n',
+      '/workspace/notes/plan.md': '[[API]] [API](API.md)',
+    });
+
+    const graph = await buildNoteGraph([root], root);
+    const byPath = Object.fromEntries(graph.nodes.map((n) => [n.relativePath, n]));
+
+    expect(byPath['2026-10-29-sync.md'].title).toBe('Wöchentlicher Sync');
+    expect(byPath['knowledge/rest-schnittstelle.md'].aliases).toEqual(['API']);
+    expect(graph.edges).toContainEqual({
+      source: id('/workspace/notes/plan.md'),
+      target: id('/workspace/notes/knowledge/rest-schnittstelle.md'),
+      bidirectional: false,
+    });
+    // Only the Markdown link stays unresolved: no ghost for the alias link
+    expect(graph.nodes.filter((n) => n.ghost).map((n) => n.title)).toEqual(['API']);
+    expect(graph.nodes.find((n) => n.ghost)?.relativePath).toBe('API');
+  });
 });

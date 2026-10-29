@@ -1,8 +1,10 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as vscode from 'vscode';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import * as ac from '@codemirror/autocomplete';
-import { LinkCandidate } from '../src/companion/noteLinking';
+import { LinkCandidate, findLinkCandidatesAcrossRoots } from '../src/companion/noteLinking';
+import { clearNoteMetadataCache } from '../src/services/noteMetadataService';
 import {
   createLinkAutocompleteSource,
   FILE_TYPE_ICONS,
@@ -311,5 +313,69 @@ describe('Inline File and Note Linking', () => {
       });
       expect(selectionAnchor).toBe(9);
     });
+  });
+});
+
+describe('frontmatter titles and aliases as link candidates', () => {
+  const root = vscode.Uri.file('/workspace/notes');
+  const files: Record<string, string> = {
+    '/workspace/notes/knowledge/rest-schnittstelle.md': '---\naliases: [API]\n---\n',
+    '/workspace/notes/2026-10-29-sync.md': '---\ntitle: Wöchentlicher Sync\n---\n',
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    clearNoteMetadataCache();
+    vi.spyOn(vscode.workspace.fs, 'readDirectory').mockImplementation(async (uri: any) => {
+      if (uri.fsPath === '/workspace/notes') {
+        return [
+          ['2026-10-29-sync.md', vscode.FileType.File],
+          ['knowledge', vscode.FileType.Directory],
+        ];
+      }
+      if (uri.fsPath === '/workspace/notes/knowledge') return [['rest-schnittstelle.md', vscode.FileType.File]];
+      return [];
+    });
+    vi.spyOn(vscode.workspace.fs, 'stat').mockResolvedValue({} as any);
+    vi.spyOn(vscode.workspace.fs, 'readFile').mockImplementation(async (uri: any) => Buffer.from(files[uri.fsPath] ?? ''));
+  });
+
+  it('adds an alias entry that inserts the alias and a title entry that inserts the file link', async () => {
+    const candidates = await findLinkCandidatesAcrossRoots([root], 6, root);
+
+    expect(candidates).toContainEqual({
+      label: 'API',
+      insertText: 'API',
+      relPath: 'knowledge/rest-schnittstelle.md',
+      fileType: 'note',
+      matchedBy: 'alias',
+    });
+    expect(candidates).toContainEqual({
+      label: 'Wöchentlicher Sync',
+      insertText: '2026-10-29-sync',
+      relPath: '2026-10-29-sync.md',
+      fileType: 'note',
+      matchedBy: 'title',
+    });
+  });
+
+  it('inserts [[API]] when the alias completion is applied and shows the hint', async () => {
+    const candidates = await findLinkCandidatesAcrossRoots([root], 6, root);
+    const source = createLinkAutocompleteSource(() => candidates);
+    const doc = 'See [[AP';
+    const state = EditorState.create({ doc });
+    const result = source({
+      state,
+      pos: doc.length,
+      matchBefore: () => ({ from: 4, to: doc.length, text: '[[AP' }),
+    } as any);
+
+    const option = result?.options.find((o) => o.label === 'API');
+    expect(option?.detail).toBe('knowledge/rest-schnittstelle.md · Alias');
+
+    let changes: any = null;
+    const view = { state, dispatch: (tr: any) => (changes = tr.changes) } as unknown as EditorView;
+    (option!.apply as any)(view, option, 6, doc.length);
+    expect(changes).toEqual({ from: 4, to: doc.length, insert: '[[API]]' });
   });
 });

@@ -22,7 +22,11 @@ export function filterGraph(data: NoteGraphData, options: GraphFilterOptions): N
   let nodes: GraphNode[] = data.nodes.filter((node) => {
     if (node.ghost && !options.showGhosts) return false;
     if (!query) return true;
-    return node.title.toLowerCase().includes(query) || node.relativePath.toLowerCase().includes(query);
+    return (
+      node.title.toLowerCase().includes(query) ||
+      node.relativePath.toLowerCase().includes(query) ||
+      (node.aliases ?? []).some((alias) => alias.toLowerCase().includes(query))
+    );
   });
 
   const ids = new Set(nodes.map((n) => n.id));

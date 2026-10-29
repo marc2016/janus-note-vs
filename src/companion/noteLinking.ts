@@ -1,12 +1,15 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { isMarkdownNote } from './companionPaths';
+import { getNotesMetadata } from '../services/noteMetadataService';
 
 export interface LinkCandidate {
   label: string;
   insertText: string;
   relPath: string;
   fileType: 'note' | 'task' | 'chart' | 'image' | 'pdf' | 'file';
+  /** Set for extra note entries found via the note's frontmatter instead of its file name. */
+  matchedBy?: 'alias' | 'title';
 }
 
 const IGNORED_DIRS = new Set([
@@ -122,6 +125,7 @@ export async function findLinkCandidatesAcrossRoots(
 ): Promise<LinkCandidate[]> {
   const allCandidates: LinkCandidate[] = [];
   const seenRelPaths = new Set<string>();
+  const noteCandidates: Array<{ uri: vscode.Uri; candidate: LinkCandidate }> = [];
 
   for (const root of roots) {
     const isPrimary = primaryRootUri && root.fsPath === primaryRootUri.fsPath;
@@ -138,7 +142,24 @@ export async function findLinkCandidatesAcrossRoots(
       if (!seenRelPaths.has(cand.relPath)) {
         seenRelPaths.add(cand.relPath);
         allCandidates.push(cand);
+        if (cand.fileType === 'note') {
+          noteCandidates.push({ uri: vscode.Uri.joinPath(relativeTo || root, cand.relPath), candidate: cand });
+        }
       }
+    }
+  }
+
+  // Frontmatter titles and aliases become extra entries, so the editor's label filter finds them
+  const metadata = await getNotesMetadata(noteCandidates.map((n) => n.uri));
+  const metadataByPath = new Map(metadata.map((m) => [m.uri.fsPath, m.metadata]));
+  for (const { uri, candidate } of noteCandidates) {
+    const meta = metadataByPath.get(uri.fsPath);
+    if (!meta) continue;
+    if (meta.title && meta.title.toLowerCase() !== candidate.label.toLowerCase()) {
+      allCandidates.push({ ...candidate, label: meta.title, matchedBy: 'title' });
+    }
+    for (const alias of meta.aliases) {
+      allCandidates.push({ ...candidate, label: alias, insertText: alias, matchedBy: 'alias' });
     }
   }
 

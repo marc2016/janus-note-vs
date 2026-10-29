@@ -35,7 +35,9 @@ export function createLinkAutocompleteSource(
       return {
         label: candidate.label,
         displayLabel: `${icon} ${candidate.label}`,
-        detail: candidate.relPath,
+        detail: candidate.matchedBy
+          ? `${candidate.relPath} · ${candidate.matchedBy === 'alias' ? 'Alias' : 'Titel'}`
+          : candidate.relPath,
         type: candidate.fileType,
         boost: candidate.fileType === 'note' ? 2 : 1,
         apply: (

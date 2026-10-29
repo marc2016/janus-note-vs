@@ -62,4 +62,12 @@ describe('filterGraph', () => {
     const result = filterGraph(data, { ...DEFAULT_GRAPH_FILTER, search: 'xyz' });
     expect(result).toEqual({ nodes: [], edges: [] });
   });
+
+  it('matches frontmatter aliases in the search field', () => {
+    const withAlias: NoteGraphData = {
+      nodes: [{ ...node('rest', 'knowledge/rest-schnittstelle.md'), aliases: ['API'] }, node('plan', 'plan.md')],
+      edges: [],
+    };
+    expect(ids(filterGraph(withAlias, { ...DEFAULT_GRAPH_FILTER, search: 'api' }))).toEqual(['rest']);
+  });
 });

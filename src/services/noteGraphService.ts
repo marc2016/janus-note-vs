@@ -7,12 +7,15 @@ import {
   findMarkdownNotesInRoots,
   resolveOutgoingLink,
 } from './noteLinkService';
+import { NoteMetadataEntry, buildAliasIndex, parseFrontmatter } from './noteMetadataService';
 
 export interface GraphNode {
   id: string;
+  /** Frontmatter title, or the file name without extension. */
   title: string;
   relativePath: string;
   group: string;
+  aliases?: string[];
   /** Number of distinct linked notes (incoming and outgoing), ghosts excluded. */
   degree: number;
   ghost?: boolean;
@@ -74,18 +77,33 @@ export async function buildNoteGraph(
   const noteIdsByPath = new Map<string, string>();
   // Case-insensitive file systems resolve `[[Plan]]` to `plan.md` but keep the link's spelling
   const noteIdsByLowerPath = new Map<string, string>();
+  const texts = new Map<string, string>();
+  const metadata: NoteMetadataEntry[] = [];
 
   for (const note of notes) {
+    let text: string | undefined;
+    try {
+      text = Buffer.from(await vscode.workspace.fs.readFile(note)).toString('utf-8');
+      texts.set(note.fsPath, text);
+    } catch {
+      // Unreadable notes still get a node, without links
+    }
+    const { title, aliases, tags } = text !== undefined ? parseFrontmatter(text) : { title: undefined, aliases: [], tags: [] };
+    metadata.push({ uri: note, metadata: { title, aliases, tags } });
+
     const id = note.toString();
     noteIdsByPath.set(note.fsPath, id);
     noteIdsByLowerPath.set(note.fsPath.toLowerCase(), id);
-    nodes.set(id, {
+    const node: GraphNode = {
       id,
-      title: stripNoteExtension(path.basename(note.fsPath)),
+      title: title ?? stripNoteExtension(path.basename(note.fsPath)),
       ...describeNote(note, roots),
       degree: 0,
-    });
+    };
+    if (aliases.length > 0) node.aliases = aliases;
+    nodes.set(id, node);
   }
+  const aliasIndex = buildAliasIndex(metadata);
 
   // Unordered pair key -> edge; resolution cache per (source directory, target)
   const edges = new Map<string, GraphEdge>();
@@ -103,19 +121,16 @@ export async function buildNoteGraph(
   };
 
   for (const note of notes) {
-    let text: string;
-    try {
-      text = Buffer.from(await vscode.workspace.fs.readFile(note)).toString('utf-8');
-    } catch {
-      continue;
-    }
+    const text = texts.get(note.fsPath);
+    if (text === undefined) continue;
 
     const sourceId = noteIdsByPath.get(note.fsPath)!;
     for (const link of extractDocumentLinks(text)) {
-      const cacheKey = `${path.dirname(note.fsPath)}\n${link.target.toLowerCase()}`;
+      // Only wiki-links resolve via aliases, so the link type is part of the key
+      const cacheKey = `${path.dirname(note.fsPath)}\n${link.type}\n${link.target.toLowerCase()}`;
       let pending = resolutionCache.get(cacheKey);
       if (!pending) {
-        pending = resolveOutgoingLink(link, note, primaryRoot, notes);
+        pending = resolveOutgoingLink(link, note, primaryRoot, notes, aliasIndex);
         resolutionCache.set(cacheKey, pending);
       }
       const resolved = await pending;

@@ -14,6 +14,8 @@ import {
   deleteItemCommand,
 } from '../src/commands/notesFileCommands';
 import { MarkdownEditorProvider } from '../src/editors/markdownEditorProvider';
+import { extractDocumentLinks, loadAliasIndex, resolveOutgoingLink } from '../src/services/noteLinkService';
+import { clearNoteMetadataCache } from '../src/services/noteMetadataService';
 import { __setConfigStore } from './__mocks__/vscode';
 
 describe('notesFileCommands', () => {
@@ -324,6 +326,32 @@ describe('notesFileCommands', () => {
 
       expect(files[`${root}/index.md`]).toBe('[[treffen/kickoff]] [[kickoff]]');
       expect(files[`${root}/projects/plan.md`]).toContain('[K](../treffen/kickoff.md)');
+    });
+
+    it('keeps alias links when the aliased note is renamed', async () => {
+      files[`${root}/knowledge/rest-schnittstelle.md`] = '---\naliases: [API]\n---\n# REST';
+      files[`${root}/index.md`] = 'Siehe [[API]].';
+      vi.spyOn(vscode.window, 'showInputBox').mockResolvedValue('rest');
+
+      await renameItemCommand(
+        new NoteTreeItem(vscode.Uri.file(`${root}/knowledge/rest-schnittstelle.md`)),
+        undefined,
+        companionManager,
+        notesTreeDataProvider
+      );
+
+      expect(files[`${root}/index.md`]).toBe('Siehe [[API]].');
+      clearNoteMetadataCache();
+      const notes = Object.keys(files).map((f) => vscode.Uri.file(f));
+      const [link] = extractDocumentLinks(files[`${root}/index.md`]);
+      const resolved = await resolveOutgoingLink(
+        link,
+        vscode.Uri.file(`${root}/index.md`),
+        vscode.Uri.file(root),
+        notes,
+        await loadAliasIndex(notes)
+      );
+      expect(resolved.uri).toBe(vscode.Uri.file(`${root}/knowledge/rest.md`).toString());
     });
 
     it('changes nothing when the name prompt is cancelled', async () => {

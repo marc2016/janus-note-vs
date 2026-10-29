@@ -557,7 +557,8 @@ describe('Clickable Editor Links & Delimiter Concealing', () => {
       const handlers = ext.domEventHandlers;
 
       const mockSpan = {
-        getAttribute: (attr: string) => (attr === 'data-link-target' ? 'Meeting-Notes' : null),
+        getAttribute: (attr: string) =>
+          attr === 'data-link-target' ? 'Meeting-Notes' : attr === 'data-link-type' ? 'wiki' : null,
         closest: (sel: string) => (sel === '.cm-link-text' ? mockSpan : null),
       };
 
@@ -585,7 +586,7 @@ describe('Clickable Editor Links & Delimiter Concealing', () => {
 
       const upHandled = handlers.mouseup(mouseupEvent, {} as any);
       expect(upHandled).toBe(true);
-      expect(onOpenLink).toHaveBeenCalledWith('Meeting-Notes');
+      expect(onOpenLink).toHaveBeenCalledWith('Meeting-Notes', 'wiki');
     });
 
     it('intercepts click on .cm-link-text and fires onOpenLink', async () => {
@@ -595,7 +596,8 @@ describe('Clickable Editor Links & Delimiter Concealing', () => {
       const handlers = ext.domEventHandlers;
 
       const mockSpan = {
-        getAttribute: (attr: string) => (attr === 'data-link-target' ? 'https://example.com' : null),
+        getAttribute: (attr: string) =>
+          attr === 'data-link-target' ? 'https://example.com' : attr === 'data-link-type' ? 'external' : null,
         closest: (sel: string) => (sel === '.cm-link-text' ? mockSpan : null),
       };
 
@@ -609,7 +611,7 @@ describe('Clickable Editor Links & Delimiter Concealing', () => {
 
       const clickHandled = handlers.click(clickEvent, {} as any);
       expect(clickHandled).toBe(true);
-      expect(onOpenLink).toHaveBeenCalledWith('https://example.com');
+      expect(onOpenLink).toHaveBeenCalledWith('https://example.com', 'external');
     });
 
     it('bypasses link navigation when Alt key is held (allowing caret placement for editing)', async () => {

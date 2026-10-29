@@ -10,6 +10,7 @@ import {
   findLinkCandidatesInRoot,
   findLinkCandidatesAcrossRoots,
 } from '../companion/noteLinking';
+import { AliasIndex, buildAliasIndex, getNotesMetadata, parseFrontmatter } from './noteMetadataService';
 
 export {
   LinkCandidate,
@@ -437,7 +438,8 @@ export async function resolveOutgoingLink(
   link: ExtractedLink,
   sourceNoteUri: vscode.Uri,
   notesRootUri?: vscode.Uri,
-  workspaceNotes?: vscode.Uri[]
+  workspaceNotes?: vscode.Uri[],
+  aliasIndex?: AliasIndex
 ): Promise<NoteLinkItem> {
   const { cleanTarget, lineNumber } = parseLinkTargetAndLine(link.target);
   const targetLine = link.lineNumber ?? lineNumber;
@@ -514,6 +516,22 @@ export async function resolveOutgoingLink(
     }
   }
 
+  // Candidate 4: frontmatter alias (wiki-links only), after every path and name match
+  const aliasTarget = link.type === 'wiki' ? aliasIndex?.get(cleanTarget.toLowerCase()) : undefined;
+  if (aliasTarget) {
+    const relPath = notesRootUri
+      ? path.relative(notesRootUri.fsPath, aliasTarget.fsPath).replace(/\\/g, '/')
+      : path.basename(aliasTarget.fsPath);
+    return {
+      title: link.label || stripExtension(path.basename(aliasTarget.fsPath)),
+      target: link.target,
+      uri: aliasTarget.toString(),
+      relativePath: relPath,
+      exists: true,
+      lineNumber: targetLine,
+    };
+  }
+
   // Fallback: unresolved / non-existent target (placed relative to source note)
   const fallbackUri = relativeCandidate;
   const relPath = notesRootUri
@@ -531,13 +549,39 @@ export async function resolveOutgoingLink(
 }
 
 /**
+ * Checks whether a link would resolve to one of `knownNotes` by path or file name,
+ * i.e. before the alias step of `resolveOutgoingLink`.
+ */
+function resolvesByPathOrName(
+  link: ExtractedLink,
+  sourceNoteUri: vscode.Uri,
+  roots: vscode.Uri[],
+  knownNotes: vscode.Uri[]
+): boolean {
+  const normalized = ensureNoteExtension(link.target.replace(/^\.\//, ''));
+  const known = new Set(knownNotes.map((n) => n.fsPath.toLowerCase()));
+  const wsFolder = vscode.workspace.getWorkspaceFolder(sourceNoteUri);
+  const bases = [path.dirname(sourceNoteUri.fsPath), ...roots.map((r) => r.fsPath)];
+  if (wsFolder) bases.push(wsFolder.uri.fsPath);
+  if (bases.some((base) => known.has(path.resolve(base, normalized).toLowerCase()))) {
+    return true;
+  }
+  const baseLower = stripExtension(path.basename(normalized)).toLowerCase();
+  return knownNotes.some((n) => stripExtension(path.basename(n.fsPath)).toLowerCase() === baseLower);
+}
+
+/**
  * Checks whether an extracted link from `sourceNoteUri` points to `targetNoteUri`.
+ * With `targetAliases`, a wiki-link naming one of them also matches, unless it resolves to
+ * one of `knownNotes` by path or file name first.
  */
 export function doesLinkMatchTarget(
   link: ExtractedLink,
   sourceNoteUri: vscode.Uri,
   targetNoteUri: vscode.Uri,
-  notesRoots?: vscode.Uri | vscode.Uri[]
+  notesRoots?: vscode.Uri | vscode.Uri[],
+  targetAliases?: string[],
+  knownNotes?: vscode.Uri[]
 ): boolean {
   const targetFsPath = targetNoteUri.fsPath;
   const targetBaseName = stripExtension(path.basename(targetFsPath)).toLowerCase();
@@ -577,7 +621,23 @@ export function doesLinkMatchTarget(
     }
   }
 
+  // 4. Wiki-link via a frontmatter alias of the target
+  if (link.type === 'wiki' && targetAliases && targetAliases.length > 0) {
+    const key = link.target.toLowerCase();
+    if (
+      targetAliases.some((alias) => alias.toLowerCase() === key) &&
+      !resolvesByPathOrName(link, sourceNoteUri, roots, knownNotes ?? [])
+    ) {
+      return true;
+    }
+  }
+
   return false;
+}
+
+/** Builds the frontmatter alias index for `notes` (cached by modification time). */
+export async function loadAliasIndex(notes: vscode.Uri[]): Promise<AliasIndex> {
+  return buildAliasIndex(await getNotesMetadata(notes));
 }
 
 /**
@@ -591,6 +651,15 @@ export async function findBacklinks(
   const allNotes = await findMarkdownNotesInRoots(roots);
   const backlinks: NoteLinkItem[] = [];
   const primaryRoot = roots[0];
+
+  let targetAliases: string[] = [];
+  try {
+    targetAliases = parseFrontmatter(Buffer.from(await vscode.workspace.fs.readFile(targetNoteUri)).toString('utf-8')).aliases;
+  } catch {
+    // Target not readable: no alias matching
+  }
+  const matches = (l: ExtractedLink, source: vscode.Uri) =>
+    doesLinkMatchTarget(l, source, targetNoteUri, roots, targetAliases, allNotes);
 
   for (const candidateUri of allNotes) {
     if (candidateUri.fsPath === targetNoteUri.fsPath) {
@@ -610,7 +679,7 @@ export async function findBacklinks(
 
     for (let i = 0; i < lines.length; i++) {
       const lineLinks = extractDocumentLinks(lines[i]);
-      if (lineLinks.some((l) => doesLinkMatchTarget(l, candidateUri, targetNoteUri, roots))) {
+      if (lineLinks.some((l) => matches(l, candidateUri))) {
         matchedLineNumber = i + 1;
         break;
       }
@@ -619,7 +688,7 @@ export async function findBacklinks(
     // Fallback if not detected on a single line (e.g. multiline link syntax)
     if (matchedLineNumber === undefined) {
       const fullDocLinks = extractDocumentLinks(text);
-      if (fullDocLinks.some((l) => doesLinkMatchTarget(l, candidateUri, targetNoteUri, roots))) {
+      if (fullDocLinks.some((l) => matches(l, candidateUri))) {
         matchedLineNumber = 1;
       }
     }
@@ -713,11 +782,12 @@ export async function getNoteLinksData(
     : (companionManager.getNotesRootUri(noteUri) ? [companionManager.getNotesRootUri(noteUri)!] : []);
   const primaryRoot = companionManager.getNotesRootUri(noteUri);
   const workspaceNotes = allRoots.length > 0 ? await findMarkdownNotesInRoots(allRoots) : [];
+  const aliasIndex = await loadAliasIndex(workspaceNotes);
 
   const extracted = extractDocumentLinks(documentText);
   const outgoingLinks: NoteLinkItem[] = [];
   for (const link of extracted) {
-    const resolved = await resolveOutgoingLink(link, noteUri, primaryRoot, workspaceNotes);
+    const resolved = await resolveOutgoingLink(link, noteUri, primaryRoot, workspaceNotes, aliasIndex);
     outgoingLinks.push(resolved);
   }
 

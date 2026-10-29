@@ -4,7 +4,9 @@ import { CompanionManager } from '../companion/companionManager';
 import { isMarkdownNote } from '../companion/companionPaths';
 import {
   findMarkdownNotesInRoot,
+  findMarkdownNotesInRoots,
   getNoteLinksData,
+  loadAliasIndex,
   resolveOutgoingLink,
   findLinkCandidatesAcrossRoots,
   parseLinkTargetAndLine,
@@ -511,16 +513,20 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         }
       } else {
         const workspaceNotes = notesRootUri ? await findMarkdownNotesInRoot(notesRootUri) : [];
+        const aliasIndex = await loadAliasIndex(
+          await findMarkdownNotesInRoots(this.companionManager.getAllNotesRoots(document.uri))
+        );
         const resolved = await resolveOutgoingLink(
           {
             raw: cleanTarget,
             target: cleanTarget,
             label: cleanTarget,
-            type: 'wiki',
+            type: message.linkType === 'markdown' ? 'markdown' : 'wiki',
           },
           document.uri,
           notesRootUri,
-          workspaceNotes
+          workspaceNotes,
+          aliasIndex
         );
         targetUri = vscode.Uri.parse(resolved.uri);
         exists = resolved.exists;
