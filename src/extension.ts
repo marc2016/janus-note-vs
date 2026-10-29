@@ -13,7 +13,7 @@ import { SettingsViewProvider } from './editors/settingsViewProvider';
 import { FolderOverviewViewProvider } from './editors/folderOverviewViewProvider';
 import { NoteGraphViewProvider } from './editors/noteGraphViewProvider';
 import { ExportCompendiumViewProvider } from './editors/exportCompendiumViewProvider';
-import { ChatViewProvider } from './editors/chatViewProvider';
+import { ChatViewProvider, DiagramContext } from './editors/chatViewProvider';
 import { collectMarkdownNotesFromSelection } from './services/noteLinkService';
 import { FolderTasksService } from './services/folderTasksService';
 import { CalendarService } from './services/calendarService';
@@ -175,6 +175,15 @@ export function activate(context: vscode.ExtensionContext) {
     folderTasksService,
     aiModelService
   );
+  const markdownEditor = MarkdownEditorProvider.create(
+    context,
+    companionManager,
+    aiModelService,
+    aiTaskGeneratorService,
+    aiInboxSorterService,
+    (uri) => scheduleSyncSidebarSelection(uri)
+  );
+  chatViewProvider.setDiagramApplier(markdownEditor.provider);
 
   let multiSelectionDebounceTimer: NodeJS.Timeout | undefined;
   const multiSelectionSub = notesTreeView.onDidChangeSelection(async (e) => {
@@ -239,13 +248,9 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     TasksEditorProvider.register(context, (uri) => scheduleSyncSidebarSelection(uri)),
     ChartEditorProvider.register(context, (uri) => scheduleSyncSidebarSelection(uri)),
-    MarkdownEditorProvider.register(
-      context,
-      companionManager,
-      aiModelService,
-      aiTaskGeneratorService,
-      aiInboxSorterService,
-      (uri) => scheduleSyncSidebarSelection(uri)
+    markdownEditor.disposable,
+    vscode.commands.registerCommand('janus.editDiagramWithAi', (diagram: DiagramContext) =>
+      openChatForDiagram(chatViewProvider, diagram)
     )
   );
 
@@ -662,3 +667,9 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {}
+
+/** Attaches a diagram to the Janus chat and shows the chat (from the editor's `KI` button). */
+export async function openChatForDiagram(chat: ChatViewProvider, diagram: DiagramContext): Promise<void> {
+  chat.setDiagramContext(diagram);
+  await vscode.commands.executeCommand('janus.chatView.focus');
+}

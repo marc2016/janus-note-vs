@@ -16,6 +16,7 @@ import {
   mdiFileDocumentOutline,
   mdiCogOutline,
 } from '../../ui/icons';
+import { mdiClose, mdiSitemapOutline } from '@mdi/js';
 
 declare function acquireVsCodeApi(): {
   postMessage: (message: any) => void;
@@ -46,9 +47,39 @@ export interface ChatAction {
     | 'openFolderTasks'
     | 'generateTasksFromNote'
     | 'sortInbox'
-    | 'openSettings';
+    | 'openSettings'
+    | 'applyDiagram'
+    | 'copyDiagramCode';
   uri?: string;
+  proposalId?: string;
 }
+
+export interface DiagramContextInfo {
+  label: string;
+  line: number;
+}
+
+/** Shows which diagram the chat is changing, with a button to remove that context. */
+export const DiagramContextChip: React.FC<{ context: DiagramContextInfo; onRemove: () => void }> = ({
+  context,
+  onRemove,
+}) => (
+  <div className="flex items-center gap-1.5 mb-1.5 px-2 py-1 rounded-md border border-[var(--vscode-focusBorder,#007acc)] bg-[var(--vscode-editorWidget-background,rgba(127,127,127,0.12))] text-[11px]">
+    <MdiIcon path={mdiSitemapOutline} size={13} className="shrink-0 text-[var(--vscode-focusBorder,#007acc)]" />
+    <span className="truncate flex-1" title="Nachrichten ändern dieses Diagramm">
+      {context.label}
+    </span>
+    <button
+      type="button"
+      onClick={onRemove}
+      title="Diagramm-Kontext entfernen"
+      aria-label="Diagramm-Kontext entfernen"
+      className="shrink-0 opacity-70 hover:opacity-100 cursor-pointer"
+    >
+      <MdiIcon path={mdiClose} size={13} />
+    </button>
+  </div>
+);
 
 export interface ChatMessage {
   id: string;
@@ -84,6 +115,7 @@ export const JanusChatApp: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [diagramContext, setDiagramContext] = useState<DiagramContextInfo | null>(null);
 
   useEffect(() => {
     const handleWindowMessage = (event: MessageEvent) => {
@@ -108,6 +140,10 @@ export const JanusChatApp: React.FC = () => {
           break;
         case 'clearHistory':
           setMessages([]);
+          break;
+        case 'diagramContext':
+          setDiagramContext(msg.context ?? null);
+          if (msg.context) inputRef.current?.focus();
           break;
       }
     };
@@ -164,6 +200,7 @@ export const JanusChatApp: React.FC = () => {
     getVsCodeApi()?.postMessage({
       type: action.actionType,
       uri: action.uri,
+      proposalId: action.proposalId,
     });
   };
 
@@ -250,6 +287,12 @@ export const JanusChatApp: React.FC = () => {
 
       {/* Input Box */}
       <div className="p-2 border-t border-[var(--vscode-sideBar-border,rgba(128,128,128,0.2))] bg-[var(--vscode-sideBar-background,#252526)] shrink-0">
+        {diagramContext && (
+          <DiagramContextChip
+            context={diagramContext}
+            onRemove={() => getVsCodeApi()?.postMessage({ type: 'clearDiagramContext' })}
+          />
+        )}
         <div className="relative flex items-center rounded-md border border-[var(--vscode-input-border,rgba(128,128,128,0.35))] bg-[var(--vscode-input-background,#3c3c3c)] focus-within:border-[var(--vscode-focusBorder,#007acc)] transition-colors">
           <textarea
             ref={inputRef}
@@ -257,7 +300,7 @@ export const JanusChatApp: React.FC = () => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Frage stellen oder /befehl eingeben..."
+            placeholder={diagramContext ? "Beschreibe die Änderung am Diagramm..." : "Frage stellen oder /befehl eingeben..."}
             disabled={isLoading}
             className="w-full resize-none bg-transparent px-2.5 py-1.5 text-xs text-[var(--vscode-input-foreground,#cccccc)] placeholder-[var(--vscode-input-placeholderForeground,#858585)] outline-none min-h-[30px] max-h-[100px]"
           />

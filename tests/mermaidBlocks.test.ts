@@ -16,7 +16,7 @@ const doc = '# Notiz\n\n```mermaid\ngraph TD;\n    A-->B;\n```\n\nEnde\n```js\nc
 const blockFrom = doc.indexOf('```mermaid');
 const blockTo = doc.indexOf('```\n\nEnde') + 3;
 
-const renderer = { render: vi.fn(async (code: string) => `<svg>${code}</svg>`) };
+const renderer = { render: vi.fn(async (code: string) => `<svg>${code}</svg>`), validate: vi.fn(async () => {}) };
 
 function create(mode: 'auto' | 'visible' | 'hidden' = 'auto', text = doc) {
   return EditorState.create({ doc: text, extensions: [livePreview(mode), mermaidDiagrams(renderer)] });
@@ -125,7 +125,7 @@ describe('mermaid rendering', () => {
   });
 
   it('shows a syntax error in code view and returns to the diagram once fixed', async () => {
-    const failing = { render: vi.fn(async () => { throw new Error('Parse error on line 1: graph TD; A-->'); }) };
+    const failing = { render: vi.fn(async () => { throw new Error('Parse error on line 1: graph TD; A-->'); }), validate: vi.fn(async () => {}) };
     const result = await renderDiagram('graph TD; A-->', true, failing);
     expect(result).toEqual({ error: 'Parse error on line 1: graph TD; A-->' });
 

@@ -253,3 +253,29 @@ export function findFencedBlocks(text: string): FencedBlock[] {
   }
   return blocks;
 }
+
+/**
+ * Finds a Mermaid block again after edits: the block with the same code (nearest to `line` if
+ * several), otherwise the block whose opening fence is on `line` (1-based).
+ */
+export function locateMermaidBlock(
+  text: string,
+  target: { code: string; line: number }
+): (FencedBlock & { line: number }) | undefined {
+  const lineOf = (offset: number) => text.slice(0, offset).split('\n').length;
+  const blocks = findFencedBlocks(text)
+    .filter((b) => b.info === 'mermaid')
+    .map((b) => ({ ...b, line: lineOf(b.from) }));
+  const sameCode = blocks
+    .filter((b) => b.code.trim() === target.code.trim())
+    .sort((a, b) => Math.abs(a.line - target.line) - Math.abs(b.line - target.line));
+  return sameCode[0] ?? blocks.find((b) => b.line === target.line);
+}
+
+/** The code of the first ```mermaid block in an AI answer, else of the first fenced block without language. */
+export function extractMermaidCode(answer: string): string | undefined {
+  const blocks = findFencedBlocks(answer.replace(/\r\n/g, '\n'));
+  const block = blocks.find((b) => b.info === 'mermaid') ?? blocks.find((b) => b.info === '');
+  const code = block?.code.trim();
+  return code ? code : undefined;
+}

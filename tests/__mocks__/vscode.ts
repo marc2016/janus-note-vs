@@ -250,6 +250,7 @@ export const window = {
   onDidChangeTextEditorSelection: (_listener: (e: any) => any) => ({ dispose: () => {} }),
   createTextEditorDecorationType: (_options: any) => ({ dispose: () => {} }),
   showInformationMessage: async (..._args: any[]): Promise<any> => undefined,
+  setStatusBarMessage: (..._args: any[]) => ({ dispose: () => {} }),
   showWarningMessage: async (..._args: any[]): Promise<any> => undefined,
   showErrorMessage: async (..._args: any[]): Promise<any> => undefined,
   showOpenDialog: async () => undefined,

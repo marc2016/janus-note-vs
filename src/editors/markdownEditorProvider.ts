@@ -21,6 +21,7 @@ import { WebviewSyncTracker } from './webviewSyncTracker';
 import { isDailyNotePath } from '../services/dailyNotePaths';
 import { resolveSortedLinks } from '../services/sortedLinkService';
 import { saveImageNextToNote, validateImage } from '../services/imageAssetService';
+import { findFencedBlocks, locateMermaidBlock } from '../services/markdownScan';
 
 /**
  * Reports the outcome of an inbox sorting run, shared by the `janus.sortInbox` command and the
@@ -73,6 +74,8 @@ export function showInboxSortResult(result: SortInboxResult): void {
   }
 }
 
+export type MermaidReplaceResult = 'ok' | 'changed' | 'missing' | 'invalid';
+
 export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'janus.markdownEditor';
   private readonly aiModelService: AiModelService;
@@ -85,6 +88,10 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   private readonly _activePanels = new Map<string, vscode.WebviewPanel>();
   private readonly _syncTrackers = new WeakMap<vscode.WebviewPanel, WebviewSyncTracker>();
   private readonly _pendingLineReveals = new Map<string, number>();
+  private readonly _readyPanels = new Set<string>();
+  private readonly _readyWaiters = new Map<string, Array<() => void>>();
+  private readonly _pendingMermaidReplacements = new Map<number, (result: MermaidReplaceResult) => void>();
+  private _mermaidRequestId = 0;
 
   public setPendingLineReveal(uri: vscode.Uri, line: number): void {
     this._pendingLineReveals.set(uri.toString(), line);
@@ -139,6 +146,25 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     aiInboxSorterService?: AiInboxSorterService,
     onActiveChange?: (uri: vscode.Uri) => void
   ): vscode.Disposable {
+    return MarkdownEditorProvider.create(
+      context,
+      companionManager,
+      aiModelService,
+      aiTaskGeneratorService,
+      aiInboxSorterService,
+      onActiveChange
+    ).disposable;
+  }
+
+  /** Like `register`, but also returns the provider so other features can reach open editors. */
+  public static create(
+    context: vscode.ExtensionContext,
+    companionManager?: CompanionManager,
+    aiModelService?: AiModelService,
+    aiTaskGeneratorService?: AiTaskGeneratorService,
+    aiInboxSorterService?: AiInboxSorterService,
+    onActiveChange?: (uri: vscode.Uri) => void
+  ): { provider: MarkdownEditorProvider; disposable: vscode.Disposable } {
     const provider = new MarkdownEditorProvider(
       context,
       companionManager,
@@ -149,12 +175,13 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     if (onActiveChange) {
       provider.onDidChangeActiveCustomEditor(onActiveChange);
     }
-    return vscode.window.registerCustomEditorProvider(MarkdownEditorProvider.viewType, provider, {
+    const disposable = vscode.window.registerCustomEditorProvider(MarkdownEditorProvider.viewType, provider, {
       webviewOptions: {
         retainContextWhenHidden: true,
       },
       supportsMultipleEditorsPerDocument: false,
     });
+    return { provider, disposable };
   }
 
   /** Which kind of sorting the footer offers for a note: `inbox.md`, a daily note, or none. */
@@ -168,6 +195,69 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       return 'inbox';
     }
     return isDailyNotePath(relPath) ? 'daily' : undefined;
+  }
+
+  private waitForReadyPanel(uri: vscode.Uri, timeoutMs: number): Promise<vscode.WebviewPanel | undefined> {
+    const key = uri.toString();
+    if (this._readyPanels.has(key)) {
+      return Promise.resolve(this._activePanels.get(key));
+    }
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(undefined), timeoutMs);
+      const waiters = this._readyWaiters.get(key) ?? [];
+      waiters.push(() => {
+        clearTimeout(timer);
+        resolve(this._activePanels.get(key));
+      });
+      this._readyWaiters.set(key, waiters);
+    });
+  }
+
+  /**
+   * Replaces the code of the Mermaid block whose code is `baseCode` with `newCode`, through the
+   * editor webview (one undoable edit). Opens the note if needed. Never overwrites a block that
+   * changed since the proposal was made, and never inserts invalid Mermaid.
+   */
+  async replaceMermaidCode(
+    uri: vscode.Uri,
+    baseCode: string,
+    newCode: string,
+    line = 1,
+    timeoutMs = 10000
+  ): Promise<MermaidReplaceResult> {
+    const document = await vscode.workspace.openTextDocument(uri);
+    const block = locateMermaidBlock(document.getText(), { code: baseCode, line });
+    if (!block || block.code.trim() !== baseCode.trim()) {
+      return 'changed';
+    }
+
+    if (!this._activePanels.has(uri.toString())) {
+      await vscode.commands.executeCommand('vscode.openWith', uri, MarkdownEditorProvider.viewType);
+    }
+    const panel = await this.waitForReadyPanel(uri, timeoutMs);
+    if (!panel) {
+      return 'missing';
+    }
+
+    const requestId = ++this._mermaidRequestId;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this._pendingMermaidReplacements.delete(requestId);
+        resolve('missing');
+      }, timeoutMs);
+      this._pendingMermaidReplacements.set(requestId, (result) => {
+        clearTimeout(timer);
+        resolve(result);
+      });
+      void panel.webview.postMessage({
+        type: 'replaceMermaidCode',
+        requestId,
+        codeFrom: block.codeFrom,
+        codeTo: block.codeTo,
+        baseCode: block.code,
+        newCode,
+      });
+    });
   }
 
   /** `dist` plus all notes roots and workspace folders, so images inside the workspace can load. */
@@ -331,6 +421,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
 
     webviewPanel.onDidDispose(() => {
       this._activePanels.delete(document.uri.toString());
+      this._readyPanels.delete(document.uri.toString());
       this._pendingLineReveals.delete(document.uri.toString());
       viewStateSubscription.dispose();
       changeDocumentSubscription.dispose();
@@ -369,6 +460,10 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     if (message.type === 'ready') {
+      const key = document.uri.toString();
+      this._readyPanels.add(key);
+      this._readyWaiters.get(key)?.forEach((resolve) => resolve());
+      this._readyWaiters.delete(key);
       updateWebview?.();
       void webviewPanel.webview.postMessage({ type: 'sortSource', source: this.getSortSource(document.uri) ?? null });
       if (sendLinksUpdate) {
@@ -493,6 +588,25 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       } else {
         void webviewPanel.webview.postMessage({ type: 'imageRejected', requestId: message.requestId, reason: result.reason });
         void vscode.window.showWarningMessage(result.reason);
+      }
+      return;
+    }
+
+    if (message.type === 'mermaidCodeReplaced' && typeof message.requestId === 'number') {
+      this._pendingMermaidReplacements.get(message.requestId)?.(message.result);
+      this._pendingMermaidReplacements.delete(message.requestId);
+      return;
+    }
+
+    if (message.type === 'editDiagramWithAi' && typeof message.blockFrom === 'number') {
+      const text = document.getText();
+      const block = findFencedBlocks(text).find((b) => b.info === 'mermaid' && b.from === message.blockFrom);
+      if (block) {
+        await vscode.commands.executeCommand('janus.editDiagramWithAi', {
+          noteUri: document.uri.toString(),
+          code: block.code,
+          line: text.slice(0, block.from).split('\n').length,
+        });
       }
       return;
     }

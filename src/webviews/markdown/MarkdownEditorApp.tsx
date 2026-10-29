@@ -24,7 +24,7 @@ import { clickableLinks } from './extensions/clickableLinks';
 import { setSortedLinks, sortedLinks, sortedLinksCompartment, sortedLinksField } from './extensions/sortedLinks';
 import { imagePaste, insertSavedImage, rejectPendingImage } from './extensions/imagePaste';
 import { inlineImages, setImageContext } from './extensions/inlineImages';
-import { createMermaidRenderer, mermaidDiagrams, setMermaidTheme } from './extensions/mermaidBlocks';
+import { applyMermaidReplacement, createMermaidRenderer, mermaidDiagrams, setMermaidTheme } from './extensions/mermaidBlocks';
 import { lineHighlightExtension, setHighlightLine } from './extensions/lineHighlight';
 import {
   MarkdownToolbar,
@@ -239,6 +239,7 @@ export const MarkdownEditorApp: React.FC = () => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const imageContextRef = useRef<string>('');
+  const [mermaidRenderer] = useState(() => createMermaidRenderer(getMermaidScriptUri()));
   const pendingRevealLineRef = useRef<number | null>(null);
   const syncRef = useRef<DocumentSync>(new DocumentSync());
   const hasInitializedRef = useRef<boolean>(false);
@@ -366,7 +367,9 @@ export const MarkdownEditorApp: React.FC = () => {
         sortedLinksCompartment.of([]),
         imagePaste({ postMessage: (message) => getVsCodeApi()?.postMessage(message) }),
         inlineImages(),
-        mermaidDiagrams(createMermaidRenderer(getMermaidScriptUri())),
+        mermaidDiagrams(mermaidRenderer, {
+          onAiEdit: (blockFrom) => getVsCodeApi()?.postMessage({ type: 'editDiagramWithAi', blockFrom }),
+        }),
         lineHighlightExtension(),
         slashCommands({
           onOpenDatePicker: (pos, coords) => datePickerHandlerRef.current(pos, coords),
@@ -481,6 +484,15 @@ export const MarkdownEditorApp: React.FC = () => {
         setIsSortingInbox(Boolean(message.isSorting));
       } else if (message.type === 'sortSource') {
         setSortSource(message.source === 'inbox' || message.source === 'daily' ? message.source : null);
+      } else if (message.type === 'replaceMermaidCode' && typeof message.newCode === 'string') {
+        const view = editorViewRef.current;
+        const reply = (result: string) =>
+          getVsCodeApi()?.postMessage({ type: 'mermaidCodeReplaced', requestId: message.requestId, result });
+        if (!view) {
+          reply('missing');
+        } else {
+          void applyMermaidReplacement(view, message, mermaidRenderer).then(reply, () => reply('missing'));
+        }
       } else if (message.type === 'imageSaved' && typeof message.relPath === 'string') {
         if (editorViewRef.current) insertSavedImage(editorViewRef.current, message.requestId, message.relPath);
       } else if (message.type === 'imageRejected') {

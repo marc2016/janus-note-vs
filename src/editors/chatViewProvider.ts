@@ -5,7 +5,8 @@ import { isMarkdownNote } from '../companion/companionPaths';
 import { JanusSearchService } from '../services/janusSearchService';
 import { FolderTasksService } from '../services/folderTasksService';
 import { AiModelService, AiModelInfo } from '../services/aiModelService';
-import { MarkdownEditorProvider } from './markdownEditorProvider';
+import { MarkdownEditorProvider, MermaidReplaceResult } from './markdownEditorProvider';
+import { extractMermaidCode, locateMermaidBlock } from '../services/markdownScan';
 
 export interface ChatSourceNote {
   title: string;
@@ -22,9 +23,42 @@ export interface ChatAction {
     | 'openFolderTasks'
     | 'generateTasksFromNote'
     | 'sortInbox'
-    | 'openSettings';
+    | 'openSettings'
+    | 'applyDiagram'
+    | 'copyDiagramCode';
   uri?: string;
+  /** Diagram proposal the action refers to (`applyDiagram`, `copyDiagramCode`). */
+  proposalId?: string;
 }
+
+/** The Mermaid diagram the chat is currently changing. */
+export interface DiagramContext {
+  noteUri: string;
+  code: string;
+  /** 1-based line of the opening fence. */
+  line: number;
+}
+
+/** Applies a diagram proposal to the note (implemented by the Janus Markdown Editor). */
+export interface DiagramApplier {
+  replaceMermaidCode(uri: vscode.Uri, baseCode: string, newCode: string, line?: number): Promise<MermaidReplaceResult>;
+}
+
+interface DiagramProposal {
+  noteUri: string;
+  baseCode: string;
+  newCode: string;
+  line: number;
+}
+
+const MAX_DIAGRAM_PROPOSALS = 20;
+
+const DIAGRAM_RESULT_TEXT: Record<MermaidReplaceResult, string> = {
+  ok: 'Diagramm übernommen.',
+  changed: 'Das Diagramm wurde inzwischen geändert – bitte neu anfragen.',
+  invalid: 'Der Vorschlag ist kein gültiges Mermaid-Diagramm.',
+  missing: 'Das Diagramm wurde nicht gefunden.',
+};
 
 export interface ChatMessage {
   id: string;
@@ -39,6 +73,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'janus.chatView';
   private view?: vscode.WebviewView;
   private history: ChatMessage[] = [];
+  private diagramContext?: DiagramContext;
+  private diagramApplier?: DiagramApplier;
+  private readonly diagramProposals = new Map<string, DiagramProposal>();
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -58,6 +95,50 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
       });
       this.context.subscriptions.push(configSub);
+    }
+  }
+
+  public setDiagramApplier(applier: DiagramApplier): void {
+    this.diagramApplier = applier;
+  }
+
+  public getDiagramContext(): DiagramContext | undefined {
+    return this.diagramContext;
+  }
+
+  /** Attaches a diagram to the chat; following messages are change requests for it. */
+  public setDiagramContext(context: DiagramContext): void {
+    this.diagramContext = context;
+    this.sendDiagramContext();
+  }
+
+  public clearDiagramContext(): void {
+    this.diagramContext = undefined;
+    this.sendDiagramContext();
+  }
+
+  private sendDiagramContext(): void {
+    if (!this.view) return;
+    const context = this.diagramContext;
+    void this.view.webview.postMessage({
+      type: 'diagramContext',
+      context: context
+        ? { label: `Diagramm · ${path.basename(vscode.Uri.parse(context.noteUri).fsPath)}, Zeile ${context.line}`, line: context.line }
+        : null,
+    });
+  }
+
+  private addAssistantMessage(text: string, actions?: ChatAction[]): void {
+    const message: ChatMessage = {
+      id: `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      sender: 'assistant',
+      text,
+      timestamp: Date.now(),
+      actions,
+    };
+    this.history.push(message);
+    if (this.view) {
+      void this.view.webview.postMessage({ type: 'addMessage', message });
     }
   }
 
@@ -128,6 +209,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       model,
       history: this.history,
     });
+    this.sendDiagramContext();
   }
 
   public async handleMessage(message: any): Promise<void> {
@@ -149,6 +231,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case 'clearHistory':
         this.clearHistory();
         break;
+
+      case 'clearDiagramContext':
+        this.clearDiagramContext();
+        break;
+
+      case 'applyDiagram':
+        await this.applyDiagramProposal(message.proposalId);
+        break;
+
+      case 'copyDiagramCode': {
+        const proposal = this.diagramProposals.get(message.proposalId);
+        if (proposal) {
+          await vscode.env.clipboard.writeText(proposal.newCode);
+          vscode.window.setStatusBarMessage('Mermaid-Code kopiert', 2500);
+        }
+        break;
+      }
 
       case 'openNote':
         if (message.uri) {
@@ -230,7 +329,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         actions?: ChatAction[];
       };
 
-      if (text === '/help' || text.startsWith('/help ')) {
+      if (this.diagramContext && !text.startsWith('/')) {
+        assistantResult = await this.handleDiagramRequest(text, this.diagramContext);
+      } else if (text === '/help' || text.startsWith('/help ')) {
         assistantResult = this.handleHelpCommand();
       } else if (text === '/search' || text.startsWith('/search ')) {
         const query = text.replace(/^\/search\s*/, '').trim();
@@ -283,6 +384,68 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         void this.view.webview.postMessage({ type: 'setLoading', loading: false });
       }
     }
+  }
+
+  /** Sends the diagram's current code and the request to the AI model and offers the new code. */
+  private async handleDiagramRequest(
+    request: string,
+    context: DiagramContext
+  ): Promise<{ text: string; actions?: ChatAction[] }> {
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(context.noteUri));
+    const block = locateMermaidBlock(document.getText(), context);
+    if (!block) {
+      return { text: 'Das Diagramm wurde in der Notiz nicht mehr gefunden.' };
+    }
+    this.diagramContext = { ...context, code: block.code, line: block.line };
+    this.sendDiagramContext();
+
+    const systemPrompt = [
+      'Du änderst ein bestehendes Mermaid-Diagramm in einer Notiz nach der Anweisung des Nutzers.',
+      'Antworte auf Deutsch mit genau einem kurzen Satz, was du geändert hast, und danach mit genau einem Codeblock ```mermaid, der das vollständige neue Diagramm enthält.',
+      'Behalte alles bei, was die Anweisung nicht betrifft. Wenn die Anweisung unklar ist, stelle eine kurze Rückfrage ohne Codeblock.',
+    ].join('\n');
+    const userPrompt = ['Aktuelles Diagramm:', '```mermaid', block.code, '```', '', `Anweisung: ${request}`].join('\n');
+    const answer = await this.aiModelService.completePrompt(systemPrompt, userPrompt);
+
+    const newCode = extractMermaidCode(answer);
+    if (!newCode) {
+      return { text: answer };
+    }
+    const proposalId = `diagram-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    this.diagramProposals.set(proposalId, {
+      noteUri: context.noteUri,
+      baseCode: block.code,
+      newCode,
+      line: block.line,
+    });
+    while (this.diagramProposals.size > MAX_DIAGRAM_PROPOSALS) {
+      this.diagramProposals.delete(this.diagramProposals.keys().next().value!);
+    }
+    return {
+      text: answer,
+      actions: [
+        { label: 'Übernehmen', actionType: 'applyDiagram', proposalId },
+        { label: 'Code kopieren', actionType: 'copyDiagramCode', proposalId },
+      ],
+    };
+  }
+
+  private async applyDiagramProposal(proposalId: unknown): Promise<void> {
+    const proposal = typeof proposalId === 'string' ? this.diagramProposals.get(proposalId) : undefined;
+    if (!proposal || !this.diagramApplier) {
+      this.addAssistantMessage(DIAGRAM_RESULT_TEXT.missing);
+      return;
+    }
+    const result = await this.diagramApplier.replaceMermaidCode(
+      vscode.Uri.parse(proposal.noteUri),
+      proposal.baseCode,
+      proposal.newCode,
+      proposal.line
+    );
+    if (result === 'ok' && this.diagramContext?.noteUri === proposal.noteUri) {
+      this.diagramContext = { ...this.diagramContext, code: proposal.newCode };
+    }
+    this.addAssistantMessage(DIAGRAM_RESULT_TEXT[result]);
   }
 
   private handleHelpCommand(): {

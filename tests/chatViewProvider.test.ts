@@ -293,5 +293,121 @@ describe('ChatViewProvider', () => {
     expect(provider.getHistory().length).toBe(0);
     expect(mockWebviewView.webview.postMessage).toHaveBeenCalledWith({ type: 'clearHistory' });
   });
+
+  describe('diagram change requests', () => {
+    const noteUri = vscode.Uri.file('/workspace/notes/project-plan.md');
+    let noteText: string;
+    const diagram = (code: string) => `# Plan\n\nText\n\n\`\`\`mermaid\n${code}\n\`\`\`\n`;
+
+    const setup = async () => {
+      noteText = diagram('graph TD; A-->B');
+      (vscode.workspace as any).openTextDocument = vi.fn(async () => ({ uri: noteUri, getText: () => noteText }));
+      const provider = new ChatViewProvider(
+        mockContext,
+        mockCompanionManager,
+        mockSearchService,
+        mockFolderTasksService,
+        mockAiModelService
+      );
+      const applier = { replaceMermaidCode: vi.fn(async () => 'ok' as const) };
+      provider.setDiagramApplier(applier);
+      await provider.resolveWebviewView(mockWebviewView, {} as any, {} as any);
+      provider.setDiagramContext({ noteUri: noteUri.toString(), code: 'graph TD; A-->B', line: 5 });
+      return { provider, applier };
+    };
+    const lastAssistant = (provider: ChatViewProvider) => provider.getHistory().filter((m) => m.sender === 'assistant').at(-1)!;
+
+    it('shows the diagram context chip', async () => {
+      await setup();
+      expect(mockWebviewView.webview.postMessage).toHaveBeenCalledWith({
+        type: 'diagramContext',
+        context: { label: 'Diagramm · project-plan.md, Zeile 5', line: 5 },
+      });
+    });
+
+    it('sends the current code and offers Übernehmen and Code kopieren', async () => {
+      const { provider } = await setup();
+      noteText = diagram('graph TD; A-->B; B-->D');
+      mockAiModelService.completePrompt.mockResolvedValue('Kalender ergänzt.\n\n```mermaid\ngraph TD; A-->B; B-->D; D-->K\n```');
+
+      await provider.processUserMessage('Füge nach Notizen einen Schritt Kalender hinzu');
+
+      const userPrompt = mockAiModelService.completePrompt.mock.calls[0][1];
+      expect(userPrompt).toContain('graph TD; A-->B; B-->D');
+      expect(userPrompt).toContain('Füge nach Notizen einen Schritt Kalender hinzu');
+      expect(lastAssistant(provider).actions?.map((a) => [a.label, a.actionType])).toEqual([
+        ['Übernehmen', 'applyDiagram'],
+        ['Code kopieren', 'copyDiagramCode'],
+      ]);
+    });
+
+    it('applies a proposal, reports it and continues from the applied code', async () => {
+      const { provider, applier } = await setup();
+      mockAiModelService.completePrompt.mockResolvedValue('Ok.\n```mermaid\ngraph TD; A-->C\n```');
+      await provider.processUserMessage('C statt B');
+      const proposalId = lastAssistant(provider).actions![0].proposalId;
+
+      await provider.handleMessage({ type: 'applyDiagram', proposalId });
+      expect(applier.replaceMermaidCode).toHaveBeenCalledWith(
+        expect.objectContaining({ fsPath: noteUri.fsPath }),
+        'graph TD; A-->B',
+        'graph TD; A-->C',
+        5
+      );
+      expect(lastAssistant(provider).text).toBe('Diagramm übernommen.');
+      expect(provider.getDiagramContext()?.code).toBe('graph TD; A-->C');
+
+      noteText = diagram('graph TD; A-->C');
+      mockAiModelService.completePrompt.mockClear();
+      await provider.processUserMessage('Und jetzt von oben nach unten');
+      expect(mockAiModelService.completePrompt.mock.calls[0][1]).toContain('graph TD; A-->C');
+    });
+
+    it('reports why a proposal was not applied', async () => {
+      const { provider, applier } = await setup();
+      mockAiModelService.completePrompt.mockResolvedValue('```mermaid\ngraph TD; A-->C\n```');
+      await provider.processUserMessage('C statt B');
+      applier.replaceMermaidCode.mockResolvedValue('changed' as any);
+
+      await provider.handleMessage({ type: 'applyDiagram', proposalId: lastAssistant(provider).actions![0].proposalId });
+      expect(lastAssistant(provider).text).toBe('Das Diagramm wurde inzwischen geändert – bitte neu anfragen.');
+    });
+
+    it('copies the proposed code', async () => {
+      const { provider } = await setup();
+      const write = vi.spyOn(vscode.env.clipboard, 'writeText').mockResolvedValue();
+      mockAiModelService.completePrompt.mockResolvedValue('```mermaid\ngraph TD; A-->C\n```');
+      await provider.processUserMessage('C statt B');
+
+      await provider.handleMessage({ type: 'copyDiagramCode', proposalId: lastAssistant(provider).actions![1].proposalId });
+      expect(write).toHaveBeenCalledWith('graph TD; A-->C');
+    });
+
+    it('shows answers without code without actions', async () => {
+      const { provider } = await setup();
+      mockAiModelService.completePrompt.mockResolvedValue('Soll der Pfeil von B oder von C ausgehen?');
+      await provider.processUserMessage('Verbinde das mit Kalender');
+      expect(lastAssistant(provider).actions).toBeUndefined();
+    });
+
+    it('does not call the AI model when the diagram is gone', async () => {
+      const { provider } = await setup();
+      noteText = '# Plan\n\nKein Diagramm mehr\n';
+      mockAiModelService.completePrompt.mockClear();
+      await provider.processUserMessage('Mach es bunter');
+      expect(mockAiModelService.completePrompt).not.toHaveBeenCalled();
+      expect(lastAssistant(provider).text).toBe('Das Diagramm wurde in der Notiz nicht mehr gefunden.');
+    });
+
+    it('answers normally after the context is removed', async () => {
+      const { provider } = await setup();
+      await provider.handleMessage({ type: 'clearDiagramContext' });
+      expect(mockWebviewView.webview.postMessage).toHaveBeenCalledWith({ type: 'diagramContext', context: null });
+      mockAiModelService.completePrompt.mockClear();
+      mockAiModelService.completePrompt.mockResolvedValue('Normale Antwort');
+      await provider.processUserMessage('Was steht in meinen Notizen?');
+      expect(mockAiModelService.completePrompt.mock.calls[0][0]).not.toContain('Mermaid-Diagramm');
+    });
+  });
 });
 

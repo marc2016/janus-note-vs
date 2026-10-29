@@ -385,11 +385,16 @@ body.vscode-high-contrast-light .janus-pill-backlink:hover {
   color: var(--vscode-errorForeground, #f14c4c);
 }
 
-.cm-mermaid-toggle {
+.cm-mermaid-toolbar {
   position: absolute;
   top: 6px;
   right: 6px;
   z-index: 1;
+  display: flex;
+  gap: 4px;
+}
+
+.cm-mermaid-toggle {
   display: inline-flex;
   align-items: center;
   gap: 4px;

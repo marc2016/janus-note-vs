@@ -1,6 +1,6 @@
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { EditorState, Extension, Facet, Range, StateEffect, StateField, TransactionSpec } from '@codemirror/state';
-import { mdiCodeTags, mdiSitemapOutline } from '@mdi/js';
+import { mdiCodeTags, mdiCreation, mdiSitemapOutline } from '@mdi/js';
 import { FencedBlock, findFencedBlocks } from '../../../services/markdownScan';
 import { syntaxVisibilityFacet } from './livePreview';
 
@@ -9,7 +9,14 @@ export type MermaidView = 'code' | 'diagram';
 /** Turns Mermaid code into an SVG string; throws with the Mermaid error message on invalid code. */
 export interface MermaidRenderer {
   render(code: string, isDark: boolean): Promise<string>;
+  /** Resolves when the code is valid Mermaid, rejects with the error otherwise. */
+  validate(code: string): Promise<void>;
 }
+
+/** Called with the block start when the user clicks `KI` on a diagram. */
+export const mermaidAiEditFacet = Facet.define<(blockFrom: number) => void, ((blockFrom: number) => void) | undefined>({
+  combine: (values) => values[0],
+});
 
 export const mermaidRendererFacet = Facet.define<MermaidRenderer, MermaidRenderer | undefined>({
   combine: (values) => values[0],
@@ -84,9 +91,13 @@ export function reportRenderResult(view: MermaidDispatchView, pos: number, resul
   }
 }
 
+/** The Mermaid block a widget at `pos` belongs to (widgets sit at the block start or right after its end). */
+export function mermaidBlockAt(state: EditorState, pos: number): FencedBlock | undefined {
+  return state.field(mermaidBlocksField).blocks.find((b) => pos >= b.from && pos <= b.to + 1);
+}
+
 function blockAt(view: EditorView, dom: HTMLElement): FencedBlock | undefined {
-  const pos = view.posAtDOM(dom);
-  return view.state.field(mermaidBlocksField).blocks.find((b) => pos >= b.from && pos <= b.to + 1);
+  return mermaidBlockAt(view.state, view.posAtDOM(dom));
 }
 
 function icon(pathData: string): SVGSVGElement {
@@ -133,7 +144,26 @@ class MermaidWidget extends WidgetType {
       const block = blockAt(editor, wrap);
       if (block) editor.dispatch({ effects: toggleMermaidView.of(block.from) });
     });
-    wrap.appendChild(toggle);
+    const toolbar = document.createElement('div');
+    toolbar.className = 'cm-mermaid-toolbar';
+    const onAiEdit = editor.state.facet(mermaidAiEditFacet);
+    if (onAiEdit) {
+      const ai = document.createElement('button');
+      ai.type = 'button';
+      ai.className = 'cm-mermaid-toggle';
+      ai.title = 'Diagramm mit der KI im Chat ändern';
+      ai.appendChild(icon(mdiCreation));
+      ai.appendChild(document.createTextNode('KI'));
+      ai.addEventListener('mousedown', (e) => e.preventDefault());
+      ai.addEventListener('click', (e) => {
+        e.preventDefault();
+        const block = blockAt(editor, wrap);
+        if (block) onAiEdit(block.from);
+      });
+      toolbar.appendChild(ai);
+    }
+    toolbar.appendChild(toggle);
+    wrap.appendChild(toolbar);
 
     const body = document.createElement('div');
     body.className = 'cm-mermaid-body';
@@ -280,6 +310,42 @@ export const mermaidBlocksField = StateField.define<MermaidState>({
 });
 
 // ---------------------------------------------------------------------------
+// Applying a replacement from the chat
+
+export type MermaidReplaceResult = 'ok' | 'changed' | 'missing' | 'invalid';
+
+/**
+ * Replaces the code of a Mermaid block in one undoable change, but only if the range still holds
+ * `baseCode` (or exactly one block with that code exists) and `newCode` is valid Mermaid.
+ */
+export async function applyMermaidReplacement(
+  view: MermaidDispatchView,
+  request: { codeFrom: number; codeTo: number; baseCode: string; newCode: string },
+  renderer: Pick<MermaidRenderer, 'validate'>
+): Promise<MermaidReplaceResult> {
+  const findRange = () => {
+    const doc = view.state.doc;
+    if (request.codeTo <= doc.length && doc.sliceString(request.codeFrom, request.codeTo) === request.baseCode) {
+      return { from: request.codeFrom, to: request.codeTo };
+    }
+    const matches = mermaidBlocks(doc.toString()).filter((b) => b.code === request.baseCode);
+    return matches.length === 1 ? { from: matches[0].codeFrom, to: matches[0].codeTo } : undefined;
+  };
+
+  if (!findRange()) return mermaidBlocks(view.state.doc.toString()).length === 0 ? 'missing' : 'changed';
+  try {
+    await renderer.validate(request.newCode);
+  } catch {
+    return 'invalid';
+  }
+  // The user may have typed while validating
+  const range = findRange();
+  if (!range) return 'changed';
+  view.dispatch({ changes: { from: range.from, to: range.to, insert: request.newCode }, userEvent: 'input.ai' });
+  return 'ok';
+}
+
+// ---------------------------------------------------------------------------
 // Loading Mermaid
 
 /** Renderer backed by the shipped `mermaid.min.js`, loaded on first use only. */
@@ -321,10 +387,21 @@ export function createMermaidRenderer(scriptUri: string): MermaidRenderer {
       queue = result.catch(() => undefined);
       return result;
     },
+    async validate(code) {
+      const mermaid = await load();
+      await mermaid.parse(code);
+    },
   };
 }
 
 /** Renders ```mermaid blocks as diagrams with a per-block `Code`/`Diagramm` toggle. */
-export function mermaidDiagrams(renderer: MermaidRenderer): Extension {
-  return [mermaidRendererFacet.of(renderer), mermaidBlocksField];
+export function mermaidDiagrams(
+  renderer: MermaidRenderer,
+  options: { onAiEdit?: (blockFrom: number) => void } = {}
+): Extension {
+  return [
+    mermaidRendererFacet.of(renderer),
+    ...(options.onAiEdit ? [mermaidAiEditFacet.of(options.onAiEdit)] : []),
+    mermaidBlocksField,
+  ];
 }
