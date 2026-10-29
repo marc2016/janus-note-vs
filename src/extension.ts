@@ -672,4 +672,5 @@ export function deactivate() {}
 export async function openChatForDiagram(chat: ChatViewProvider, diagram: DiagramContext): Promise<void> {
   chat.setDiagramContext(diagram);
   await vscode.commands.executeCommand('janus.chatView.focus');
+  chat.focusInput();
 }

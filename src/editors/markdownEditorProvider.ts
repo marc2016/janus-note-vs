@@ -599,8 +599,15 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     if (message.type === 'editDiagramWithAi' && typeof message.blockFrom === 'number') {
+      // A block inserted by `/ki-diagramm` reaches the document through the sync a moment later
+      const findBlock = () =>
+        findFencedBlocks(document.getText()).find((b) => b.info === 'mermaid' && b.from === message.blockFrom);
+      let block = findBlock();
+      for (let attempt = 0; !block && attempt < 20; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        block = findBlock();
+      }
       const text = document.getText();
-      const block = findFencedBlocks(text).find((b) => b.info === 'mermaid' && b.from === message.blockFrom);
       if (block) {
         await vscode.commands.executeCommand('janus.editDiagramWithAi', {
           noteUri: document.uri.toString(),

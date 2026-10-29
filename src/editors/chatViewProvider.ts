@@ -6,7 +6,7 @@ import { JanusSearchService } from '../services/janusSearchService';
 import { FolderTasksService } from '../services/folderTasksService';
 import { AiModelService, AiModelInfo } from '../services/aiModelService';
 import { MarkdownEditorProvider, MermaidReplaceResult } from './markdownEditorProvider';
-import { extractMermaidCode, locateMermaidBlock } from '../services/markdownScan';
+import { extractMermaidCode, isMermaidPlaceholder, locateMermaidBlock, sectionAround } from '../services/markdownScan';
 
 export interface ChatSourceNote {
   title: string;
@@ -76,6 +76,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private diagramContext?: DiagramContext;
   private diagramApplier?: DiagramApplier;
   private readonly diagramProposals = new Map<string, DiagramProposal>();
+  private focusInputPending = false;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -112,6 +113,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.sendDiagramContext();
   }
 
+  /** Puts the cursor into the chat input (after the chat view itself was focused). */
+  public focusInput(): void {
+    // A freshly opened chat may not have loaded yet; then the focus is sent with its init state
+    this.focusInputPending = true;
+    void this.view?.webview.postMessage({ type: 'focusInput' });
+  }
+
   public clearDiagramContext(): void {
     this.diagramContext = undefined;
     this.sendDiagramContext();
@@ -123,7 +131,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     void this.view.webview.postMessage({
       type: 'diagramContext',
       context: context
-        ? { label: `Diagramm · ${path.basename(vscode.Uri.parse(context.noteUri).fsPath)}, Zeile ${context.line}`, line: context.line }
+        ? {
+            label: `${isMermaidPlaceholder(context.code) ? 'Neues Diagramm' : 'Diagramm'} · ${path.basename(
+              vscode.Uri.parse(context.noteUri).fsPath
+            )}, Zeile ${context.line}`,
+            line: context.line,
+          }
         : null,
     });
   }
@@ -210,6 +223,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       history: this.history,
     });
     this.sendDiagramContext();
+    if (this.focusInputPending) {
+      this.focusInputPending = false;
+      void this.view.webview.postMessage({ type: 'focusInput' });
+    }
   }
 
   public async handleMessage(message: any): Promise<void> {
@@ -392,19 +409,36 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     context: DiagramContext
   ): Promise<{ text: string; actions?: ChatAction[] }> {
     const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(context.noteUri));
-    const block = locateMermaidBlock(document.getText(), context);
+    const noteText = document.getText();
+    const block = locateMermaidBlock(noteText, context);
     if (!block) {
       return { text: 'Das Diagramm wurde in der Notiz nicht mehr gefunden.' };
     }
     this.diagramContext = { ...context, code: block.code, line: block.line };
     this.sendDiagramContext();
 
-    const systemPrompt = [
-      'Du änderst ein bestehendes Mermaid-Diagramm in einer Notiz nach der Anweisung des Nutzers.',
-      'Antworte auf Deutsch mit genau einem kurzen Satz, was du geändert hast, und danach mit genau einem Codeblock ```mermaid, der das vollständige neue Diagramm enthält.',
-      'Behalte alles bei, was die Anweisung nicht betrifft. Wenn die Anweisung unklar ist, stelle eine kurze Rückfrage ohne Codeblock.',
+    const isNew = isMermaidPlaceholder(block.code);
+    const section = sectionAround(noteText, block.from, block.to);
+    const systemPrompt = (
+      isNew
+        ? [
+            'Du erstellst ein neues Mermaid-Diagramm für eine Notiz nach der Anweisung des Nutzers. Der vorhandene Platzhalter ist nur eine Markierung und soll vollständig ersetzt werden.',
+            'Nutze den mitgeschickten Abschnitt der Notiz als Inhalt, wenn die Anweisung sich darauf bezieht.',
+            'Antworte auf Deutsch mit genau einem kurzen Satz, was das Diagramm zeigt, und danach mit genau einem Codeblock ```mermaid, der das vollständige Diagramm enthält.',
+          ]
+        : [
+            'Du änderst ein bestehendes Mermaid-Diagramm in einer Notiz nach der Anweisung des Nutzers.',
+            'Antworte auf Deutsch mit genau einem kurzen Satz, was du geändert hast, und danach mit genau einem Codeblock ```mermaid, der das vollständige neue Diagramm enthält.',
+            'Behalte alles bei, was die Anweisung nicht betrifft.',
+          ]
+    )
+      .concat('Wenn die Anweisung unklar ist, stelle eine kurze Rückfrage ohne Codeblock.')
+      .join('\n');
+    const userPrompt = [
+      ...(isNew ? [] : ['Aktuelles Diagramm:', '```mermaid', block.code, '```', '']),
+      ...(section ? ['Abschnitt der Notiz:', '"""', section, '"""', ''] : []),
+      `Anweisung: ${request}`,
     ].join('\n');
-    const userPrompt = ['Aktuelles Diagramm:', '```mermaid', block.code, '```', '', `Anweisung: ${request}`].join('\n');
     const answer = await this.aiModelService.completePrompt(systemPrompt, userPrompt);
 
     const newCode = extractMermaidCode(answer);
@@ -444,6 +478,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     );
     if (result === 'ok' && this.diagramContext?.noteUri === proposal.noteUri) {
       this.diagramContext = { ...this.diagramContext, code: proposal.newCode };
+      // A placeholder is now a real diagram: the chip changes from "Neues Diagramm" to "Diagramm"
+      this.sendDiagramContext();
     }
     this.addAssistantMessage(DIAGRAM_RESULT_TEXT[result]);
   }

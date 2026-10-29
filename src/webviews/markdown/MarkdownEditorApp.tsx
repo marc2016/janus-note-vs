@@ -373,6 +373,7 @@ export const MarkdownEditorApp: React.FC = () => {
         lineHighlightExtension(),
         slashCommands({
           onOpenDatePicker: (pos, coords) => datePickerHandlerRef.current(pos, coords),
+          onAiDiagram: (blockFrom) => getVsCodeApi()?.postMessage({ type: 'editDiagramWithAi', blockFrom }),
           linkCompletionSource: createLinkAutocompleteSource(() => linkCandidatesRef.current),
         }),
         EditorView.lineWrapping,

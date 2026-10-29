@@ -143,7 +143,11 @@ export const JanusChatApp: React.FC = () => {
           break;
         case 'diagramContext':
           setDiagramContext(msg.context ?? null);
-          if (msg.context) inputRef.current?.focus();
+          break;
+        case 'focusInput':
+          // The view may still be revealing; focus once it is visible
+          window.focus();
+          setTimeout(() => inputRef.current?.focus(), 50);
           break;
       }
     };

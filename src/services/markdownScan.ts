@@ -279,3 +279,43 @@ export function extractMermaidCode(answer: string): string | undefined {
   const code = block?.code.trim();
   return code ? code : undefined;
 }
+
+/** Code of the block that `/ki-diagramm` inserts; a diagram with this code counts as new. */
+export const MERMAID_PLACEHOLDER = 'graph TD\n    A[Neues Diagramm]';
+
+export function isMermaidPlaceholder(code: string): boolean {
+  return code.trim() === MERMAID_PLACEHOLDER;
+}
+
+/**
+ * The note section around a block: from the nearest heading above it to the next heading of the
+ * same or a higher level, without the block itself and without frontmatter, capped at `maxChars`.
+ */
+export function sectionAround(text: string, blockFrom: number, blockTo: number, maxChars = 4000): string {
+  const normalized = text.replace(/\r\n/g, '\n');
+  const fmMatch = /^﻿?---\n[\s\S]*?\n(?:---|\.\.\.)[ \t]*(?:\n|$)/.exec(normalized);
+  const bodyStart = fmMatch ? fmMatch[0].length : 0;
+
+  // Headings outside fenced code, with their offset and level
+  const code = findCodeRanges(normalized);
+  const headings: Array<{ offset: number; level: number }> = [];
+  const headingRe = /^(#{1,6})\s+\S.*$/gm;
+  let match: RegExpExecArray | null;
+  while ((match = headingRe.exec(normalized)) !== null) {
+    const offset = match.index;
+    if (offset < bodyStart || code.some(([s, e]) => offset >= s && offset < e)) continue;
+    headings.push({ offset, level: match[1].length });
+  }
+
+  const above = headings.filter((h) => h.offset < blockFrom).pop();
+  const start = above ? above.offset : bodyStart;
+  const next = above
+    ? headings.find((h) => h.offset > blockTo && h.level <= above.level)
+    : headings.find((h) => h.offset > blockTo);
+  const end = next ? next.offset : normalized.length;
+
+  const section = `${normalized.slice(start, blockFrom)}${normalized.slice(Math.min(blockTo, end), end)}`
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return section.length > maxChars ? `${section.slice(0, maxChars).trimEnd()}…` : section;
+}

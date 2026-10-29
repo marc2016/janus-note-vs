@@ -317,6 +317,19 @@ describe('ChatViewProvider', () => {
     };
     const lastAssistant = (provider: ChatViewProvider) => provider.getHistory().filter((m) => m.sender === 'assistant').at(-1)!;
 
+    it('focuses the input, also when the chat loads later', async () => {
+      const provider = new ChatViewProvider(
+        mockContext,
+        mockCompanionManager,
+        mockSearchService,
+        mockFolderTasksService,
+        mockAiModelService
+      );
+      provider.focusInput();
+      await provider.resolveWebviewView(mockWebviewView, {} as any, {} as any);
+      expect(mockWebviewView.webview.postMessage).toHaveBeenCalledWith({ type: 'focusInput' });
+    });
+
     it('shows the diagram context chip', async () => {
       await setup();
       expect(mockWebviewView.webview.postMessage).toHaveBeenCalledWith({
@@ -399,6 +412,57 @@ describe('ChatViewProvider', () => {
       expect(lastAssistant(provider).text).toBe('Das Diagramm wurde in der Notiz nicht mehr gefunden.');
     });
 
+    it('sends the note section around the diagram without the diagram itself', async () => {
+      const { provider } = await setup();
+      noteText =
+        '# Plan\n\n## Inbox-Workflow\nGedanken landen in der Inbox und werden einsortiert\n\n```mermaid\ngraph TD; A-->B\n```\n\n## Tagesnotizen\nAnderes\n';
+      mockAiModelService.completePrompt.mockResolvedValue('Ok.');
+      await provider.processUserMessage('Ergänze den Text');
+
+      const userPrompt = mockAiModelService.completePrompt.mock.calls[0][1];
+      expect(userPrompt).toContain('Abschnitt der Notiz:');
+      expect(userPrompt).toContain('Gedanken landen in der Inbox und werden einsortiert');
+      expect(userPrompt).not.toContain('Tagesnotizen');
+      expect(userPrompt.split('graph TD; A-->B').length - 1).toBe(1);
+    });
+
+    it('creates a new diagram for the placeholder and relabels the chip after applying', async () => {
+      const placeholder = 'graph TD\n    A[Neues Diagramm]';
+      noteText = `## Ablauf\nErst sammeln, dann sortieren.\n\n\`\`\`mermaid\n${placeholder}\n\`\`\`\n`;
+      (vscode.workspace as any).openTextDocument = vi.fn(async () => ({ uri: noteUri, getText: () => noteText }));
+      const provider = new ChatViewProvider(
+        mockContext,
+        mockCompanionManager,
+        mockSearchService,
+        mockFolderTasksService,
+        mockAiModelService
+      );
+      const applier = { replaceMermaidCode: vi.fn(async () => 'ok' as const) };
+      provider.setDiagramApplier(applier);
+      await provider.resolveWebviewView(mockWebviewView, {} as any, {} as any);
+      provider.setDiagramContext({ noteUri: noteUri.toString(), code: placeholder, line: 4 });
+      expect(mockWebviewView.webview.postMessage).toHaveBeenCalledWith({
+        type: 'diagramContext',
+        context: { label: 'Neues Diagramm · project-plan.md, Zeile 4', line: 4 },
+      });
+
+      mockAiModelService.completePrompt.mockResolvedValue('Ablauf.\n```mermaid\ngraph TD; Sammeln-->Sortieren\n```');
+      await provider.processUserMessage('Mach daraus ein Ablaufdiagramm');
+      const [systemPrompt, userPrompt] = mockAiModelService.completePrompt.mock.calls[0];
+      expect(systemPrompt).toContain('Du erstellst ein neues Mermaid-Diagramm');
+      expect(userPrompt).toContain('Erst sammeln, dann sortieren.');
+      expect(userPrompt).not.toContain('Neues Diagramm');
+
+      await provider.handleMessage({ type: 'applyDiagram', proposalId: lastAssistant(provider).actions![0].proposalId });
+      expect(mockWebviewView.webview.postMessage).toHaveBeenLastCalledWith(
+        expect.objectContaining({ type: 'addMessage' })
+      );
+      expect(mockWebviewView.webview.postMessage).toHaveBeenCalledWith({
+        type: 'diagramContext',
+        context: { label: 'Diagramm · project-plan.md, Zeile 4', line: 4 },
+      });
+    });
+
     it('answers normally after the context is removed', async () => {
       const { provider } = await setup();
       await provider.handleMessage({ type: 'clearDiagramContext' });
@@ -410,4 +474,3 @@ describe('ChatViewProvider', () => {
     });
   });
 });
-

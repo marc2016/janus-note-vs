@@ -8,10 +8,13 @@ import {
 import { Extension } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { formatIsoDate } from '../lib/datePickerUtils';
+import { MERMAID_PLACEHOLDER } from '../../../services/markdownScan';
 
 export interface SlashCommandsOptions {
   onOpenDatePicker?: (pos: number, coords: { top: number; left: number } | null) => void;
   linkCompletionSource?: (context: CompletionContext) => CompletionResult | null;
+  /** Called with the start of the inserted placeholder block after `/ki-diagramm`. */
+  onAiDiagram?: (blockFrom: number) => void;
 }
 
 export function getSlashCommands(options?: SlashCommandsOptions): Completion[] {
@@ -161,6 +164,22 @@ export function getSlashCommands(options?: SlashCommandsOptions): Completion[] {
       detail: 'Mermaid flowchart block',
       type: 'keyword',
       apply: '```mermaid\ngraph TD;\n    A-->B;\n```\n',
+    },
+    {
+      label: '/ki-diagramm',
+      detail: 'Diagramm mit KI erstellen',
+      type: 'keyword',
+      apply: (view: EditorView, _completion: Completion, from: number, to: number) => {
+        const line = view.state.doc.lineAt(from);
+        const prefix = view.state.sliceDoc(line.from, from).trim() ? '\n' : '';
+        const block = `\`\`\`mermaid\n${MERMAID_PLACEHOLDER}\n\`\`\`\n`;
+        const insert = `${prefix}${block}`;
+        view.dispatch({
+          changes: { from, to, insert },
+          selection: { anchor: from + insert.length },
+        });
+        options?.onAiDiagram?.(from + prefix.length);
+      },
     },
     {
       label: '/code',

@@ -127,12 +127,34 @@ import { openChatForDiagram } from '../src/extension';
 describe('janus.editDiagramWithAi', () => {
   it('attaches the diagram to the chat and focuses it', async () => {
     const exec = vi.spyOn(vscode.commands, 'executeCommand').mockResolvedValue(undefined);
-    const chat = { setDiagramContext: vi.fn() } as any;
+    const chat = { setDiagramContext: vi.fn(), focusInput: vi.fn() } as any;
     const diagram = { noteUri: 'file:///workspace/project-plan.md', code: 'graph TD; A-->B', line: 5 };
 
     await openChatForDiagram(chat, diagram);
 
     expect(chat.setDiagramContext).toHaveBeenCalledWith(diagram);
     expect(exec).toHaveBeenCalledWith('janus.chatView.focus');
+    expect(chat.focusInput).toHaveBeenCalled();
+    expect(chat.focusInput.mock.invocationCallOrder[0]).toBeGreaterThan(exec.mock.invocationCallOrder[0]);
+  });
+});
+
+describe('editDiagramWithAi for a freshly inserted block', () => {
+  it('waits until the block has reached the document', async () => {
+    const exec = vi.spyOn(vscode.commands, 'executeCommand').mockResolvedValue(undefined);
+    const provider = new MarkdownEditorProvider({ extensionUri: vscode.Uri.file('/ext') } as any);
+    let text = '# Plan\n\n';
+    const document = { uri: vscode.Uri.file('/workspace/plan.md'), getText: () => text } as any;
+    setTimeout(() => {
+      text = '# Plan\n\n```mermaid\ngraph TD\n    A[Neues Diagramm]\n```\n';
+    }, 120);
+
+    await provider.handleWebviewMessage({ type: 'editDiagramWithAi', blockFrom: 8 }, document, { webview: { postMessage: vi.fn() } } as any);
+
+    expect(exec).toHaveBeenCalledWith('janus.editDiagramWithAi', {
+      noteUri: document.uri.toString(),
+      code: 'graph TD\n    A[Neues Diagramm]',
+      line: 3,
+    });
   });
 });
