@@ -22,6 +22,8 @@ import { styledLists } from './extensions/styledLists';
 import { styledTables } from './extensions/styledTables';
 import { clickableLinks } from './extensions/clickableLinks';
 import { setSortedLinks, sortedLinks, sortedLinksCompartment, sortedLinksField } from './extensions/sortedLinks';
+import { imagePaste, insertSavedImage, rejectPendingImage } from './extensions/imagePaste';
+import { inlineImages, setImageContext } from './extensions/inlineImages';
 import { lineHighlightExtension, setHighlightLine } from './extensions/lineHighlight';
 import {
   MarkdownToolbar,
@@ -214,6 +216,7 @@ export const MarkdownEditorApp: React.FC = () => {
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
+  const imageContextRef = useRef<string>('');
   const pendingRevealLineRef = useRef<number | null>(null);
   const syncRef = useRef<DocumentSync>(new DocumentSync());
   const hasInitializedRef = useRef<boolean>(false);
@@ -339,6 +342,8 @@ export const MarkdownEditorApp: React.FC = () => {
         styledTables(),
         sortedLinksField,
         sortedLinksCompartment.of([]),
+        imagePaste({ postMessage: (message) => getVsCodeApi()?.postMessage(message) }),
+        inlineImages(),
         lineHighlightExtension(),
         slashCommands({
           onOpenDatePicker: (pos, coords) => datePickerHandlerRef.current(pos, coords),
@@ -414,6 +419,13 @@ export const MarkdownEditorApp: React.FC = () => {
       if (message.type === 'init' || message.type === 'update') {
         const newContent = typeof message.content === 'string' ? message.content : '';
         const view = editorViewRef.current;
+        if (view && typeof message.imageBaseUri === 'string') {
+          const context = { imageBaseUri: message.imageBaseUri, workspaceRoots: message.workspaceRoots ?? [] };
+          if (JSON.stringify(context) !== imageContextRef.current) {
+            imageContextRef.current = JSON.stringify(context);
+            view.dispatch({ effects: setImageContext.of(context) });
+          }
+        }
         if (view) {
           const sync = syncRef.current;
           const remoteAnnotations = [Transaction.remote.of(true), Transaction.addToHistory.of(false)];
@@ -446,6 +458,10 @@ export const MarkdownEditorApp: React.FC = () => {
         setIsSortingInbox(Boolean(message.isSorting));
       } else if (message.type === 'sortSource') {
         setSortSource(message.source === 'inbox' || message.source === 'daily' ? message.source : null);
+      } else if (message.type === 'imageSaved' && typeof message.relPath === 'string') {
+        if (editorViewRef.current) insertSavedImage(editorViewRef.current, message.requestId, message.relPath);
+      } else if (message.type === 'imageRejected') {
+        if (editorViewRef.current) rejectPendingImage(editorViewRef.current, message.requestId);
       } else if (message.type === 'sortedLinks' && Array.isArray(message.links)) {
         editorViewRef.current?.dispatch({ effects: setSortedLinks.of(message.links) });
       } else if (message.type === 'revealLine') {

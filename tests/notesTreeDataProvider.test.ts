@@ -10,6 +10,8 @@ import {
   FolderTreeItem,
   NoteTreeItem,
   CompanionTreeItem,
+  AssetsFolderTreeItem,
+  ImageTreeItem,
 } from '../src/ui/notesTreeDataProvider';
 import { getActiveNoteUri } from '../src/extension';
 import { __setConfigStore } from './__mocks__/vscode';
@@ -183,6 +185,43 @@ describe('NotesTreeDataProvider', () => {
     expect(tasksChild.description).toBe('(3 offen)');
     expect(tasksChild.command?.command).toBe('janus.openFolderTasks');
     expect(tasksChild.command?.arguments).toEqual([folderUri]);
+  });
+
+  it('shows assets folders with their images and without folder tasks', async () => {
+    const folderUri = vscode.Uri.file('/workspace/project/notes/meetings');
+    const assetsUri = vscode.Uri.file('/workspace/project/notes/meetings/assets');
+    vi.spyOn(vscode.workspace.fs, 'readDirectory').mockImplementation(async (uri) => {
+      if (uri.fsPath === folderUri.fsPath) {
+        return [
+          ['assets', vscode.FileType.Directory],
+          ['kickoff.md', vscode.FileType.File],
+        ];
+      }
+      if (uri.fsPath === assetsUri.fsPath) {
+        return [
+          ['skizze.svg', vscode.FileType.File],
+          ['Whiteboard-Foto.jpg', vscode.FileType.File],
+          ['notiz.txt', vscode.FileType.File],
+        ];
+      }
+      return [];
+    });
+    vi.spyOn(vscode.workspace.fs, 'stat').mockRejectedValue(new Error('Not found'));
+
+    const children = await provider.getChildren(new FolderTreeItem(folderUri));
+    const assets = children.find((c) => c instanceof AssetsFolderTreeItem) as AssetsFolderTreeItem;
+    expect(assets).toBeDefined();
+    expect(assets.contextValue).toBe('janusAssetsFolder');
+
+    const images = await provider.getChildren(assets);
+    expect(images.every((i) => i instanceof ImageTreeItem)).toBe(true);
+    expect(images.map((i) => i.label)).toEqual(['skizze.svg', 'Whiteboard-Foto.jpg']);
+    expect(images[0].command).toEqual({
+      command: 'vscode.open',
+      title: 'Bild öffnen',
+      arguments: [vscode.Uri.joinPath(assetsUri, 'skizze.svg')],
+    });
+    expect(images.some((i) => i instanceof FolderTasksTreeItem)).toBe(false);
   });
 
   it('resolves diagram companion children for a NoteTreeItem (tasks are strictly per folder)', async () => {

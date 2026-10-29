@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { CompanionManager, CompanionStatus } from '../companion/companionManager';
 import { isMarkdownNote } from '../companion/companionPaths';
+import { IMAGE_ASSETS_FOLDER } from '../services/imageAssetService';
 import { TasksEditorProvider } from '../editors/tasksEditorProvider';
 import { ChartEditorProvider } from '../editors/chartEditorProvider';
 import { MarkdownEditorProvider } from '../editors/markdownEditorProvider';
@@ -20,7 +21,10 @@ export type NotesTreeItem =
   | FolderTreeItem
   | NoteTreeItem
   | CompanionTreeItem
-  | LinkedFolderTreeItem;
+  | LinkedFolderTreeItem
+  | ImageTreeItem;
+
+const IMAGE_FILE_RE = /\.(png|jpe?g|gif|webp|svg)$/i;
 
 export class CalendarTreeItem extends vscode.TreeItem {
   public readonly uri: vscode.Uri;
@@ -129,6 +133,27 @@ export class FolderTreeItem extends vscode.TreeItem {
     this.contextValue = 'janusFolder';
     this.iconPath = new vscode.ThemeIcon('folder');
     this.tooltip = uri.fsPath;
+  }
+}
+
+/** An `assets` folder next to notes: lists its images and has no folder tasks. */
+export class AssetsFolderTreeItem extends FolderTreeItem {
+  constructor(uri: vscode.Uri, isRootChild: boolean = false, isPureFolder: boolean = false) {
+    super(uri, isRootChild, isPureFolder);
+    this.contextValue = 'janusAssetsFolder';
+    this.iconPath = new vscode.ThemeIcon('file-media');
+    this.tooltip = `Bilder: ${uri.fsPath}`;
+  }
+}
+
+export class ImageTreeItem extends vscode.TreeItem {
+  constructor(public readonly uri: vscode.Uri) {
+    super(path.basename(uri.fsPath), vscode.TreeItemCollapsibleState.None);
+    this.resourceUri = uri;
+    this.id = `image:${uri.toString()}`;
+    this.contextValue = 'janusImage';
+    this.tooltip = uri.fsPath;
+    this.command = { command: 'vscode.open', title: 'Bild öffnen', arguments: [uri] };
   }
 }
 
@@ -401,6 +426,10 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
       return this.readDirectoryItems(element.uri, false, true);
     }
 
+    if (element instanceof AssetsFolderTreeItem) {
+      return this.readImageItems(element.uri);
+    }
+
     if (element instanceof FolderTreeItem) {
       return this.readDirectoryItems(element.uri, true, Boolean(element.isPureFolder));
     }
@@ -411,6 +440,18 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
 
     // Companion or task items have no children
     return [];
+  }
+
+  private async readImageItems(dirUri: vscode.Uri): Promise<NotesTreeItem[]> {
+    try {
+      const entries = await vscode.workspace.fs.readDirectory(dirUri);
+      return entries
+        .filter(([name, type]) => type === vscode.FileType.File && IMAGE_FILE_RE.test(name))
+        .map(([name]) => new ImageTreeItem(vscode.Uri.joinPath(dirUri, name)))
+        .sort((a, b) => (a.label as string).localeCompare(b.label as string));
+    } catch {
+      return [];
+    }
   }
 
   private async readDirectoryItems(
@@ -431,7 +472,9 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
 
         const entryUri = vscode.Uri.joinPath(dirUri, name);
 
-        if (fileType === vscode.FileType.Directory) {
+        if (fileType === vscode.FileType.Directory && name === IMAGE_ASSETS_FOLDER) {
+          folders.push(new AssetsFolderTreeItem(entryUri, false, isPureFolder));
+        } else if (fileType === vscode.FileType.Directory) {
           folders.push(new FolderTreeItem(entryUri, !isSubfolder && !isPureFolder, isPureFolder));
         } else if (fileType === vscode.FileType.File && name === 'tasks.json' && !isPureFolder) {
           hasTasksJson = true;

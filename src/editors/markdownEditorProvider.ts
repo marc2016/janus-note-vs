@@ -20,6 +20,7 @@ import { ChartEditorProvider } from './chartEditorProvider';
 import { WebviewSyncTracker } from './webviewSyncTracker';
 import { isDailyNotePath } from '../services/dailyNotePaths';
 import { resolveSortedLinks } from '../services/sortedLinkService';
+import { saveImageNextToNote, validateImage } from '../services/imageAssetService';
 
 /**
  * Reports the outcome of an inbox sorting run, shared by the `janus.sortInbox` command and the
@@ -169,6 +170,33 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     return isDailyNotePath(relPath) ? 'daily' : undefined;
   }
 
+  /** `dist` plus all notes roots and workspace folders, so images inside the workspace can load. */
+  getLocalResourceRoots(noteUri: vscode.Uri): vscode.Uri[] {
+    const roots = [vscode.Uri.joinPath(this.context.extensionUri, 'dist')];
+    const notesRoots = this.companionManager.getAllNotesRoots?.(noteUri) ?? [];
+    const workspaceRoots = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri);
+    for (const uri of [...notesRoots, ...workspaceRoots]) {
+      if (!roots.some((r) => r.toString() === uri.toString())) {
+        roots.push(uri);
+      }
+    }
+    return roots;
+  }
+
+  /** Base URIs the webview needs to resolve image paths of this note. */
+  getImageContext(
+    webview: vscode.Webview,
+    noteUri: vscode.Uri
+  ): { imageBaseUri: string; workspaceRoots: Array<{ fsPath: string; webviewUri: string }> } {
+    return {
+      imageBaseUri: webview.asWebviewUri(vscode.Uri.file(path.dirname(noteUri.fsPath))).toString(),
+      workspaceRoots: (vscode.workspace.workspaceFolders ?? []).map((f) => ({
+        fsPath: f.uri.fsPath,
+        webviewUri: webview.asWebviewUri(f.uri).toString(),
+      })),
+    };
+  }
+
   /** Sends display data for the `-> [[target]]` lines of a daily note to the webview. */
   async sendSortedLinks(document: vscode.TextDocument, webviewPanel: vscode.WebviewPanel): Promise<void> {
     const notesRoot = this.companionManager.getNotesRootUri(document.uri);
@@ -186,9 +214,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   ): Promise<void> {
     webviewPanel.webview.options = {
       enableScripts: true,
-      localResourceRoots: [
-        vscode.Uri.joinPath(this.context.extensionUri, 'dist'),
-      ],
+      localResourceRoots: this.getLocalResourceRoots(document.uri),
     };
 
     this._activePanels.set(document.uri.toString(), webviewPanel);
@@ -201,6 +227,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         void webviewPanel.webview.postMessage({
           type: 'init',
           content: text,
+          ...this.getImageContext(webviewPanel.webview, document.uri),
         });
       } catch (err: any) {
         void webviewPanel.webview.postMessage({
@@ -445,6 +472,27 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
               void vscode.commands.executeCommand('janus.openSettings');
             }
           });
+      }
+      return;
+    }
+
+    if (message.type === 'saveImage' && typeof message.mime === 'string') {
+      const fileName = typeof message.fileName === 'string' ? message.fileName : undefined;
+      // Without data the webview already found the image unacceptable (or could not read it)
+      const result =
+        typeof message.data === 'string'
+          ? await saveImageNextToNote(document.uri, {
+              data: Buffer.from(message.data, 'base64'),
+              mime: message.mime,
+              fileName,
+            }).catch((err: any) => ({ reason: `Das Bild konnte nicht gespeichert werden: ${err?.message || String(err)}` }))
+          : { reason: validateImage(message.mime, Number(message.size) || 0, fileName) ?? 'Das Bild konnte nicht gelesen werden.' };
+      if ('relPath' in result) {
+        void webviewPanel.webview.postMessage({ type: 'imageSaved', requestId: message.requestId, relPath: result.relPath });
+        void vscode.commands.executeCommand('janus.refreshNotesTree');
+      } else {
+        void webviewPanel.webview.postMessage({ type: 'imageRejected', requestId: message.requestId, reason: result.reason });
+        void vscode.window.showWarningMessage(result.reason);
       }
       return;
     }

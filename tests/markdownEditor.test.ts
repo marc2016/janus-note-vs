@@ -543,6 +543,92 @@ describe('CodeMirror Markdown Editor & Zero-Diff Verification', () => {
       expect(executeCommandSpy).toHaveBeenCalledWith('janus.exportNoteToPdf', mockDoc.uri);
     });
   });
+
+  describe('Pasting and dropping images (host)', () => {
+    const mockContext = {
+      extensionUri: vscode.Uri.file('/ext'),
+      secrets: { get: vi.fn(), store: vi.fn(), delete: vi.fn() },
+    } as any;
+
+    const setup = () => {
+      vi.restoreAllMocks();
+      (vscode.workspace as any).workspaceFolders = [{ uri: vscode.Uri.file('/workspace'), name: 'workspace', index: 0 }];
+      const written = new Map<string, Uint8Array>();
+      vi.spyOn(vscode.workspace.fs, 'stat').mockImplementation(async (uri: any) => {
+        if (!written.has(uri.fsPath)) throw new Error('Not found');
+        return {} as any;
+      });
+      vi.spyOn(vscode.workspace.fs, 'createDirectory').mockResolvedValue();
+      vi.spyOn(vscode.workspace.fs, 'writeFile').mockImplementation(async (uri: any, data: Uint8Array) => {
+        written.set(uri.fsPath, data);
+      });
+      const provider = new MarkdownEditorProvider(mockContext);
+      const panel = { webview: { postMessage: vi.fn() } } as any;
+      const doc = { uri: vscode.Uri.file('/workspace/meetings/kickoff.md'), getText: () => '' } as any;
+      return { provider, panel, doc, written };
+    };
+
+    it('saves a pasted image and replies with its relative path', async () => {
+      const { provider, panel, doc, written } = setup();
+      await provider.handleWebviewMessage(
+        { type: 'saveImage', requestId: 1, mime: 'image/png', data: Buffer.from([1, 2]).toString('base64') },
+        doc,
+        panel
+      );
+      const reply = panel.webview.postMessage.mock.calls[0][0];
+      expect(reply).toMatchObject({ type: 'imageSaved', requestId: 1 });
+      expect(reply.relPath).toMatch(/^assets\/kickoff-\d{8}-\d{6}\.png$/);
+      expect([...written.keys()]).toEqual([`/workspace/meetings/${reply.relPath}`]);
+    });
+
+    it('saves dropped images under their own names', async () => {
+      const { provider, panel, doc, written } = setup();
+      const data = Buffer.from([1]).toString('base64');
+      await provider.handleWebviewMessage({ type: 'saveImage', requestId: 1, mime: 'image/jpeg', fileName: 'Whiteboard Foto.jpg', data }, doc, panel);
+      await provider.handleWebviewMessage({ type: 'saveImage', requestId: 2, mime: 'image/svg+xml', fileName: 'skizze.svg', data }, doc, panel);
+      expect(panel.webview.postMessage.mock.calls.map((c: any) => c[0].relPath)).toEqual([
+        'assets/Whiteboard-Foto.jpg',
+        'assets/skizze.svg',
+      ]);
+      expect(written.has('/workspace/meetings/assets/skizze.svg')).toBe(true);
+    });
+
+    it('rejects unsupported images with a message and writes nothing', async () => {
+      const { provider, panel, doc, written } = setup();
+      const warn = vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(undefined);
+      await provider.handleWebviewMessage(
+        { type: 'saveImage', requestId: 3, mime: 'image/heic', fileName: 'foto.heic', data: 'AA==' },
+        doc,
+        panel
+      );
+      expect(panel.webview.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'imageRejected', requestId: 3 }));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('foto.heic'));
+      expect(written.size).toBe(0);
+    });
+
+    it('rejects an image the webview did not read because it is too large', async () => {
+      const { provider, panel, doc, written } = setup();
+      const warn = vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(undefined);
+      await provider.handleWebviewMessage(
+        { type: 'saveImage', requestId: 4, mime: 'image/png', fileName: 'gross.png', size: 25 * 1024 * 1024 },
+        doc,
+        panel
+      );
+      expect(panel.webview.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'imageRejected', requestId: 4 }));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('20 MB'));
+      expect(written.size).toBe(0);
+    });
+
+    it('lets the webview load images from notes roots and workspace folders', () => {
+      const { provider } = setup();
+      const roots = provider.getLocalResourceRoots(vscode.Uri.file('/workspace/meetings/kickoff.md')).map((u) => u.fsPath);
+      expect(roots[0]).toBe('/ext/dist');
+      expect(roots).toContain('/workspace');
+
+      const webview = { asWebviewUri: (uri: vscode.Uri) => vscode.Uri.parse(`webview://${uri.fsPath}`) } as any;
+      const context = provider.getImageContext(webview, vscode.Uri.file('/workspace/meetings/kickoff.md'));
+      expect(context.imageBaseUri).toContain('/workspace/meetings');
+      expect(context.workspaceRoots).toEqual([{ fsPath: '/workspace', webviewUri: expect.stringContaining('/workspace') }]);
+    });
+  });
 });
-
-
