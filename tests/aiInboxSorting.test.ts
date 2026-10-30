@@ -511,6 +511,34 @@ describe('aiInboxSorting', () => {
       expect(result.remainingBlockCount).toBe(2);
     });
 
+    it('rewrites relative paths in appended and created notes, but not in the inbox', async () => {
+      __setConfigStore({ 'janus.ai.inboxSortConfirm': false });
+      fsMap.set(
+        '/workspace/inbox.md',
+        '# Inbox\n\nSiehe [Plan](knowledge/plan.md) für Details.\n\n![Skizze](assets/skizze.png) neu\n\nBleibt ![Skizze](assets/skizze.png)\n'
+      );
+      fsMap.set('/workspace/knowledge/plan.md', '# Plan');
+      fsMap.set('/workspace/assets/skizze.png', 'png');
+      fsMap.set('/workspace/projects/app/launch.md', '# Launch');
+      const aiModelService = new AiModelService(mockContext);
+      vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue(
+        JSON.stringify({
+          items: [
+            { block: 1, title: 'Plan', action: 'append', targetRelativePath: 'projects/app/launch.md' },
+            { block: 2, title: 'Skizze', action: 'create', targetRelativePath: 'meetings/skizze.md' },
+          ],
+        })
+      );
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+      await sorter.sortInbox(vscode.Uri.file('/workspace/inbox.md'));
+
+      expect(fsMap.get('/workspace/projects/app/launch.md')).toContain(
+        '\n\nSiehe [Plan](../../knowledge/plan.md) für Details.\n'
+      );
+      expect(fsMap.get('/workspace/meetings/skizze.md')).toBe('# skizze\n\n![Skizze](../assets/skizze.png) neu\n');
+      expect(fsMap.get('/workspace/inbox.md')).toBe('# Inbox\n\nBleibt ![Skizze](assets/skizze.png)\n');
+    });
+
     it('lists unassigned blocks as a separator in the preview', async () => {
       fsMap.set('/workspace/inbox.md', '# Inbox\n\nEins.\n\nZwei.\n');
       const aiModelService = new AiModelService(mockContext);

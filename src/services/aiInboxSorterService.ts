@@ -3,7 +3,7 @@ import * as path from 'path';
 import { z } from 'zod';
 import { AiModelService } from './aiModelService';
 import { CompanionManager } from '../companion/companionManager';
-import { findMarkdownNotesInRoot } from './noteLinkService';
+import { findLinkOccurrences, findMarkdownNotesInRoot } from './noteLinkService';
 import {
   DEFAULT_ROOT_FOLDERS,
   DefaultRootFolder,
@@ -462,6 +462,37 @@ export function formatAppendedInboxSection(
 }
 
 /**
+ * Rewrites relative Markdown link and image paths in a block moved from `fromDir` to `toDir`, so
+ * they keep pointing to the same file. Only paths that resolve to an existing file from `fromDir`
+ * change; wiki-links, external, absolute and unresolved targets and links in code stay as they are.
+ */
+export async function rewriteRelativePaths(
+  text: string,
+  fromDir: string,
+  toDir: string,
+  exists: (fsPath: string) => Promise<boolean>
+): Promise<string> {
+  if (path.resolve(fromDir) === path.resolve(toDir)) return text;
+  const rewrites: Array<{ start: number; end: number; path: string }> = [];
+  for (const occurrence of findLinkOccurrences(text, { includeImages: true })) {
+    if (occurrence.type === 'wiki') continue;
+    const linkPath = occurrence.path;
+    if (!linkPath || linkPath.startsWith('/') || path.isAbsolute(linkPath)) continue;
+    const resolved = path.resolve(fromDir, linkPath);
+    if (!(await exists(resolved))) continue;
+    const rel = path.relative(toDir, resolved).split(path.sep).join('/');
+    if (rel !== linkPath) {
+      rewrites.push({ start: occurrence.pathStart, end: occurrence.pathEnd, path: rel });
+    }
+  }
+  let result = text;
+  for (const r of rewrites.reverse()) {
+    result = result.slice(0, r.start) + r.path + result.slice(r.end);
+  }
+  return result;
+}
+
+/**
  * Parses and validates the JSON block assignments from an LLM response. Unknown block numbers
  * and invalid paths are dropped; only the first assignment per block is kept.
  */
@@ -826,10 +857,26 @@ export class AiInboxSorterService {
     const headingSuffix = source.kind === 'daily' ? source.date : formatInboxTimestamp();
     const sortedItems: ExecutedInboxSortItem[] = [];
     const links: Array<{ endLine: number; target: string }> = [];
-    for (const { proposal: item, text, block } of executable) {
+    const existsCache = new Map<string, Promise<boolean>>();
+    const pathExists = (fsPath: string) => {
+      let cached = existsCache.get(fsPath);
+      if (!cached) {
+        cached = this.fileExists(vscode.Uri.file(fsPath));
+        existsCache.set(fsPath, cached);
+      }
+      return cached;
+    };
+    for (const { proposal: item, text: blockText, block } of executable) {
       links.push({ endLine: block.endLine ?? 0, target: item.targetRelativePath.replace(/\.(md|markdown)$/i, '') });
       const segments = item.targetRelativePath.split('/');
       const targetUri = vscode.Uri.joinPath(notesRootUri, ...segments);
+      // Relative paths were written against the source note's folder; keep them pointing to the same files
+      const text = await rewriteRelativePaths(
+        blockText,
+        path.dirname(inboxUri.fsPath),
+        path.dirname(targetUri.fsPath),
+        pathExists
+      );
       if (segments.length > 1) {
         const parentUri = vscode.Uri.joinPath(notesRootUri, ...segments.slice(0, -1));
         await vscode.workspace.fs.createDirectory(parentUri);
