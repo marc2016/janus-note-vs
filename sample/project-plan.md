@@ -76,3 +76,8 @@ Zum Ausprobieren: Neue Gedanken landen zuerst in der Inbox oder in der Tagesnoti
 - Tippe `[[Web` – die Autovervollständigung schlägt neben Notizen auch den Ordner `projects/Website-Relaunch/` mit 📁 vor.
 - In der Ordnerübersicht von `App-Launch` zeigt **„Verlinkt von“** diese Notiz und [[sprint-review]]; im Notiz-Graph erscheint der Ordner als Rechteck.
 - Benennst du den Ordner um, werden die Links darauf automatisch angepasst.
+
+## 13. Defekte Links reparieren
+- In [[sprint-retrospective]] stehen unter „Offene Punkte“ absichtlich Links auf Notizen, die es nicht gibt: [[kickof]] (Tippfehler), [[Roadmap]] und [[ideen|Ideensammlung]].
+- Führe **„Janus: Defekte Links reparieren“** aus (Befehlspalette oder `…`-Menü der Notizen-Ansicht): Die Liste zeigt jedes fehlende Ziel mit seinen Verweisen. Leite `kickof` auf [[kickoff]] um, lege `Roadmap` an oder entferne `ideen` – danach erscheint die Liste mit den restlichen Zielen.
+- Einzelne Links reparierst du auch direkt per Klick im Editor: Neben **Erstellen** gibt es dort **Umleiten…** und **Link entfernen**.
