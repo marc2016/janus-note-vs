@@ -81,3 +81,9 @@ Zum Ausprobieren: Neue Gedanken landen zuerst in der Inbox oder in der Tagesnoti
 - In [[sprint-retrospective]] stehen unter „Offene Punkte“ absichtlich Links auf Notizen, die es nicht gibt: [[kickof]] (Tippfehler), [[Roadmap]] und [[ideen|Ideensammlung]].
 - Führe **„Janus: Defekte Links reparieren“** aus (Befehlspalette oder `…`-Menü der Notizen-Ansicht): Die Liste zeigt jedes fehlende Ziel mit seinen Verweisen. Leite `kickof` auf [[kickoff]] um, lege `Roadmap` an oder entferne `ideen` – danach erscheint die Liste mit den restlichen Zielen.
 - Einzelne Links reparierst du auch direkt per Klick im Editor: Neben **Erstellen** gibt es dort **Umleiten…** und **Link entfernen**.
+
+## 14. Notiz-Netzwerk
+- **„Janus: Notiz-Netzwerk öffnen“** zeigt alle Notizen und ihre Links als Netzwerk. Mit **„Fehlende Notizen anzeigen“** erscheinen auch die defekten Links aus Abschnitt 13 als gestrichelte Kreise.
+- Für den Überblick rund um eine Notiz: Öffne z. B. [[architektur]] und führe **„Janus: Lokales Notiz-Netzwerk öffnen“** aus (auch im `…`-Menü des Editors). Das Netzwerk zeigt nur diese Notiz und ihre direkten Nachbarn; mit **Tiefe** 2 oder 3 kommen weitere Schritte dazu.
+- Wechselst du im Editor zu einer anderen Notiz oder klickst einen Nachbarn an, wandert die Mitte mit. Oben schaltest du zwischen **„Ganzes Netzwerk“** und **„Aktuelle Notiz“** um.
+
