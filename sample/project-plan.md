@@ -64,3 +64,7 @@ graph LR
 - **Text markieren:** Markiere den folgenden Absatz. Im kleinen Popup kannst du ihn **zusammenfassen** (mit „Darunter einfügen" als Callout) oder direkt ein **Diagramm erstellen** lassen. Ein Beispiel für ein so erzeugtes Diagramm findest du in [[ollama-models]].
 
 Zum Ausprobieren: Neue Gedanken landen zuerst in der Inbox oder in der Tagesnotiz. Einmal am Tag sortiert die KI sie in Projekt- und Wissensnotizen ein; in der Tagesnotiz bleibt dabei ein Link stehen, wohin jeder Abschnitt kopiert wurde. Aus den einsortierten Notizen lassen sich anschließend Aufgaben generieren, die im Kalender und in der Aufgabenübersicht erscheinen. Wiederkehrende Strukturen wie Meetings oder Projekte startest du mit einer Vorlage, und Diagramme halten die wichtigsten Abläufe fest.
+
+## 11. Speichern
+- Ganz links in der Werkzeugleiste sitzt die **Diskette**. Sie wird blau, sobald die Notiz ungespeicherte Änderungen hat, und ist grau, wenn alles gespeichert ist.
+- Ein Klick darauf oder `Cmd+S` speichert – auch direkt nach dem letzten Tastendruck geht nichts verloren. Probier es hier aus: Tippe ein Wort an das Ende dieser Zeile und speichere sofort.
