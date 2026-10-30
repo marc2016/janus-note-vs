@@ -353,7 +353,7 @@ function findOpenDocument(fsPath: string): vscode.TextDocument | undefined {
   return vscode.workspace.textDocuments.find((d) => d.uri.fsPath === fsPath);
 }
 
-async function readNoteText(uri: vscode.Uri): Promise<string | undefined> {
+export async function readNoteText(uri: vscode.Uri): Promise<string | undefined> {
   const doc = findOpenDocument(uri.fsPath);
   if (doc) return doc.getText();
   try {
@@ -388,40 +388,55 @@ export async function planLinkUpdatesForRename(
   });
 }
 
+/** A text replacement inside a note, as offsets into its current text. */
+export interface TextEdit {
+  start: number;
+  end: number;
+  text: string;
+}
+
+export interface NoteEdits {
+  fsPath: string;
+  /** Computes the edits from the note's current text (re-scanned at apply time). */
+  edits: (text: string) => TextEdit[];
+}
+
 /**
- * Applies a rename plan after the rename. Each note is re-read and re-scanned, so edits stay
- * correct if it changed since planning. Open documents get document edits (unsaved changes
- * are kept; documents that were not dirty are saved), other notes are written directly.
+ * Applies edits to notes. Open documents get document edits (unsaved changes are kept;
+ * documents that were not dirty are saved), other notes are written directly.
  */
-export async function applyLinkRewritePlan(plan: RenamePlan): Promise<ApplyResult> {
+export async function applyNoteEdits(files: NoteEdits[]): Promise<ApplyResult> {
   const result: ApplyResult = { updatedLinks: 0, updatedNotes: 0, failedNotes: [] };
   const edit = new vscode.WorkspaceEdit();
   const openDocs: Array<{ doc: vscode.TextDocument; count: number; wasDirty: boolean }> = [];
 
-  for (const file of plan.files) {
-    const uri = vscode.Uri.file(file.newFsPath);
-    const doc = findOpenDocument(file.newFsPath);
+  for (const file of files) {
+    const uri = vscode.Uri.file(file.fsPath);
+    const doc = findOpenDocument(file.fsPath);
 
     if (doc) {
-      const text = doc.getText();
-      const occurrences = findLinkOccurrences(text).filter((o) => file.rewrites.has(o.path));
-      if (occurrences.length === 0) continue;
-      for (const o of occurrences) {
-        edit.replace(doc.uri, new vscode.Range(doc.positionAt(o.pathStart), doc.positionAt(o.pathEnd)), file.rewrites.get(o.path)!);
+      const edits = file.edits(doc.getText());
+      if (edits.length === 0) continue;
+      for (const e of edits) {
+        edit.replace(doc.uri, new vscode.Range(doc.positionAt(e.start), doc.positionAt(e.end)), e.text);
       }
-      openDocs.push({ doc, count: occurrences.length, wasDirty: doc.isDirty });
+      openDocs.push({ doc, count: edits.length, wasDirty: doc.isDirty });
       continue;
     }
 
     try {
       const text = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf-8');
-      const updated = applyRewritesToText(text, file.rewrites);
-      if (updated.count === 0) continue;
-      await vscode.workspace.fs.writeFile(uri, Buffer.from(updated.text, 'utf-8'));
-      result.updatedLinks += updated.count;
+      const edits = file.edits(text);
+      if (edits.length === 0) continue;
+      let updated = text;
+      for (const e of [...edits].sort((a, b) => b.start - a.start)) {
+        updated = updated.slice(0, e.start) + e.text + updated.slice(e.end);
+      }
+      await vscode.workspace.fs.writeFile(uri, Buffer.from(updated, 'utf-8'));
+      result.updatedLinks += edits.length;
       result.updatedNotes++;
     } catch {
-      result.failedNotes.push(path.basename(file.newFsPath));
+      result.failedNotes.push(path.basename(file.fsPath));
     }
   }
 
@@ -441,6 +456,22 @@ export async function applyLinkRewritePlan(plan: RenamePlan): Promise<ApplyResul
   }
 
   return result;
+}
+
+/**
+ * Applies a rename plan after the rename. Each note is re-read and re-scanned, so edits stay
+ * correct if it changed since planning.
+ */
+export function applyLinkRewritePlan(plan: RenamePlan): Promise<ApplyResult> {
+  return applyNoteEdits(
+    plan.files.map((file) => ({
+      fsPath: file.newFsPath,
+      edits: (text) =>
+        findLinkOccurrences(text)
+          .filter((o) => file.rewrites.has(o.path))
+          .map((o) => ({ start: o.pathStart, end: o.pathEnd, text: file.rewrites.get(o.path)! })),
+    }))
+  );
 }
 
 function plural(count: number, singular: string, pluralForm: string): string {

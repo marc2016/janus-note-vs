@@ -44,6 +44,15 @@ function hasNonNoteExtension(target: string): boolean {
   return /\.[a-z0-9]+$/i.test(target) && !isMarkdownNote(target);
 }
 
+/**
+ * Key of an unresolved link target, shared by the graph's ghost nodes and the broken link list:
+ * the target without `.md`, lower-cased. Undefined for non-note files, which are never ghosts.
+ */
+export function ghostKeyForTarget(target: string): string | undefined {
+  if (hasNonNoteExtension(target)) return undefined;
+  return stripNoteExtension(target.replace(/\\/g, '/')).toLowerCase();
+}
+
 /** Picks the most specific root containing `fsPath`. */
 function findContainingRoot(fsPath: string, roots: vscode.Uri[]): vscode.Uri | undefined {
   let best: vscode.Uri | undefined;
@@ -165,10 +174,11 @@ export async function buildNoteGraph(
         continue;
       }
 
-      if (hasNonNoteExtension(link.target)) continue;
+      const ghostKey = ghostKeyForTarget(link.target);
+      if (ghostKey === undefined) continue;
 
       const ghostName = stripNoteExtension(link.target.replace(/\\/g, '/'));
-      const ghostId = `${GHOST_PREFIX}${ghostName.toLowerCase()}`;
+      const ghostId = `${GHOST_PREFIX}${ghostKey}`;
       if (!nodes.has(ghostId)) {
         nodes.set(ghostId, {
           id: ghostId,

@@ -135,6 +135,11 @@
         "icon": "$(folder-library)"
       },
       {
+        "command": "janus.repairBrokenLinks",
+        "title": "Janus: Defekte Links reparieren",
+        "icon": "$(debug-disconnect)"
+      },
+      {
         "command": "janus.removeLinkedFolder",
         "title": "Janus: Aus verknüpften Notizen entfernen",
         "icon": "$(close)"
@@ -299,6 +304,11 @@
           "command": "janus.editTemplates",
           "when": "view == janus.notesView && janus.isInitialized",
           "group": "1_janus@1"
+        },
+        {
+          "command": "janus.repairBrokenLinks",
+          "when": "view == janus.notesView && janus.isInitialized",
+          "group": "1_janus@2"
         }
       ],
       "view/item/context": [

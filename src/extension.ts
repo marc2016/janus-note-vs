@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { CompanionManager } from './companion/companionManager';
+import { repairBrokenLinksCommand } from './commands/brokenLinksCommand';
 import { CompanionCodeLensProvider } from './companion/companionCodeLensProvider';
 import { CompanionWatcher } from './companion/companionWatcher';
 import { TasksEditorProvider } from './editors/tasksEditorProvider';
@@ -254,6 +255,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('janus.revealInNotesTree', (uri?: vscode.Uri) =>
       syncSidebarSelectionWithActiveEditor(uri)
     ),
+    vscode.commands.registerCommand('janus.repairBrokenLinks', () => repairBrokenLinksCommand(companionManager)),
     vscode.commands.registerCommand('janus.focusChatView', async () => {
       await vscode.commands.executeCommand('janus.chatView.focus');
     }),

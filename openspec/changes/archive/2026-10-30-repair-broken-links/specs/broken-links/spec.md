@@ -58,3 +58,15 @@ After the user selects a missing target, the system SHALL offer the actions `Not
 #### Scenario: Continuing with the remaining targets
 - **WHEN** the list shows three missing targets and the user repairs one of them
 - **THEN** the list is shown again with the two remaining targets
+
+### Requirement: Repair Choices When Clicking a Missing Link
+When the user clicks a link to a missing note in the Janus Markdown Editor, the system SHALL offer `Erstellen`, `Umleiten…` and `Link entfernen`. `Erstellen` SHALL keep the existing behavior of creating the note next to the linking note and opening it. `Umleiten…` and `Link entfernen` SHALL work like the actions `Auf bestehende Notiz umleiten` and `Link entfernen`, but SHALL apply only to the references of that target in the clicked note.
+
+#### Scenario: Retargeting from the editor
+- **WHEN** `plan.md` and `other.md` both contain `[[kickof]]`, the user clicks it in `plan.md`, chooses `Umleiten…` and picks `meetings/kickoff.md`
+- **THEN** the link in `plan.md` resolves to `meetings/kickoff.md` and `other.md` is unchanged
+
+#### Scenario: Removing from the editor
+- **WHEN** the user clicks `[Start](kickof.md#agenda)` in `plan.md` and chooses `Link entfernen`
+- **THEN** `plan.md` contains `Start` instead of the link and other notes are unchanged
+

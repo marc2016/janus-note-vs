@@ -22,6 +22,7 @@ import { isDailyNotePath } from '../services/dailyNotePaths';
 import { resolveSortedLinks } from '../services/sortedLinkService';
 import { saveImageNextToNote, validateImage } from '../services/imageAssetService';
 import { findFencedBlocks, locateMermaidBlock } from '../services/markdownScan';
+import { repairLinkInNote } from '../commands/brokenLinksCommand';
 
 /**
  * Reports the outcome of an inbox sorting run, shared by the `janus.sortInbox` command and the
@@ -865,10 +866,20 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         if (isMarkdownNote(targetUri.fsPath)) {
           const baseTitle = path.basename(targetUri.fsPath).replace(/\.(md|markdown)$/i, '');
           const choice = await vscode.window.showInformationMessage(
-            `Notiz '${baseTitle}' existiert nicht. Jetzt erstellen?`,
+            `Notiz '${baseTitle}' existiert nicht.`,
             'Erstellen',
-            'Abbrechen'
+            'Umleiten…',
+            'Link entfernen'
           );
+          if (choice === 'Umleiten…' || choice === 'Link entfernen') {
+            await repairLinkInNote(
+              this.companionManager,
+              document.uri,
+              cleanTarget,
+              choice === 'Umleiten…' ? 'retarget' : 'remove'
+            );
+            return;
+          }
           if (choice !== 'Erstellen') {
             return;
           }

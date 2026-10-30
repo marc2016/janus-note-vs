@@ -338,9 +338,10 @@ describe('Clickable Editor Links & Delimiter Concealing', () => {
       );
 
       expect(confirmSpy).toHaveBeenCalledWith(
-        "Notiz 'Brand-New-Idea' existiert nicht. Jetzt erstellen?",
+        "Notiz 'Brand-New-Idea' existiert nicht.",
         'Erstellen',
-        'Abbrechen'
+        'Umleiten…',
+        'Link entfernen'
       );
       expect(writeFileSpy).toHaveBeenCalledWith(
         expect.objectContaining({ path: '/workspace/notes/Brand-New-Idea.md' }),
