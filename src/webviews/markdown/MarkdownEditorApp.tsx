@@ -38,6 +38,7 @@ import {
   NoteLinksData,
 } from './components/NotesLinksFooter';
 import { markdownEditorKeymap } from './lib/editorKeymap';
+import { singleUndoHistory } from './lib/undoRedo';
 import { DocumentSync } from './lib/documentSync';
 
 declare function acquireVsCodeApi(): {
@@ -355,6 +356,7 @@ export const MarkdownEditorApp: React.FC = () => {
         history(),
         drawSelection(),
         dropCursor(),
+        singleUndoHistory(),
         keymap.of(markdownEditorKeymap),
         markdown({ extensions: [Table] }),
         livePreview(syntaxMode),
