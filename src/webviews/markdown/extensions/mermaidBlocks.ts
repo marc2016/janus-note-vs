@@ -3,6 +3,7 @@ import { EditorState, Extension, Facet, Range, StateEffect, StateField, Transact
 import { mdiCodeTags, mdiCreation, mdiSitemapOutline } from '@mdi/js';
 import { FencedBlock, findFencedBlocks } from '../../../services/markdownScan';
 import { syntaxVisibilityFacet } from './livePreview';
+import { measureOnResize, stopMeasuring } from '../lib/measureOnResize';
 
 export type MermaidView = 'code' | 'diagram';
 
@@ -128,9 +129,17 @@ class MermaidWidget extends WidgetType {
     return other.code === this.code && other.isDark === this.isDark && other.view === this.view;
   }
 
+  get estimatedHeight(): number {
+    return this.view === 'diagram' ? 220 : 180;
+  }
+
   toDOM(editor: EditorView): HTMLElement {
+    const outer = document.createElement('div');
+    outer.className = `cm-mermaid-outer cm-mermaid-outer-${this.view}`;
     const wrap = document.createElement('div');
     wrap.className = `cm-mermaid cm-mermaid-${this.view}`;
+    outer.appendChild(wrap);
+    measureOnResize(outer, editor);
 
     const toggle = document.createElement('button');
     toggle.type = 'button';
@@ -170,7 +179,7 @@ class MermaidWidget extends WidgetType {
     wrap.appendChild(body);
 
     const renderer = editor.state.facet(mermaidRendererFacet);
-    if (!renderer) return wrap;
+    if (!renderer) return outer;
 
     const show = (result: { svg?: string; error?: string }) => {
       body.classList.remove('cm-mermaid-pending');
@@ -206,11 +215,12 @@ class MermaidWidget extends WidgetType {
       },
       previous ? 300 : 0
     );
-    return wrap;
+    return outer;
   }
 
-  destroy(): void {
+  destroy(dom: HTMLElement): void {
     if (this.timer) clearTimeout(this.timer);
+    stopMeasuring(dom);
   }
 
   ignoreEvent(): boolean {

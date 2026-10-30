@@ -326,9 +326,17 @@ body.vscode-high-contrast-light .janus-pill-backlink:hover {
 }
 
 /* Mermaid diagrams in the editor */
+/* Spacing via padding on the outer wrapper: CodeMirror ignores vertical margins of block widgets */
+.cm-mermaid-outer {
+  padding: 6px 0 10px;
+}
+
+.cm-mermaid-outer-code {
+  padding-top: 0;
+}
+
 .cm-mermaid {
   position: relative;
-  margin: 6px 0 10px;
   padding: 12px 12px 10px;
   border: 1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.25));
   border-radius: 8px;
@@ -340,7 +348,6 @@ body.vscode-high-contrast-light .janus-pill-backlink:hover {
   border-top: 1px dashed var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.25));
   border-top-left-radius: 0;
   border-top-right-radius: 0;
-  margin-top: 0;
 }
 
 .cm-line.cm-mermaid-code-line {
@@ -352,7 +359,6 @@ body.vscode-high-contrast-light .janus-pill-backlink:hover {
 }
 
 .cm-line.cm-mermaid-code-first {
-  margin-top: 6px;
   padding-top: 6px;
   border-top: 1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.25));
   border-top-left-radius: 8px;

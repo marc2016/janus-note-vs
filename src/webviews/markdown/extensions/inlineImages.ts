@@ -3,6 +3,7 @@ import { EditorState, Extension, Range, StateEffect, StateField } from '@codemir
 import { mdiImageOutline } from '@mdi/js';
 import { findCodeRanges, findLinkOccurrences } from '../../../services/markdownScan';
 import { syntaxVisibilityFacet } from './livePreview';
+import { measureOnResize, stopMeasuring } from '../lib/measureOnResize';
 
 /** Base URIs from the host to turn image paths of this note into webview URLs. */
 export interface ImageContext {
@@ -84,9 +85,14 @@ class ImageWidget extends WidgetType {
     return other.src === this.src && other.imagePath === this.imagePath;
   }
 
-  toDOM(): HTMLElement {
+  get estimatedHeight(): number {
+    return this.src ? 200 : 24;
+  }
+
+  toDOM(view: EditorView): HTMLElement {
     const wrap = document.createElement('div');
     wrap.className = 'cm-inline-image';
+    measureOnResize(wrap, view);
     const showHint = () => {
       wrap.replaceChildren();
       wrap.className = 'cm-inline-image cm-inline-image-missing';
@@ -102,6 +108,10 @@ class ImageWidget extends WidgetType {
     img.addEventListener('error', showHint);
     wrap.appendChild(img);
     return wrap;
+  }
+
+  destroy(dom: HTMLElement): void {
+    stopMeasuring(dom);
   }
 
   ignoreEvent(): boolean {

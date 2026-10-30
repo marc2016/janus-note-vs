@@ -110,11 +110,14 @@ export const livePreviewTheme = EditorView.baseTheme({
     color: 'var(--vscode-textBlockQuote-foreground, rgba(200, 200, 200, 0.85))',
     fontStyle: 'italic',
   },
+  // No vertical margins on lines: CodeMirror leaves them out of its height map, which shifts
+  // clicks and cursor movement below. The rule is drawn as a centered background line instead.
   '.cm-line.cm-hr': {
-    borderBottom: '1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.3))',
     color: 'transparent',
     lineHeight: '0.5rem',
-    margin: '0.5rem 0',
+    padding: '0.5rem 0',
+    background:
+      'linear-gradient(var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.3)), var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.3))) center / 100% 1px no-repeat',
   },
   '.cm-link-text': {
     color: 'var(--vscode-textLink-foreground, #3b82f6)',
