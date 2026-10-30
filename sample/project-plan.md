@@ -68,3 +68,9 @@ Zum Ausprobieren: Neue Gedanken landen zuerst in der Inbox oder in der Tagesnoti
 ## 11. Speichern
 - Ganz links in der Werkzeugleiste sitzt die **Diskette**. Sie wird blau, sobald die Notiz ungespeicherte Änderungen hat, und ist grau, wenn alles gespeichert ist.
 - Ein Klick darauf oder `Cmd+S` speichert – auch direkt nach dem letzten Tastendruck geht nichts verloren. Probier es hier aus: Tippe ein Wort an das Ende dieser Zeile und speichere sofort.
+
+## 12. Ordner verlinken
+- Links können auch auf Ordner zeigen: [[projects/App-Launch/]] öffnet die **Ordnerübersicht** und markiert den Ordner in der Notizen-Ansicht. Ein `/` am Ende steht immer für einen Ordner.
+- Tippe `[[Web` – die Autovervollständigung schlägt neben Notizen auch den Ordner `projects/Website-Relaunch/` mit 📁 vor.
+- In der Ordnerübersicht von `App-Launch` zeigt **„Verlinkt von“** diese Notiz und [[sprint-review]]; im Notiz-Graph erscheint der Ordner als Rechteck.
+- Benennst du den Ordner um, werden die Links darauf automatisch angepasst.

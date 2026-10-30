@@ -2,6 +2,7 @@
 
 Teilnehmer: Anna, Lukas, Marc
 Verknüpfte Projekte: [[app-launch]], [[kickoff]], [[architektur]]
+Projektordner: [[projects/App-Launch/]], [[projects/Website-Relaunch/]]
 
 ## Besprochene Themen
 
