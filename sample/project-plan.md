@@ -56,6 +56,8 @@ graph LR
     Notizen --> Aufgaben[Aufgaben generieren]
 ```
 
+---
+
 ## 10. KI direkt im Editor
 - **Diagramm ändern:** Klicke bei einem Diagramm oben rechts auf **„KI"** und beschreibe im Chat, was sich ändern soll (z. B. „Füge nach Notizen einen Schritt Kalender hinzu"). Mit **„Übernehmen"** landet der Vorschlag im Diagramm, `Cmd+Z` macht es rückgängig.
 - **Neues Diagramm:** Tippe `/ki-diagramm` in eine leere Zeile. Die KI kennt den Abschnitt, in dem du gerade bist – schreib im Chat z. B. „Mach daraus ein Ablaufdiagramm".
