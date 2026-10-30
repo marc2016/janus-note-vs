@@ -75,6 +75,9 @@ export function showInboxSortResult(result: SortInboxResult): void {
 }
 
 export type MermaidReplaceResult = 'ok' | 'changed' | 'missing' | 'invalid';
+
+/** Webview messages that change or save the document and must be handled in arrival order. */
+const ORDERED_MESSAGE_TYPES = new Set(['updateContent', 'save']);
 export type InsertTextResult = 'ok' | 'changed' | 'missing';
 
 export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
@@ -90,6 +93,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   private readonly _syncTrackers = new WeakMap<vscode.WebviewPanel, WebviewSyncTracker>();
   private readonly _pendingLineReveals = new Map<string, number>();
   private readonly _readyPanels = new Set<string>();
+  private readonly _orderedQueues = new WeakMap<vscode.WebviewPanel, Promise<void>>();
   private readonly _readyWaiters = new Map<string, Array<() => void>>();
   private readonly _pendingMermaidReplacements = new Map<number, (result: MermaidReplaceResult) => void>();
   private readonly _pendingTextInsertions = new Map<number, (result: InsertTextResult) => void>();
@@ -298,6 +302,27 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     });
   }
 
+  /**
+   * Entry point for webview messages. Document edits and saves of one panel are handled strictly
+   * in order, so a save never runs before the edits sent just before it are applied. Other
+   * messages (AI requests, navigation) start right away and do not hold up the queue.
+   */
+  receiveWebviewMessage(
+    message: any,
+    document: vscode.TextDocument,
+    webviewPanel: vscode.WebviewPanel,
+    ...rest: [(() => void)?, (() => Promise<void>)?, (() => Promise<void>)?]
+  ): Promise<void> {
+    const handle = () => this.handleWebviewMessage(message, document, webviewPanel, ...rest);
+    if (!ORDERED_MESSAGE_TYPES.has(message?.type)) {
+      return handle();
+    }
+    const previous = this._orderedQueues.get(webviewPanel) ?? Promise.resolve();
+    const next = previous.then(handle, handle);
+    this._orderedQueues.set(webviewPanel, next.catch(() => undefined));
+    return next;
+  }
+
   /** `dist` plus all notes roots and workspace folders, so images inside the workspace can load. */
   getLocalResourceRoots(noteUri: vscode.Uri): vscode.Uri[] {
     const roots = [vscode.Uri.joinPath(this.context.extensionUri, 'dist')];
@@ -400,15 +425,14 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       }
     };
 
-    webviewPanel.webview.onDidReceiveMessage(async (message) => {
-      await this.handleWebviewMessage(
-        message,
-        document,
-        webviewPanel,
-        updateWebview,
-        sendLinksUpdate,
-        sendCandidatesUpdate
-      );
+    webviewPanel.webview.onDidReceiveMessage((message) =>
+      this.receiveWebviewMessage(message, document, webviewPanel, updateWebview, sendLinksUpdate, sendCandidatesUpdate)
+    );
+
+    const saveDocumentSubscription = vscode.workspace.onDidSaveTextDocument((saved) => {
+      if (saved.uri.toString() === document.uri.toString()) {
+        void webviewPanel.webview.postMessage({ type: 'dirtyState', dirty: saved.isDirty });
+      }
     });
 
     const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument((e) => {
@@ -422,6 +446,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             ackSeq: tracker.lastAppliedSeq,
           });
         }
+        void webviewPanel.webview.postMessage({ type: 'dirtyState', dirty: e.document.isDirty });
         void sendLinksUpdate();
       }
     });
@@ -463,6 +488,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       this._pendingLineReveals.delete(document.uri.toString());
       viewStateSubscription.dispose();
       changeDocumentSubscription.dispose();
+      saveDocumentSubscription.dispose();
       aiModelChangeSubscription.dispose();
       configChangeSubscription.dispose();
       subCreate.dispose();
@@ -498,6 +524,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     if (message.type === 'ready') {
+      void webviewPanel.webview.postMessage({ type: 'dirtyState', dirty: Boolean(document.isDirty) });
       const key = document.uri.toString();
       this._readyPanels.add(key);
       this._readyWaiters.get(key)?.forEach((resolve) => resolve());
@@ -633,6 +660,16 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     if (message.type === 'textInserted' && typeof message.requestId === 'number') {
       this._pendingTextInsertions.get(message.requestId)?.(message.result);
       this._pendingTextInsertions.delete(message.requestId);
+      return;
+    }
+
+    if (message.type === 'save') {
+      try {
+        await document.save();
+      } catch (err: any) {
+        void vscode.window.showErrorMessage(`Notiz konnte nicht gespeichert werden: ${err?.message || String(err)}`);
+      }
+      void webviewPanel.webview.postMessage({ type: 'dirtyState', dirty: Boolean(document.isDirty) });
       return;
     }
 

@@ -179,6 +179,7 @@ export const workspace = {
     dispose: () => {},
   }),
   onDidChangeTextDocument: () => ({ dispose: () => {} }),
+  onDidSaveTextDocument: () => ({ dispose: () => {} }),
   textDocuments: [] as any[],
   applyEdit: async (_edit?: any) => true,
   registerTextDocumentContentProvider: () => ({ dispose: () => {} }),

@@ -28,7 +28,11 @@ import {
   mdiLinkVariant,
   mdiFilePdfBox,
 } from '../../../ui/icons';
+import { mdiContentSave } from '@mdi/js';
 import { SyntaxVisibilityMode } from '../extensions/livePreview';
+
+const SAVE_TITLE =
+  typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? 'Speichern (⌘S)' : 'Speichern (Strg+S)';
 
 export interface ActiveToolbarState {
   heading: number; // 0 = normal text, 1 = H1, 2 = H2, 3 = H3
@@ -56,6 +60,9 @@ export const defaultActiveToolbarState: ActiveToolbarState = {
 
 interface MarkdownToolbarProps {
   editorView: EditorView | null;
+  /** True while the note has unsaved changes; enables and highlights the save button. */
+  isDirty?: boolean;
+  onSave?: () => void;
   activeState?: ActiveToolbarState;
   onOpenSource?: () => void;
   onExportPdf?: () => void;
@@ -66,6 +73,8 @@ interface MarkdownToolbarProps {
 
 export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
   editorView,
+  isDirty = false,
+  onSave,
   activeState = defaultActiveToolbarState,
   onOpenSource,
   onExportPdf,
@@ -178,6 +187,28 @@ export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
 
   return (
     <div className="flex flex-wrap items-center gap-1 px-6 py-2 border-b border-[var(--vscode-editorWidget-border,rgba(128,128,128,0.2))] bg-card/40 select-none">
+      {/* Save */}
+      {onSave && (
+        <>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`h-8 w-8 p-0 ${
+              isDirty ? 'text-[var(--vscode-button-background,#007acc)]' : 'opacity-40'
+            }`}
+            onClick={onSave}
+            disabled={!isDirty}
+            title={isDirty ? SAVE_TITLE : 'Alles gespeichert'}
+            aria-label="Speichern"
+            data-dirty={isDirty ? 'true' : 'false'}
+          >
+            <MdiIcon path={mdiContentSave} size={16} />
+          </Button>
+
+          <div className="w-[1px] h-5 bg-border mx-1" />
+        </>
+      )}
+
       {/* Undo / Redo */}
       <Button
         variant="ghost"

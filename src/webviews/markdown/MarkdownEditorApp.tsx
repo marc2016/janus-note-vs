@@ -39,6 +39,7 @@ import {
 } from './components/NotesLinksFooter';
 import { markdownEditorKeymap } from './lib/editorKeymap';
 import { singleUndoHistory } from './lib/undoRedo';
+import { saveShortcut } from './lib/saveShortcut';
 import { DocumentSync } from './lib/documentSync';
 
 declare function acquireVsCodeApi(): {
@@ -246,6 +247,9 @@ export const MarkdownEditorApp: React.FC = () => {
   const syncRef = useRef<DocumentSync>(new DocumentSync());
   const hasInitializedRef = useRef<boolean>(false);
   const debounceTimerRef = useRef<any>(null);
+  // Unsaved state: the document's dirty flag from the host, plus edits not sent yet
+  const [hostDirty, setHostDirty] = useState(false);
+  const [hasPendingEdits, setHasPendingEdits] = useState(false);
 
   // Sends unsent local edits to the host right away (cancels a pending debounce).
   const flushPendingEdits = () => {
@@ -258,7 +262,16 @@ export const MarkdownEditorApp: React.FC = () => {
     if (!view || !sync.hasPending) return;
     const { content, seq } = sync.takeOutgoing(view.state.doc.toString());
     getVsCodeApi()?.postMessage({ type: 'updateContent', content, seq });
+    setHasPendingEdits(false);
   };
+
+  // Sends pending edits first; the host saves only after applying them (ordered messages).
+  const requestSave = () => {
+    flushPendingEdits();
+    getVsCodeApi()?.postMessage({ type: 'save' });
+  };
+  const requestSaveRef = useRef(requestSave);
+  requestSaveRef.current = requestSave;
   const flushPendingEditsRef = useRef(flushPendingEdits);
   flushPendingEditsRef.current = flushPendingEdits;
   const linkCandidatesRef = useRef<LinkCandidate[]>([]);
@@ -357,6 +370,7 @@ export const MarkdownEditorApp: React.FC = () => {
         drawSelection(),
         dropCursor(),
         singleUndoHistory(),
+        saveShortcut(() => requestSaveRef.current()),
         keymap.of(markdownEditorKeymap),
         markdown({ extensions: [Table] }),
         livePreview(syntaxMode),
@@ -400,6 +414,7 @@ export const MarkdownEditorApp: React.FC = () => {
 
           // Only user edits are sent back; remote (host) changes are already in the document.
           if (syncRef.current.recordLocalTransactions(update.transactions)) {
+            setHasPendingEdits(true);
             if (debounceTimerRef.current) {
               clearTimeout(debounceTimerRef.current);
             }
@@ -493,6 +508,8 @@ export const MarkdownEditorApp: React.FC = () => {
         setIsSortingInbox(Boolean(message.isSorting));
       } else if (message.type === 'sortSource') {
         setSortSource(message.source === 'inbox' || message.source === 'daily' ? message.source : null);
+      } else if (message.type === 'dirtyState') {
+        setHostDirty(Boolean(message.dirty));
       } else if (message.type === 'insertAfterText' && typeof message.insert === 'string') {
         const view = editorViewRef.current;
         getVsCodeApi()?.postMessage({
@@ -683,6 +700,8 @@ export const MarkdownEditorApp: React.FC = () => {
       <div className="shrink-0">
         <MarkdownToolbar
           editorView={editorView}
+          isDirty={hostDirty || hasPendingEdits}
+          onSave={() => requestSaveRef.current()}
           activeState={activeState}
           onOpenSource={handleOpenSource}
           onExportPdf={handleExportPdf}
