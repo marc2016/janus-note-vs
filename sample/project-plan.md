@@ -93,3 +93,7 @@ Zum Ausprobieren: Neue Gedanken landen zuerst in der Inbox oder in der Tagesnoti
 - Verschachtelte Tags wie `#projekt/app-launch` zählen auch für `#projekt` – so findest du alle Projekte auf einmal.
 - Tippe in einer Notiz `#`: Die Vorschlagsliste zeigt alle vorhandenen Tags mit der Anzahl ihrer Notizen. Mit `# ` (Überschrift) verschwindet sie wieder.
 - In der Notizen-Ansicht listet der Eintrag **Tags** jeden Tag mit seinen Notizen. Im Notiz-Netzwerk filterst du oben nach einem Tag, und im Chat sucht `#design typografie` nur in Notizen mit diesem Tag.
+
+## 16. Mit den Pfeiltasten durch Überschriften
+- Stell den Cursor in die Zeile direkt unter einer Überschrift, z. B. unter „15. Tags“, und drück **Pfeil hoch**: Der Cursor landet in der Überschrift, und das `## ` wird sichtbar.
+- Das gilt auch für Zeilen, die mit **Fett**, `Code` oder einem Link wie [[architektur]] beginnen – in jedem Modus der Syntax-Anzeige.
