@@ -5,6 +5,7 @@ import { markdown } from '@codemirror/lang-markdown';
 import { DecorationSet } from '@codemirror/view';
 import {
   buildDecorations,
+  hiddenSyntax,
   livePreview,
   syntaxVisibilityCompartment,
   syntaxVisibilityFacet,
@@ -18,6 +19,7 @@ function collectDecorations(decoSet: DecorationSet, docLength: number) {
     to: number;
     className?: string;
     attributes?: Record<string, string>;
+    hidden: boolean;
   }[] = [];
 
   decoSet.between(0, docLength, (from, to, value) => {
@@ -26,6 +28,7 @@ function collectDecorations(decoSet: DecorationSet, docLength: number) {
       to,
       className: (value.spec as any)?.class,
       attributes: (value.spec as any)?.attributes,
+      hidden: value === hiddenSyntax,
     });
   });
 
@@ -61,7 +64,7 @@ describe('Clickable Editor Links & Delimiter Concealing', () => {
 
       // Opening brackets concealed
       const openDelim = decos.find((d) => d.from === linkStart && d.to === linkStart + 2);
-      expect(openDelim?.className).toBe('cm-syntax-hidden');
+      expect(openDelim?.hidden).toBe(true);
 
       // Link text marked clickable
       const linkText = decos.find(
@@ -73,7 +76,7 @@ describe('Clickable Editor Links & Delimiter Concealing', () => {
 
       // Closing brackets concealed
       const closeDelim = decos.find((d) => d.from === linkEnd - 2 && d.to === linkEnd);
-      expect(closeDelim?.className).toBe('cm-syntax-hidden');
+      expect(closeDelim?.hidden).toBe(true);
     });
 
     it('reveals [[ and ]] delimiters in auto mode when cursor is inside the link', () => {
@@ -88,7 +91,7 @@ describe('Clickable Editor Links & Delimiter Concealing', () => {
 
       // Delimiters are NOT hidden
       const hiddenDelims = decos.filter(
-        (d) => (d.from === linkStart || d.to === linkEnd) && d.className === 'cm-syntax-hidden'
+        (d) => (d.from === linkStart || d.to === linkEnd) && d.hidden
       );
       expect(hiddenDelims).toHaveLength(0);
 
@@ -110,7 +113,7 @@ describe('Clickable Editor Links & Delimiter Concealing', () => {
 
       // Prefix [[Meeting-Notes| is hidden
       const prefix = decos.find((d) => d.from === linkStart && d.to === pipePos + 1);
-      expect(prefix?.className).toBe('cm-syntax-hidden');
+      expect(prefix?.hidden).toBe(true);
 
       // Alias text is clickable
       const alias = decos.find((d) => d.from === pipePos + 1 && d.to === linkEnd - 2);
@@ -119,7 +122,7 @@ describe('Clickable Editor Links & Delimiter Concealing', () => {
 
       // Closing ]] is hidden
       const closing = decos.find((d) => d.from === linkEnd - 2 && d.to === linkEnd);
-      expect(closing?.className).toBe('cm-syntax-hidden');
+      expect(closing?.hidden).toBe(true);
     });
 
     it('keeps delimiters visible when syntax visibility mode is "visible"', () => {
@@ -127,7 +130,7 @@ describe('Clickable Editor Links & Delimiter Concealing', () => {
       const view = createMockView(doc, 0, 0, 'visible');
       const decos = collectDecorations(buildDecorations(view), doc.length);
 
-      const hidden = decos.filter((d) => d.className?.includes('cm-syntax-hidden'));
+      const hidden = decos.filter((d) => d.hidden);
       expect(hidden).toHaveLength(0);
 
       const linkText = decos.find((d) => d.className?.includes('cm-link-text'));
@@ -140,7 +143,7 @@ describe('Clickable Editor Links & Delimiter Concealing', () => {
       const view = createMockView(doc, insidePos, insidePos, 'hidden');
       const decos = collectDecorations(buildDecorations(view), doc.length);
 
-      const hidden = decos.filter((d) => d.className === 'cm-syntax-hidden');
+      const hidden = decos.filter((d) => d.hidden);
       expect(hidden.length).toBeGreaterThanOrEqual(2);
     });
   });
@@ -157,7 +160,7 @@ describe('Clickable Editor Links & Delimiter Concealing', () => {
 
       // Opening [ concealed
       const openBracket = decos.find((d) => d.from === matchStart && d.to === matchStart + 1);
-      expect(openBracket?.className).toBe('cm-syntax-hidden');
+      expect(openBracket?.hidden).toBe(true);
 
       // Label text marked
       const labelText = decos.find((d) => d.from === matchStart + 1 && d.to === labelEnd);
@@ -167,7 +170,7 @@ describe('Clickable Editor Links & Delimiter Concealing', () => {
 
       // Closing ](...) concealed
       const closeTarget = decos.find((d) => d.from === labelEnd && d.to === matchEnd);
-      expect(closeTarget?.className).toBe('cm-syntax-hidden');
+      expect(closeTarget?.hidden).toBe(true);
     });
 
     it('reveals markdown link syntax when cursor enters markdown link', () => {
@@ -177,7 +180,7 @@ describe('Clickable Editor Links & Delimiter Concealing', () => {
       const decos = collectDecorations(buildDecorations(view), doc.length);
 
       const hidden = decos.filter(
-        (d) => d.from >= doc.indexOf('[') && d.to <= doc.indexOf(')') + 1 && d.className === 'cm-syntax-hidden'
+        (d) => d.from >= doc.indexOf('[') && d.to <= doc.indexOf(')') + 1 && d.hidden
       );
       expect(hidden).toHaveLength(0);
 

@@ -45,6 +45,12 @@ export const markdownHighlightStyle = HighlightStyle.define([
   },
 ]);
 
+/**
+ * Conceals Markdown syntax. A replace decoration instead of a `display: none` mark, because
+ * CodeMirror maps vertical cursor movement and clicks wrong at text without a place on screen.
+ */
+export const hiddenSyntax = Decoration.replace({});
+
 export const livePreviewTheme = EditorView.baseTheme({
   '.cm-line.cm-heading': {
     fontFamily: 'inherit',
@@ -101,9 +107,6 @@ export const livePreviewTheme = EditorView.baseTheme({
   },
   '.cm-heading-mark.cm-heading-mark-active': {
     opacity: '0.85',
-  },
-  '.cm-syntax-hidden': {
-    display: 'none',
   },
   '.cm-line.cm-blockquote': {
     borderLeft: '3px solid var(--vscode-textBlockQuote-border, rgba(128, 128, 128, 0.4))',
@@ -169,13 +172,12 @@ export function buildDecorations(view: EditorView): DecorationSet {
 
         // Subtly mark the '# ' prefix or conceal it
         builder.push(
-          Decoration.mark({
-            class: shouldHide
-              ? 'cm-heading-mark cm-syntax-hidden'
-              : isCursorOnLine
-              ? 'cm-heading-mark cm-heading-mark-active'
-              : 'cm-heading-mark',
-          }).range(line.from, line.from + markerLength)
+          (shouldHide
+            ? hiddenSyntax
+            : Decoration.mark({
+                class: isCursorOnLine ? 'cm-heading-mark cm-heading-mark-active' : 'cm-heading-mark',
+              })
+          ).range(line.from, line.from + markerLength)
         );
       } else if (line.text.startsWith('> ') || line.text === '>') {
         builder.push(
@@ -214,7 +216,7 @@ export function buildDecorations(view: EditorView): DecorationSet {
 
           if (shouldHide) {
             builder.push(
-              Decoration.mark({ class: 'cm-syntax-hidden' }).range(matchStart, pipePos + 1)
+              hiddenSyntax.range(matchStart, pipePos + 1)
             );
             builder.push(
               Decoration.mark({
@@ -226,7 +228,7 @@ export function buildDecorations(view: EditorView): DecorationSet {
               }).range(pipePos + 1, matchEnd - 2)
             );
             builder.push(
-              Decoration.mark({ class: 'cm-syntax-hidden' }).range(matchEnd - 2, matchEnd)
+              hiddenSyntax.range(matchEnd - 2, matchEnd)
             );
           } else {
             builder.push(
@@ -242,7 +244,7 @@ export function buildDecorations(view: EditorView): DecorationSet {
         } else {
           if (shouldHide) {
             builder.push(
-              Decoration.mark({ class: 'cm-syntax-hidden' }).range(matchStart, matchStart + 2)
+              hiddenSyntax.range(matchStart, matchStart + 2)
             );
             builder.push(
               Decoration.mark({
@@ -254,7 +256,7 @@ export function buildDecorations(view: EditorView): DecorationSet {
               }).range(matchStart + 2, matchEnd - 2)
             );
             builder.push(
-              Decoration.mark({ class: 'cm-syntax-hidden' }).range(matchEnd - 2, matchEnd)
+              hiddenSyntax.range(matchEnd - 2, matchEnd)
             );
           } else {
             builder.push(
@@ -291,7 +293,7 @@ export function buildDecorations(view: EditorView): DecorationSet {
 
         if (shouldHide) {
           builder.push(
-            Decoration.mark({ class: 'cm-syntax-hidden' }).range(matchStart, labelStart)
+            hiddenSyntax.range(matchStart, labelStart)
           );
           builder.push(
             Decoration.mark({
@@ -303,7 +305,7 @@ export function buildDecorations(view: EditorView): DecorationSet {
             }).range(labelStart, labelEnd)
           );
           builder.push(
-            Decoration.mark({ class: 'cm-syntax-hidden' }).range(labelEnd, matchEnd)
+            hiddenSyntax.range(labelEnd, matchEnd)
           );
         } else {
           builder.push(
@@ -357,13 +359,13 @@ export function buildDecorations(view: EditorView): DecorationSet {
 
           if (shouldHide && node.to - node.from >= 4) {
             builder.push(
-              Decoration.mark({ class: 'cm-inline-mark cm-syntax-hidden' }).range(
+              hiddenSyntax.range(
                 node.from,
                 node.from + 2
               )
             );
             builder.push(
-              Decoration.mark({ class: 'cm-inline-mark cm-syntax-hidden' }).range(
+              hiddenSyntax.range(
                 node.to - 2,
                 node.to
               )
@@ -378,13 +380,13 @@ export function buildDecorations(view: EditorView): DecorationSet {
 
           if (shouldHide && node.to - node.from >= 2) {
             builder.push(
-              Decoration.mark({ class: 'cm-inline-mark cm-syntax-hidden' }).range(
+              hiddenSyntax.range(
                 node.from,
                 node.from + 1
               )
             );
             builder.push(
-              Decoration.mark({ class: 'cm-inline-mark cm-syntax-hidden' }).range(
+              hiddenSyntax.range(
                 node.to - 1,
                 node.to
               )
@@ -399,13 +401,13 @@ export function buildDecorations(view: EditorView): DecorationSet {
 
           if (shouldHide && node.to - node.from >= 4) {
             builder.push(
-              Decoration.mark({ class: 'cm-inline-mark cm-syntax-hidden' }).range(
+              hiddenSyntax.range(
                 node.from,
                 node.from + 2
               )
             );
             builder.push(
-              Decoration.mark({ class: 'cm-inline-mark cm-syntax-hidden' }).range(
+              hiddenSyntax.range(
                 node.to - 2,
                 node.to
               )
@@ -427,13 +429,13 @@ export function buildDecorations(view: EditorView): DecorationSet {
               backticks++;
             }
             builder.push(
-              Decoration.mark({ class: 'cm-inline-mark cm-syntax-hidden' }).range(
+              hiddenSyntax.range(
                 node.from,
                 node.from + backticks
               )
             );
             builder.push(
-              Decoration.mark({ class: 'cm-inline-mark cm-syntax-hidden' }).range(
+              hiddenSyntax.range(
                 node.to - backticks,
                 node.to
               )
