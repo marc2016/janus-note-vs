@@ -31,6 +31,8 @@ Wenn die Verbindung im Zug kurz abreißt, sollte der Client nicht sofort einen V
 - Heartbeat-Intervall von 30s auf 15s verringern.
 - Offline-Warteschlange für Notiz-Änderungen in SQLite verifizieren.
 
+![Sync-Skizze](assets/sync-skizze.svg)
+
 ## Neue Projektidee: Quick-Capture CLI für das Terminal
 Wäre es nicht genial, wenn man per `janus note "Gedanke..."` direkt aus dem Terminal heraus neue Abschnitte in diese `inbox.md` schreiben könnte?
 - Könnte als kleiner Node- oder Bash-Wrapper gebaut werden.

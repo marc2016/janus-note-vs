@@ -43,6 +43,8 @@ Klicke auf die folgenden Links, um das automatische Springen zur Zeile und die H
 
 ![Sync-Skizze](assets/sync-skizze.svg)
 
+- Auch beim **Einsortieren der Inbox** bleiben Bilder und relative Links intakt: Der Abschnitt „Sync-Architektur“ in der [[inbox]] enthält diese Skizze. Landet er z. B. in `projects/App-Launch/architektur.md`, wird der Pfad automatisch zu `../../assets/sync-skizze.svg`.
+
 ## 9. Mermaid-Diagramme
 - ```` ```mermaid ````-Blöcke erscheinen im Editor direkt als Diagramm. Mit dem Schalter **„Code"** oben rechts siehst du den Quelltext und darunter eine Live-Vorschau, **„Diagramm"** klappt den Code wieder ein.
 - Ein neues Diagramm legst du mit `/chart` an. Ein Sequenzdiagramm findest du in [[architektur]].
