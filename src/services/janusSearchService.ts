@@ -5,6 +5,8 @@ import { isMarkdownNote } from '../companion/companionPaths';
 import { FolderTasksService } from './folderTasksService';
 import { findMarkdownNotesInRoot } from './noteLinkService';
 import { parseFrontmatter } from './noteMetadataService';
+import { findInlineTags } from './markdownScan';
+import { expandTags, noteTags } from './noteTagService';
 import { extractMeaningfulInboxBody } from './aiInboxSorterService';
 import { TaskItem, TaskPriority, TaskStatus } from '../models/tasks';
 
@@ -228,6 +230,20 @@ function stripExtension(filename: string): string {
 }
 
 /**
+ * Splits `#tag` words off a search query. Returns the lower-cased tags and the remaining query.
+ */
+export function splitTagFilters(query: string): { tags: string[]; rest: string } {
+  const tags = new Set<string>();
+  const rest = query.replace(/(?<!\S)#([\p{L}\p{N}_/-]+)/gu, (whole, raw: string) => {
+    const tag = raw.replace(/[/-]+$/, '').toLowerCase();
+    if (!/\p{L}/u.test(tag)) return whole;
+    tags.add(tag);
+    return ' ';
+  });
+  return { tags: [...tags], rest };
+}
+
+/**
  * Extracts normalized search tokens from a natural-language query or keyword string.
  */
 export function tokenizeSearchQuery(query: string): string[] {
@@ -366,7 +382,9 @@ export class JanusSearchService {
     const maxNotes = options?.maxNotes ?? 8;
     const maxTasks = options?.maxTasks ?? 10;
     const notesRootUri = this.companionManager.getNotesRootUri(options?.contextUri);
-    const tokens = tokenizeSearchQuery(query);
+    // `#tag` words filter the notes and are not scored as keywords
+    const { tags: tagFilters, rest } = splitTagFilters(query);
+    const tokens = tokenizeSearchQuery(rest);
     const fullPhrase = tokens.length > 1 ? tokens.join(' ') : '';
 
     if (!notesRootUri) {
@@ -392,6 +410,8 @@ export class JanusSearchService {
       aliases: string[];
       /** Offset after the frontmatter block, which is scored as title, not as body. */
       bodyStart: number;
+      /** Lower-cased tags with parents of nested tags. */
+      tags: string[];
     }> = [];
 
     for (const uri of noteUris) {
@@ -409,6 +429,14 @@ export class JanusSearchService {
       const frontmatter = parseFrontmatter(content);
       const h1Title = content.match(/^#\s+(.+)$/m)?.[1]?.trim();
       const title = frontmatter.title || h1Title || baseTitle;
+      const tags = expandTags(
+        noteTags({
+          aliases: frontmatter.aliases,
+          tags: frontmatter.tags,
+          inlineTags: findInlineTags(content, { bodyStart: frontmatter.bodyStart }).map((t) => t.tag),
+        })
+      );
+      if (!tagFilters.every((tag) => tags.includes(tag))) continue;
 
       allNotesData.push({
         title,
@@ -418,11 +446,26 @@ export class JanusSearchService {
         headings,
         aliases: frontmatter.aliases,
         bodyStart: frontmatter.bodyStart,
+        tags,
       });
     }
 
     const noteMatches: NoteSearchMatch[] = [];
     const taskMatches: TaskSearchMatch[] = [];
+
+    const tagOnly = tokens.length === 0 && tagFilters.length > 0;
+    if (tagOnly) {
+      for (const note of allNotesData) {
+        noteMatches.push({
+          title: note.title,
+          relativePath: note.relativePath,
+          uri: note.uri,
+          score: 1,
+          snippet: extractRelevantSnippet(note.content, tagFilters),
+          headings: note.headings,
+        });
+      }
+    }
 
     if (tokens.length > 0) {
       for (const note of allNotesData) {
@@ -454,6 +497,11 @@ export class JanusSearchService {
           }
 
           if (headingsLower.includes(token)) {
+            score += 6;
+          }
+
+          // A tag names the note's topic, like a heading
+          if (note.tags.includes(token)) {
             score += 6;
           }
 
@@ -513,7 +561,11 @@ export class JanusSearchService {
       }
     }
 
-    noteMatches.sort((a, b) => b.score - a.score || a.relativePath.localeCompare(b.relativePath));
+    noteMatches.sort((a, b) =>
+      tagOnly
+        ? a.title.localeCompare(b.title) || a.relativePath.localeCompare(b.relativePath)
+        : b.score - a.score || a.relativePath.localeCompare(b.relativePath)
+    );
     taskMatches.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
 
     const limitedNotes = noteMatches.slice(0, maxNotes);

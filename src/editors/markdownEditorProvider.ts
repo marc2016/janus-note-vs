@@ -23,6 +23,7 @@ import { resolveSortedLinks } from '../services/sortedLinkService';
 import { saveImageNextToNote, validateImage } from '../services/imageAssetService';
 import { findFencedBlocks, locateMermaidBlock } from '../services/markdownScan';
 import { repairLinkInNote } from '../commands/brokenLinksCommand';
+import { getTagIndex } from '../services/noteTagService';
 
 /**
  * Reports the outcome of an inbox sorting run, shared by the `janus.sortInbox` command and the
@@ -101,6 +102,19 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   private _mermaidRequestId = 0;
 
   /** Opens a note in the Janus editor and reveals `line` (1-based), also when it is already open. */
+  /** Sends the collection's tags (most used first) for the `#` suggestions in the editor. */
+  private async sendTagCandidates(roots: vscode.Uri[], webviewPanel: vscode.WebviewPanel): Promise<void> {
+    try {
+      const index = await getTagIndex(roots);
+      const tags = [...index.tags]
+        .map(([key, info]) => ({ tag: info.display, count: index.notesWithTag(key).length }))
+        .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+      void webviewPanel.webview.postMessage({ type: 'updateTagCandidates', tags });
+    } catch (err) {
+      console.warn('Failed to compute tag candidates:', err);
+    }
+  }
+
   public async openNoteAtLine(uri: vscode.Uri, line?: number): Promise<void> {
     if (line !== undefined) {
       this.setPendingLineReveal(uri, line);
@@ -429,6 +443,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             type: 'updateLinkCandidates',
             candidates,
           });
+          void this.sendTagCandidates(roots, webviewPanel);
         }
       } catch (err) {
         console.warn('Failed to compute link candidates:', err);
@@ -567,6 +582,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             type: 'updateLinkCandidates',
             candidates,
           });
+          void this.sendTagCandidates(roots, webviewPanel);
         }
       }
 

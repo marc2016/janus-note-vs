@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as vscode from 'vscode';
 import { ChatViewProvider } from '../src/editors/chatViewProvider';
+import { JanusSearchService } from '../src/services/janusSearchService';
+import { FolderTasksService } from '../src/services/folderTasksService';
 
 describe('ChatViewProvider', () => {
   let mockContext: any;
@@ -172,6 +174,38 @@ describe('ChatViewProvider', () => {
     expect(assistantMsg.sources?.length).toBe(1);
     expect(assistantMsg.sources?.[0].title).toBe('Project Kickoff');
     expect(assistantMsg.actions?.some((a) => a.actionType === 'openAllTasks')).toBe(true);
+  });
+
+  it('shows only tagged notes as sources for /search #tag', async () => {
+    const files: Record<string, string> = {
+      '/workspace/notes/plan.md': '# Plan\n\nThema #backend',
+      '/workspace/notes/retro.md': '# Retro\n\nbackend erwähnt, aber ohne Tag',
+    };
+    vi.spyOn(vscode.workspace.fs, 'readDirectory').mockImplementation(async (uri: vscode.Uri) =>
+      uri.fsPath === '/workspace/notes'
+        ? Object.keys(files).map((f) => [f.split('/').pop()!, vscode.FileType.File] as [string, vscode.FileType])
+        : []
+    );
+    vi.spyOn(vscode.workspace.fs, 'readFile').mockImplementation(async (uri: vscode.Uri) =>
+      Buffer.from(files[uri.fsPath] ?? '', 'utf-8')
+    );
+    const folderTasksService = new FolderTasksService();
+    vi.spyOn(folderTasksService, 'loadAllTasks').mockResolvedValue([]);
+    const searchService = new JanusSearchService(mockCompanionManager, folderTasksService);
+
+    const provider = new ChatViewProvider(
+      mockContext,
+      mockCompanionManager,
+      searchService,
+      mockFolderTasksService,
+      mockAiModelService
+    );
+    await provider.resolveWebviewView(mockWebviewView, {} as any, {} as any);
+
+    await provider.processUserMessage('/search #backend');
+
+    const assistantMsg = provider.getHistory()[1];
+    expect(assistantMsg.sources?.map((source) => source.title)).toEqual(['Plan']);
   });
 
   it('handles /tasks command and returns overview with actions', async () => {

@@ -8,6 +8,8 @@ import {
   resolveOutgoingLink,
 } from './noteLinkService';
 import { NoteMetadataEntry, buildAliasIndex, parseFrontmatter } from './noteMetadataService';
+import { findInlineTags } from './markdownScan';
+import { buildTagIndex, expandTags, noteTags } from './noteTagService';
 
 export interface GraphNode {
   id: string;
@@ -16,6 +18,8 @@ export interface GraphNode {
   relativePath: string;
   group: string;
   aliases?: string[];
+  /** Lower-cased tags of a note, with parents of nested tags. */
+  tags?: string[];
   /** Number of distinct linked notes (incoming and outgoing), ghosts excluded. */
   degree: number;
   ghost?: boolean;
@@ -32,6 +36,8 @@ export interface GraphEdge {
 export interface NoteGraphData {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  /** Display names of all tags in the collection, sorted. */
+  tags?: string[];
 }
 
 const GHOST_PREFIX = 'ghost:';
@@ -99,8 +105,10 @@ export async function buildNoteGraph(
     } catch {
       // Unreadable notes still get a node, without links
     }
-    const { title, aliases, tags } = text !== undefined ? parseFrontmatter(text) : { title: undefined, aliases: [], tags: [] };
-    metadata.push({ uri: note, metadata: { title, aliases, tags } });
+    const { title, aliases, tags, bodyStart } =
+      text !== undefined ? parseFrontmatter(text) : { title: undefined, aliases: [], tags: [], bodyStart: 0 };
+    const inlineTags = text !== undefined ? findInlineTags(text, { bodyStart }).map((t) => t.tag) : [];
+    metadata.push({ uri: note, metadata: { title, aliases, tags, inlineTags } });
 
     const id = note.toString();
     noteIdsByPath.set(note.fsPath, id);
@@ -112,6 +120,8 @@ export async function buildNoteGraph(
       degree: 0,
     };
     if (aliases.length > 0) node.aliases = aliases;
+    const nodeTags = expandTags(noteTags({ aliases, tags, inlineTags }));
+    if (nodeTags.length > 0) node.tags = nodeTags;
     nodes.set(id, node);
   }
   const aliasIndex = buildAliasIndex(metadata);
@@ -202,5 +212,6 @@ export async function buildNoteGraph(
     }
   }
 
-  return { nodes: [...nodes.values()], edges: [...edges.values()] };
+  const tagNames = [...buildTagIndex(metadata).tags.values()].map((t) => t.display).sort((a, b) => a.localeCompare(b));
+  return { nodes: [...nodes.values()], edges: [...edges.values()], tags: tagNames };
 }

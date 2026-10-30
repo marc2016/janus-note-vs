@@ -5,7 +5,7 @@ import {
   ViewPlugin,
   ViewUpdate,
 } from '@codemirror/view';
-import { Range, Extension, Compartment, Facet } from '@codemirror/state';
+import { Range, Extension, Compartment, Facet, Text } from '@codemirror/state';
 import {
   HighlightStyle,
   syntaxHighlighting,
@@ -14,6 +14,7 @@ import {
   ensureSyntaxTree,
 } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
+import { InlineTag, findInlineTags } from '../../../services/markdownScan';
 
 export type SyntaxVisibilityMode = 'auto' | 'visible' | 'hidden';
 
@@ -471,10 +472,48 @@ export const livePreviewPlugin = ViewPlugin.fromClass(
   }
 );
 
+const tagMark = Decoration.mark({ class: 'cm-janus-tag' });
+
+/** Mark decorations for the inline tags (same rules as the tag index) inside `ranges`. */
+export function buildTagDecorations(tags: InlineTag[], ranges: readonly { from: number; to: number }[]): DecorationSet {
+  return Decoration.set(
+    tags.filter((t) => ranges.some((r) => t.end > r.from && t.start < r.to)).map((t) => tagMark.range(t.start, t.end))
+  );
+}
+
+/** Highlights inline `#tags`; the document is scanned once per change, decorations cover the viewport. */
+export const tagHighlightPlugin = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    private doc: Text;
+    private tags: InlineTag[];
+
+    constructor(view: EditorView) {
+      this.doc = view.state.doc;
+      this.tags = findInlineTags(this.doc.toString());
+      this.decorations = buildTagDecorations(this.tags, view.visibleRanges);
+    }
+
+    update(update: ViewUpdate) {
+      if (update.docChanged) {
+        this.doc = update.state.doc;
+        this.tags = findInlineTags(this.doc.toString());
+      }
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = buildTagDecorations(this.tags, update.view.visibleRanges);
+      }
+    }
+  },
+  {
+    decorations: (v) => v.decorations,
+  }
+);
+
 export function livePreview(initialMode: SyntaxVisibilityMode = 'auto'): Extension {
   return [
     livePreviewTheme,
     livePreviewPlugin,
+    tagHighlightPlugin,
     syntaxVisibilityCompartment.of(syntaxVisibilityFacet.of(initialMode)),
     syntaxHighlighting(markdownHighlightStyle),
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),

@@ -17,6 +17,7 @@ import { slashCommands } from './extensions/slashCommands';
 import {
   createLinkAutocompleteSource,
 } from './extensions/linkAutocomplete';
+import { TagCandidate, createTagAutocompleteSource } from './extensions/tagAutocomplete';
 import { LinkCandidate } from '../../companion/noteLinking';
 import { styledLists } from './extensions/styledLists';
 import { styledTables } from './extensions/styledTables';
@@ -275,6 +276,7 @@ export const MarkdownEditorApp: React.FC = () => {
   const flushPendingEditsRef = useRef(flushPendingEdits);
   flushPendingEditsRef.current = flushPendingEdits;
   const linkCandidatesRef = useRef<LinkCandidate[]>([]);
+  const tagCandidatesRef = useRef<TagCandidate[]>([]);
   const handleOpenLinkRef = useRef<
     (target: string, viewType?: string, lineNumber?: number, linkType?: string) => void
   >(() => {});
@@ -397,6 +399,7 @@ export const MarkdownEditorApp: React.FC = () => {
           onOpenDatePicker: (pos, coords) => datePickerHandlerRef.current(pos, coords),
           onAiDiagram: (blockFrom) => getVsCodeApi()?.postMessage({ type: 'editDiagramWithAi', blockFrom }),
           linkCompletionSource: createLinkAutocompleteSource(() => linkCandidatesRef.current),
+          tagCompletionSource: createTagAutocompleteSource(() => tagCandidatesRef.current),
         }),
         EditorView.lineWrapping,
         // Save pending edits as soon as focus leaves the editor
@@ -502,6 +505,8 @@ export const MarkdownEditorApp: React.FC = () => {
         setLinksData(message.linksData);
       } else if (message.type === 'updateLinkCandidates' && Array.isArray(message.candidates)) {
         linkCandidatesRef.current = message.candidates;
+      } else if (message.type === 'updateTagCandidates' && Array.isArray(message.tags)) {
+        tagCandidatesRef.current = message.tags;
       } else if (message.type === 'aiTasksGenerating') {
         setIsGeneratingTasks(Boolean(message.isGenerating));
       } else if (message.type === 'aiInboxSorting') {

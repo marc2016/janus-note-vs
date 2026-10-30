@@ -12,7 +12,10 @@ import {
   CompanionTreeItem,
   AssetsFolderTreeItem,
   ImageTreeItem,
+  TagsRootTreeItem,
+  TagTreeItem,
 } from '../src/ui/notesTreeDataProvider';
+import * as noteTagService from '../src/services/noteTagService';
 import { getActiveNoteUri } from '../src/ui/activeNote';
 import { __setConfigStore } from './__mocks__/vscode';
 
@@ -492,4 +495,52 @@ describe('NotesTreeDataProvider', () => {
       (vscode.window as any).tabGroups.activeTabGroup = undefined;
     });
   });
+
+  describe('Tags entry', () => {
+    const notesRoot = '/workspace/project/notes';
+    const note = (name: string) => vscode.Uri.file(`${notesRoot}/${name}.md`);
+    const entry = (name: string, inlineTags: string[]) => ({ uri: note(name), metadata: { aliases: [], tags: [], inlineTags } });
+
+    beforeEach(() => {
+      __setConfigStore({ 'janus.notesRoot': 'notes', 'janus.initialized': true });
+      vi.spyOn(vscode.workspace.fs, 'readDirectory').mockResolvedValue([]);
+    });
+
+    it('lists tags with note counts below the graph entry and notes under each tag', async () => {
+      vi.spyOn(noteTagService, 'getTagIndex').mockResolvedValue(
+        noteTagService.buildTagIndex([
+          entry('plan', ['backend']),
+          entry('kickoff', ['backend', 'budget']),
+          entry('retro', ['backend']),
+        ])
+      );
+
+      const items = await provider.getChildren();
+      const tagsIndex = items.findIndex((i) => i instanceof TagsRootTreeItem);
+      expect(items[tagsIndex - 1]).toBeInstanceOf(NoteGraphTreeItem);
+      const tagsItem = items[tagsIndex] as TagsRootTreeItem;
+      expect(tagsItem.description).toBe('2');
+
+      const tags = (await provider.getChildren(tagsItem)) as TagTreeItem[];
+      expect(tags.map((t) => [t.label, t.description])).toEqual([
+        ['backend', '3'],
+        ['budget', '1'],
+      ]);
+
+      const notes = (await provider.getChildren(tags[0])) as NoteTreeItem[];
+      expect(notes.map((n) => n.label)).toEqual(['plan.md', 'kickoff.md', 'retro.md']);
+      expect(notes[0].command).toEqual(
+        expect.objectContaining({ command: 'vscode.openWith', arguments: [note('plan'), 'janus.markdownEditor'] })
+      );
+      expect(new Set(notes.map((n) => n.id)).size).toBe(3);
+      expect(notes[0].id).not.toBe(new NoteTreeItem(note('plan')).id);
+    });
+
+    it('shows no Tags entry when no note carries a tag', async () => {
+      vi.spyOn(noteTagService, 'getTagIndex').mockResolvedValue(noteTagService.buildTagIndex([entry('plan', [])]));
+      const items = await provider.getChildren();
+      expect(items.some((i) => i instanceof TagsRootTreeItem)).toBe(false);
+    });
+  });
 });
+

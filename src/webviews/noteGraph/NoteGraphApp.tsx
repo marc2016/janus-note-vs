@@ -60,7 +60,12 @@ export const NoteGraphApp: React.FC = () => {
   }, [filter, centreId]);
 
   const isLocal = filter.mode === 'local';
-  const visible = useMemo(() => (data ? visibleGraph(data, filter, centreId) ?? null : null), [data, filter, centreId]);
+  // A remembered tag that no note carries anymore is ignored
+  const tagKnown = !filter.tag || !!data?.tags?.some((t) => t.toLowerCase() === filter.tag);
+  const visible = useMemo(
+    () => (data ? visibleGraph(data, tagKnown ? filter : { ...filter, tag: null }, centreId) ?? null : null),
+    [data, filter, centreId, tagKnown]
+  );
   const segmentClass = (active: boolean) =>
     `h-7 px-2.5 ${
       active
@@ -106,6 +111,21 @@ export const NoteGraphApp: React.FC = () => {
               <option value={3}>3</option>
             </select>
           </label>
+        )}
+        {(data?.tags?.length ?? 0) > 0 && (
+          <select
+            value={tagKnown ? filter.tag ?? '' : ''}
+            onChange={(e) => setFilter({ ...filter, tag: e.target.value || null })}
+            aria-label="Tag"
+            className="h-7 px-1 rounded border text-xs border-[var(--vscode-input-border,rgba(128,128,128,0.3))] bg-[var(--vscode-dropdown-background,transparent)] text-[var(--vscode-dropdown-foreground,inherit)] focus:outline-none focus:border-[var(--vscode-focusBorder,#007acc)]"
+          >
+            <option value="">Alle Tags</option>
+            {data!.tags!.map((tag) => (
+              <option key={tag} value={tag.toLowerCase()}>
+                #{tag}
+              </option>
+            ))}
+          </select>
         )}
         <input
           type="search"

@@ -1,9 +1,13 @@
 import * as vscode from 'vscode';
+import { findInlineTags } from './markdownScan';
 
 export interface NoteMetadata {
   title?: string;
   aliases: string[];
+  /** Tags from the frontmatter `tags` key. */
   tags: string[];
+  /** Inline `#tags` of the note body (filled by `getNotesMetadata`). */
+  inlineTags?: string[];
 }
 
 export interface NoteFrontmatter extends NoteMetadata {
@@ -159,8 +163,9 @@ export async function getNotesMetadata(uris: vscode.Uri[]): Promise<NoteMetadata
       metadataCache.delete(uri.fsPath);
       continue;
     }
-    const { title, aliases, tags } = parseFrontmatter(text);
-    const metadata: NoteMetadata = { title, aliases, tags };
+    const { title, aliases, tags, bodyStart } = parseFrontmatter(text);
+    const inlineTags = findInlineTags(text, { bodyStart }).map((t) => t.tag);
+    const metadata: NoteMetadata = { title, aliases, tags, inlineTags };
     if (mtime !== undefined) {
       metadataCache.set(uri.fsPath, { mtime, metadata });
     }

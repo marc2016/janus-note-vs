@@ -422,3 +422,12 @@ body.vscode-high-contrast-light .janus-pill-backlink:hover {
   width: 13px;
   height: 13px;
 }
+
+/* Inline #tags in the Markdown editor */
+.cm-editor .cm-janus-tag {
+  color: var(--vscode-textLink-foreground, #3794ff);
+  background: color-mix(in srgb, var(--vscode-textLink-foreground, #3794ff) 12%, transparent);
+  border-radius: 4px;
+  padding: 0 2px;
+}
+

@@ -12,7 +12,9 @@ import {
   syntaxVisibilityCompartment,
   syntaxVisibilityFacet,
   SyntaxVisibilityMode,
+  buildTagDecorations,
 } from '../src/webviews/markdown/extensions/livePreview';
+import { findInlineTags } from '../src/services/markdownScan';
 import { toggleInlineFormatting, formattingKeymap } from '../src/webviews/markdown/lib/formatting';
 import {
   styledTables,
@@ -442,6 +444,28 @@ describe('CodeMirror Markdown Editor & Zero-Diff Verification', () => {
         effects: syntaxVisibilityCompartment.reconfigure(syntaxVisibilityFacet.of('hidden')),
       });
       expect(trHidden.state.facet(syntaxVisibilityFacet)).toBe('hidden');
+    });
+  });
+
+  describe('Tag Highlighting', () => {
+    const marked = (doc: string) => {
+      const decorations = buildTagDecorations(findInlineTags(doc), [{ from: 0, to: doc.length }]);
+      const result: string[] = [];
+      decorations.between(0, doc.length, (from, to, value) => {
+        expect(value.spec.class).toBe('cm-janus-tag');
+        result.push(doc.slice(from, to));
+      });
+      return result;
+    };
+
+    it('marks inline tags but not headings or code', () => {
+      expect(marked('# Überschrift\n\nThema #backend und `#backend`')).toEqual(['#backend']);
+    });
+
+    it('only decorates tags inside the given ranges', () => {
+      const doc = '#eins\n\n#zwei';
+      const decorations = buildTagDecorations(findInlineTags(doc), [{ from: 0, to: 5 }]);
+      expect(decorations.size).toBe(1);
     });
   });
 

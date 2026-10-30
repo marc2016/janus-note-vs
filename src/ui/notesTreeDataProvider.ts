@@ -12,11 +12,14 @@ import {
 } from '../commands/notesRootCommands';
 import { FolderTasksService } from '../services/folderTasksService';
 import { CalendarService } from '../services/calendarService';
+import { TagIndex, getTagIndex } from '../services/noteTagService';
 
 export type NotesTreeItem =
   | AllTasksTreeItem
   | CalendarTreeItem
   | NoteGraphTreeItem
+  | TagsRootTreeItem
+  | TagTreeItem
   | FolderTasksTreeItem
   | FolderTreeItem
   | NoteTreeItem
@@ -63,6 +66,39 @@ export class NoteGraphTreeItem extends vscode.TreeItem {
       command: 'janus.openNoteGraph',
       title: 'Notiz-Netzwerk öffnen',
     };
+  }
+}
+
+/** Pinned `Tags` entry; lists every tag of the collection. */
+export class TagsRootTreeItem extends vscode.TreeItem {
+  public readonly uri = vscode.Uri.parse('janus-tags:///all');
+
+  constructor(public readonly index: TagIndex) {
+    super('Tags', vscode.TreeItemCollapsibleState.Collapsed);
+    this.id = 'janus:tags';
+    this.contextValue = 'janusTags';
+    this.iconPath = new vscode.ThemeIcon('tag');
+    this.description = `${index.tags.size}`;
+    this.tooltip = `${index.tags.size} Tags in deinen Notizen`;
+  }
+}
+
+/** One tag under `Tags`; expands to the notes carrying it. */
+export class TagTreeItem extends vscode.TreeItem {
+  public readonly uri: vscode.Uri;
+
+  constructor(
+    public readonly tag: string,
+    display: string,
+    public readonly notes: vscode.Uri[]
+  ) {
+    super(display, vscode.TreeItemCollapsibleState.Collapsed);
+    this.uri = vscode.Uri.parse(`janus-tags:///${encodeURIComponent(tag)}`);
+    this.id = `janus:tag:${tag}`;
+    this.contextValue = 'janusTag';
+    this.iconPath = new vscode.ThemeIcon('tag');
+    this.description = `${notes.length}`;
+    this.tooltip = `#${display} – ${notes.length === 1 ? '1 Notiz' : `${notes.length} Notizen`}`;
   }
 }
 
@@ -263,6 +299,8 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
     if (
       element instanceof CalendarTreeItem ||
       element instanceof NoteGraphTreeItem ||
+      element instanceof TagsRootTreeItem ||
+      element instanceof TagTreeItem ||
       element instanceof AllTasksTreeItem ||
       element instanceof LinkedFolderTreeItem
     ) {
@@ -420,7 +458,10 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
         const calendarItem = new CalendarTreeItem(eventCount, status.notesRootUri);
         const dirItems = await this.readDirectoryItems(status.notesRootUri, false, false);
         const noteGraphItem = new NoteGraphTreeItem(status.notesRootUri);
-        items.push(allTasksItem, calendarItem, noteGraphItem, ...dirItems);
+        items.push(allTasksItem, calendarItem, noteGraphItem);
+        const tagIndex = await getTagIndex(this.companionManager.getAllNotesRoots());
+        if (tagIndex.tags.size > 0) items.push(new TagsRootTreeItem(tagIndex));
+        items.push(...dirItems);
       }
 
       for (const incUri of includedUris) {
@@ -432,6 +473,21 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
       }
 
       return items;
+    }
+
+    if (element instanceof TagsRootTreeItem) {
+      return [...element.index.tags]
+        .map(([tag, info]) => new TagTreeItem(tag, info.display, element.index.notesWithTag(tag)))
+        .sort((a, b) => String(a.label).localeCompare(String(b.label)));
+    }
+
+    if (element instanceof TagTreeItem) {
+      return element.notes.map((uri) => {
+        const item = new NoteTreeItem(uri);
+        // The same note also appears in its folder; tree IDs must be unique
+        item.id = `${element.id}:${uri.toString()}`;
+        return item;
+      });
     }
 
     if (element instanceof LinkedFolderTreeItem) {

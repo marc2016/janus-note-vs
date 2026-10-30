@@ -11,9 +11,9 @@ Folders give every note exactly one place, but many notes belong to several topi
 - **Graph:** a tag selector in the graph panel shows only notes with the selected tag (and the edges among them).
 - **Sidebar:** a pinned `Tags` entry, below `Netzwerk`, lists all tags with their note counts. Each tag expands to its notes.
 - **Search:** `#tag` in a search query (Janus search and the chat's `/search`) restricts results to notes with that tag. Words in the query that match a note's tag count like a heading match.
-- **Editor:** tags are highlighted in the Markdown editor's live preview.
+- **Editor:** tags are highlighted in the Markdown editor's live preview, and typing `#` immediately suggests the existing tags.
 
-Non-goals (possible follow-ups): tag nodes in the graph, renaming or merging a tag across all notes, tag autocomplete while typing `#`, clicking a tag in the editor to filter, a hierarchical tag tree in the sidebar, and tags on `tasks.json` entries.
+Non-goals (possible follow-ups): tag nodes in the graph, renaming or merging a tag across all notes, clicking a tag in the editor to filter, a hierarchical tag tree in the sidebar, and tags on `tasks.json` entries.
 
 ## Capabilities
 

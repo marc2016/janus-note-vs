@@ -190,6 +190,52 @@ describe('JanusSearchService', () => {
     });
   });
 
+  describe('searchWorkspace with tags', () => {
+    const files: Record<string, string> = {
+      '/workspace/notes/plan.md': '# Plan\n\nThema #backend: Deployment vorbereiten.',
+      '/workspace/notes/retro.md': '# Retro\n\nDeployment lief gut.',
+      '/workspace/notes/api.md': '---\ntags: [backend, budget]\n---\n# API\n\nEndpunkte.',
+      '/workspace/notes/infra.md': '# Infra\n\nServer #Backend/infra',
+    };
+
+    const createService = () => {
+      const companionManager = new CompanionManager();
+      vi.spyOn(companionManager, 'getNotesRootUri').mockReturnValue(rootUri);
+      const folderTasksService = new FolderTasksService();
+      vi.spyOn(folderTasksService, 'loadAllTasks').mockResolvedValue([]);
+      vi.spyOn(vscode.workspace.fs, 'readDirectory').mockImplementation(async (uri: vscode.Uri) =>
+        uri.fsPath === '/workspace/notes'
+          ? Object.keys(files).map((f) => [f.split('/').pop()!, vscode.FileType.File] as [string, vscode.FileType])
+          : []
+      );
+      vi.spyOn(vscode.workspace.fs, 'readFile').mockImplementation(async (uri: vscode.Uri) =>
+        Buffer.from(files[uri.fsPath] ?? '', 'utf-8')
+      );
+      return new JanusSearchService(companionManager, folderTasksService);
+    };
+
+    it('restricts results to notes with the tag', async () => {
+      const result = await createService().searchWorkspace('#backend Deployment');
+      expect(result.noteMatches.map((m) => m.relativePath)).toEqual(['plan.md']);
+      expect(result.tokens).toEqual(['deployment']);
+    });
+
+    it('returns all tagged notes ordered by title for a tag-only query', async () => {
+      const result = await createService().searchWorkspace('#backend');
+      expect(result.noteMatches.map((m) => m.title)).toEqual(['API', 'Infra', 'Plan']);
+    });
+
+    it('requires every tag filter to match', async () => {
+      const result = await createService().searchWorkspace('#backend #budget');
+      expect(result.noteMatches.map((m) => m.relativePath)).toEqual(['api.md']);
+    });
+
+    it('scores a keyword that equals a tag like a heading', async () => {
+      const result = await createService().searchWorkspace('budget');
+      expect(result.noteMatches).toEqual([expect.objectContaining({ relativePath: 'api.md', score: 6 })]);
+    });
+  });
+
   describe('getSummarizeContext & getInboxContext', () => {
     it('aggregates all notes and tasks in a specified folder for getSummarizeContext', async () => {
       const companionManager = new CompanionManager();

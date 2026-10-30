@@ -9,6 +9,8 @@ export interface GraphFilterOptions {
   showGhosts: boolean;
   mode: GraphMode;
   depth: GraphDepth;
+  /** Lower-cased tag the notes must carry, or null for all notes. */
+  tag: string | null;
 }
 
 export const DEFAULT_GRAPH_FILTER: GraphFilterOptions = {
@@ -17,6 +19,7 @@ export const DEFAULT_GRAPH_FILTER: GraphFilterOptions = {
   showGhosts: false,
   mode: 'all',
   depth: 1,
+  tag: null,
 };
 
 /**
@@ -66,14 +69,17 @@ export function localSubgraph(data: NoteGraphData, centreId: string, depth: numb
  */
 export function filterGraph(
   data: NoteGraphData,
-  options: Pick<GraphFilterOptions, 'search' | 'showOrphans' | 'showGhosts'>,
+  options: Pick<GraphFilterOptions, 'search' | 'showOrphans' | 'showGhosts'> & { tag?: string | null },
   keepIds: ReadonlySet<string> = new Set()
 ): NoteGraphData {
   const query = options.search.trim().toLowerCase();
+  const tag = options.tag?.toLowerCase();
 
   let nodes: GraphNode[] = data.nodes.filter((node) => {
     if (keepIds.has(node.id)) return true;
     if (node.ghost && !options.showGhosts) return false;
+    // A tag filter shows only notes carrying the tag (no ghosts or folders)
+    if (tag && !(node.tags ?? []).includes(tag)) return false;
     if (!query) return true;
     return (
       node.title.toLowerCase().includes(query) ||

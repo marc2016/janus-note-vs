@@ -202,6 +202,67 @@ export function findLinkOccurrences(
   return results.sort((a, b) => a.start - b.start);
 }
 
+export interface InlineTag {
+  /** Tag text without `#`, in the note's spelling. */
+  tag: string;
+  /** Offset range including the `#`. */
+  start: number;
+  end: number;
+}
+
+/**
+ * Offset after a leading YAML frontmatter block (`---` … `---` or `...`), 0 without one.
+ * Same rule as `parseFrontmatter`, usable where `vscode` is not available.
+ */
+export function frontmatterEnd(text: string): number {
+  const start = text.charCodeAt(0) === 0xfeff ? 1 : 0;
+  let offset = start;
+  let first = true;
+  while (offset <= text.length) {
+    const newline = text.indexOf('\n', offset);
+    const end = newline === -1 ? text.length : newline + 1;
+    const line = text.slice(offset, newline === -1 ? text.length : newline).replace(/\r$/, '');
+    if (first) {
+      if (line !== '---') return 0;
+      first = false;
+    } else if (line === '---' || line === '...') {
+      return end;
+    }
+    if (newline === -1) break;
+    offset = end;
+  }
+  return 0;
+}
+
+const INLINE_TAG_RE = /(?<!\S)#([\p{L}\p{N}_/-]+)/gu;
+const LINK_RANGE_RE = /\[\[[^\]]*\]\]|!?\[[^\]]*\]\([^)]*\)/g;
+
+/**
+ * Finds inline `#tags`: `#` at a line start or after whitespace, followed by letters, digits,
+ * `_`, `-` or `/` with at least one letter; a trailing `/` or `-` is dropped. Tags in code, links
+ * and the frontmatter block (before `bodyStart`, detected when not given) are skipped.
+ */
+export function findInlineTags(text: string, options: { bodyStart?: number } = {}): InlineTag[] {
+  const skipped: Array<[number, number]> = findCodeRanges(text);
+  let match: RegExpExecArray | null;
+  LINK_RANGE_RE.lastIndex = 0;
+  while ((match = LINK_RANGE_RE.exec(text)) !== null) {
+    skipped.push([match.index, match.index + match[0].length]);
+  }
+  const bodyStart = options.bodyStart ?? frontmatterEnd(text);
+
+  const tags: InlineTag[] = [];
+  INLINE_TAG_RE.lastIndex = 0;
+  while ((match = INLINE_TAG_RE.exec(text)) !== null) {
+    const start = match.index;
+    if (start < bodyStart || skipped.some(([s, e]) => start >= s && start < e)) continue;
+    const tag = match[1].replace(/[/-]+$/, '');
+    if (!/\p{L}/u.test(tag)) continue;
+    tags.push({ tag, start, end: start + 1 + tag.length });
+  }
+  return tags;
+}
+
 export interface FencedBlock {
   /** First word of the info string, lower-cased (`mermaid`, `js`, …); empty without one. */
   info: string;

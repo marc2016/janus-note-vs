@@ -13,6 +13,7 @@ import { MERMAID_PLACEHOLDER } from '../../../services/markdownScan';
 export interface SlashCommandsOptions {
   onOpenDatePicker?: (pos: number, coords: { top: number; left: number } | null) => void;
   linkCompletionSource?: (context: CompletionContext) => CompletionResult | null;
+  tagCompletionSource?: (context: CompletionContext) => CompletionResult | null;
   /** Called with the start of the inserted placeholder block after `/ki-diagramm`. */
   onAiDiagram?: (blockFrom: number) => void;
 }
@@ -254,6 +255,9 @@ export function slashCommands(options?: SlashCommandsOptions): Extension {
   const sources = [createSlashCommandSource(options)];
   if (options?.linkCompletionSource) {
     sources.push(options.linkCompletionSource);
+  }
+  if (options?.tagCompletionSource) {
+    sources.push(options.tagCompletionSource);
   }
 
   return [

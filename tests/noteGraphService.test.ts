@@ -158,4 +158,20 @@ describe('noteGraphService', () => {
     expect(graph.nodes.filter((n) => n.ghost).map((n) => n.title)).toEqual(['API']);
     expect(graph.nodes.find((n) => n.ghost)?.relativePath).toBe('API');
   });
+
+  it('adds expanded tags to note nodes and lists the tag names', async () => {
+    mockFileSystem({
+      '/workspace/notes/plan.md': '---\ntags: [Backend]\n---\nThema #projekt/alpha',
+      '/workspace/notes/kickoff.md': '#backend',
+      '/workspace/notes/retro.md': 'Ohne Tags',
+    });
+    const data = await buildNoteGraph([root], root);
+    const node = (name: string) => data.nodes.find((n) => n.id === id(`/workspace/notes/${name}.md`))!;
+
+    expect(node('plan').tags!.sort()).toEqual(['backend', 'projekt', 'projekt/alpha']);
+    expect(node('kickoff').tags).toEqual(['backend']);
+    expect(node('retro').tags).toBeUndefined();
+    expect(data.tags).toEqual(['backend', 'projekt/alpha']);
+  });
 });
+

@@ -131,3 +131,38 @@ describe('local graph mode', () => {
   });
 });
 
+describe('tag filter', () => {
+  const tagged: NoteGraphData = {
+    nodes: [
+      { ...node('plan', 'plan.md'), tags: ['backend'] },
+      { ...node('kickoff', 'kickoff.md'), tags: ['backend'] },
+      node('retro', 'retro.md'),
+      { ...node('alpha', 'alpha.md'), tags: ['projekt', 'projekt/alpha'] },
+      node('ghost:fehlt', 'fehlt', true),
+    ],
+    edges: [
+      { source: 'plan', target: 'kickoff', bidirectional: false },
+      { source: 'plan', target: 'retro', bidirectional: false },
+      { source: 'plan', target: 'ghost:fehlt', bidirectional: false },
+    ],
+  };
+
+  it('shows only notes with the tag and the edges among them, without ghosts', () => {
+    const result = filterGraph(tagged, { ...DEFAULT_GRAPH_FILTER, showGhosts: true, tag: 'backend' });
+    expect(ids(result)).toEqual(['plan', 'kickoff']);
+    expect(result.edges).toEqual([{ source: 'plan', target: 'kickoff', bidirectional: false }]);
+  });
+
+  it('matches notes with a nested tag when the parent is selected', () => {
+    expect(ids(filterGraph(tagged, { ...DEFAULT_GRAPH_FILTER, tag: 'projekt' }))).toEqual(['alpha']);
+  });
+
+  it('combines with the search field', () => {
+    expect(ids(filterGraph(tagged, { ...DEFAULT_GRAPH_FILTER, tag: 'backend', search: 'plan' }))).toEqual(['plan']);
+  });
+
+  it('shows all notes again without a tag', () => {
+    expect(ids(filterGraph(tagged, { ...DEFAULT_GRAPH_FILTER, tag: null }))).toEqual(['plan', 'kickoff', 'retro', 'alpha']);
+  });
+});
+
