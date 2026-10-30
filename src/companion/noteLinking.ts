@@ -7,7 +7,7 @@ export interface LinkCandidate {
   label: string;
   insertText: string;
   relPath: string;
-  fileType: 'note' | 'task' | 'chart' | 'image' | 'pdf' | 'file';
+  fileType: 'note' | 'task' | 'chart' | 'image' | 'pdf' | 'file' | 'folder';
   /** Set for extra note entries found via the note's frontmatter instead of its file name. */
   matchedBy?: 'alias' | 'title';
 }
@@ -97,6 +97,12 @@ export async function findLinkCandidatesInRoot(
 
       const entryUri = vscode.Uri.joinPath(dirUri, name);
       if (fileType === vscode.FileType.Directory) {
+        // Folders can be linked too (`[[projects/App-Launch/]]`); image folders are not offered
+        if (name !== 'assets') {
+          const base = relativeToUri || notesRootUri;
+          const relPath = path.relative(base.fsPath, entryUri.fsPath).replace(/\\/g, '/');
+          candidates.push({ label: `${name}/`, insertText: `${relPath}/`, relPath: `${relPath}/`, fileType: 'folder' });
+        }
         await scan(entryUri, depth + 1);
       } else if (fileType === vscode.FileType.File) {
         const base = relativeToUri || notesRootUri;

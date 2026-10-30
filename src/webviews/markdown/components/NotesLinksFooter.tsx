@@ -15,6 +15,7 @@ import {
   mdiAutoFix,
   mdiLoading,
   mdiInboxArrowDown,
+  mdiFolderOutline,
 } from '@mdi/js';
 
 export interface FooterLinkItem {
@@ -25,6 +26,8 @@ export interface FooterLinkItem {
   exists: boolean;
   viewType?: string;
   lineNumber?: number;
+  /** `folder` for links to folders (opens the Folder Overview). */
+  kind?: 'note' | 'folder';
 }
 
 export interface FooterCompanions {
@@ -300,7 +303,9 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
                     : `Diese Notiz verweist auf „${link.title}“ (${link.relativePath}), aber die Zieldatei existiert noch nicht.`
                 }
                 actionHint={
-                  link.exists
+                  link.kind === 'folder'
+                    ? 'Klicken, um die Ordnerübersicht zu öffnen'
+                    : link.exists
                     ? link.lineNumber
                       ? `Klicken, um bei Zeile ${link.lineNumber} zu öffnen`
                       : 'Klicken, um die verknüpfte Notiz zu öffnen'
@@ -327,7 +332,7 @@ export const NotesLinksFooter: React.FC<NotesLinksFooterProps> = ({
                     link.exists ? 'janus-pill-link' : 'border-dashed janus-pill-missing'
                   }`}
                 >
-                  <MdiIcon path={mdiFileDocumentOutline} size={13} />
+                  <MdiIcon path={link.kind === 'folder' ? mdiFolderOutline : mdiFileDocumentOutline} size={13} />
                   <span>
                     {link.title}
                     {link.lineNumber ? ` :${link.lineNumber}` : ''}

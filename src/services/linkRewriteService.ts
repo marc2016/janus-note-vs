@@ -132,6 +132,61 @@ export function resolveNotePath(
   return undefined;
 }
 
+/**
+ * Folders a link can point to: every folder that contains a note (below a root), plus the
+ * renamed folder itself. Keys are lower-cased paths.
+ */
+export function collectKnownFolders(notes: string[], roots: string[], op: RenameOperation): Map<string, string> {
+  const folders = new Map<string, string>();
+  const add = (dir: string) => folders.set(dir.toLowerCase(), dir);
+  for (const note of notes) {
+    let dir = path.dirname(note);
+    while (roots.some((r) => isInside(dir, r))) {
+      add(dir);
+      dir = path.dirname(dir);
+    }
+  }
+  if (op.isFolder) add(op.oldPath);
+  return folders;
+}
+
+/**
+ * Resolves a link path to a known folder (relative to the note, the primary root or the
+ * workspace folder), like the folder step of `resolveOutgoingLink`.
+ */
+export function resolveFolderPath(
+  linkPath: string,
+  sourceFsPath: string,
+  folders: Map<string, string>,
+  env: ResolveEnv
+): { fsPath: string; base: Exclude<ResolutionBase, 'basename'> } | undefined {
+  const clean = linkPath.replace(/^\.\//, '').replace(/\/+$/, '');
+  if (!clean || /\.[a-z0-9]+$/i.test(clean)) return undefined;
+  const lookup = (candidate: string) => folders.get(path.resolve(candidate).toLowerCase());
+  const fromSource = lookup(path.resolve(path.dirname(sourceFsPath), clean));
+  if (fromSource) return { fsPath: fromSource, base: 'source' };
+  if (env.primaryRoot) {
+    const fromRoot = lookup(path.resolve(env.primaryRoot, clean));
+    if (fromRoot) return { fsPath: fromRoot, base: 'root' };
+  }
+  const wsFolder = env.workspaceFolderOf(sourceFsPath);
+  if (wsFolder) {
+    const fromWs = lookup(path.resolve(wsFolder, clean));
+    if (fromWs) return { fsPath: fromWs, base: 'workspace' };
+  }
+  return undefined;
+}
+
+/** New link path for a folder link, keeping the `./` prefix and the trailing `/` of the original. */
+function rewriteFolderLink(originalPath: string, base: Exclude<ResolutionBase, 'basename'>, ctx: RewriteContext): string | undefined {
+  const baseDir =
+    base === 'source' ? path.dirname(ctx.newSourceFsPath) : base === 'root' ? ctx.primaryRoot : ctx.workspaceFolder;
+  if (!baseDir) return undefined;
+  let rel = toPosix(path.relative(baseDir, ctx.newTargetFsPath));
+  if (originalPath.startsWith('./') && !rel.startsWith('../')) rel = `./${rel}`;
+  return originalPath.endsWith('/') ? `${rel}/` : rel;
+}
+
 /** Maps a path to its location after `op`; paths outside the renamed item are returned unchanged. */
 export function mapRenamedPath(fsPath: string, op: RenameOperation): string {
   if (samePath(fsPath, op.oldPath)) return op.newPath;
@@ -220,6 +275,7 @@ export function buildRenamePlan(
   env: ResolveEnv & { roots: string[] }
 ): RenamePlan {
   const before = createNoteIndex(sources.map((s) => s.fsPath));
+  const folders = collectKnownFolders(sources.map((s) => s.fsPath), env.roots, op);
   const after = createNoteIndex(sortLikeScan(sources.map((s) => mapRenamedPath(s.fsPath, op)), env.roots));
   const files: FileRewrite[] = [];
   let skipped = 0;
@@ -233,8 +289,23 @@ export function buildRenamePlan(
       if (seen.has(occurrence.path)) continue;
       seen.add(occurrence.path);
 
-      const resolved = resolveNotePath(occurrence.path, source.fsPath, before, env);
-      if (!resolved || !isAffected(resolved.fsPath, op)) continue;
+      // A trailing slash always means a folder; otherwise a note wins over a folder
+      const resolved = occurrence.path.endsWith('/') ? undefined : resolveNotePath(occurrence.path, source.fsPath, before, env);
+      if (!resolved) {
+        const folder = op.isFolder ? resolveFolderPath(occurrence.path, source.fsPath, folders, env) : undefined;
+        if (!folder || !isAffected(folder.fsPath, op)) continue;
+        const rewritten = rewriteFolderLink(occurrence.path, folder.base, {
+          newSourceFsPath,
+          newTargetFsPath: mapRenamedPath(folder.fsPath, op),
+          isFolderRename: true,
+          primaryRoot: env.primaryRoot,
+          workspaceFolder: env.workspaceFolderOf(newSourceFsPath),
+        });
+        if (rewritten === undefined) skipped++;
+        else if (rewritten !== occurrence.path) rewrites.set(occurrence.path, rewritten);
+        continue;
+      }
+      if (!isAffected(resolved.fsPath, op)) continue;
 
       const ctx: RewriteContext = {
         newSourceFsPath,

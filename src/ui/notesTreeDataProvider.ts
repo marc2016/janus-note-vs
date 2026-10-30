@@ -391,6 +391,18 @@ export class NotesTreeDataProvider implements vscode.TreeDataProvider<NotesTreeI
       return new CompanionTreeItem('chart', uri, noteUri);
     }
 
+    // Folders inside the notes root (e.g. targets of folder links)
+    if (relPath) {
+      try {
+        if ((await vscode.workspace.fs.stat(uri)).type === vscode.FileType.Directory) {
+          const isRootChild = path.dirname(uri.fsPath) === status.notesRootUri.fsPath;
+          return fileName === IMAGE_ASSETS_FOLDER ? new AssetsFolderTreeItem(uri) : new FolderTreeItem(uri, isRootChild);
+        }
+      } catch {
+        // Not a folder
+      }
+    }
+
     return undefined;
   }
 

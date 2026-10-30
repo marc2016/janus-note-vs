@@ -3,6 +3,7 @@ import * as path from 'path';
 import { AiFolderSummaryService, SelectionItem } from '../services/aiFolderSummaryService';
 import { FolderTasksService } from '../services/folderTasksService';
 import { MarkdownEditorProvider } from './markdownEditorProvider';
+import { FolderBacklink, findFolderBacklinks } from '../services/noteLinkService';
 import { isMarkdownNote } from '../companion/companionPaths';
 import { TaskItem } from '../models/tasks';
 
@@ -52,6 +53,8 @@ export interface FolderOverviewData {
   canIncludeSubfolders?: boolean;
   /** True when a folder-mode overview shows the configured notes root. */
   isNotesRoot?: boolean;
+  /** Notes linking to this folder (folder mode only). */
+  folderBacklinks?: FolderBacklink[];
   defaultSaveLocation?: string;
   selectionItems?: Array<{ uri: string; isFolder: boolean }>;
 }
@@ -280,6 +283,16 @@ export class FolderOverviewViewProvider {
       };
     } catch {}
 
+    const notesRoot = this.getNotesRootUri?.();
+    let folderBacklinks: FolderBacklink[] = [];
+    if (notesRoot) {
+      try {
+        folderBacklinks = await findFolderBacklinks(folderUri, notesRoot, notesRoot);
+      } catch {
+        folderBacklinks = [];
+      }
+    }
+
     return {
       mode: 'folder',
       folderUri: folderUri.toString(),
@@ -289,7 +302,8 @@ export class FolderOverviewViewProvider {
       tasks: tasksSummary,
       subfolderCount,
       canIncludeSubfolders: subfolderCount > 0,
-      isNotesRoot: this.getNotesRootUri?.()?.fsPath === folderUri.fsPath,
+      isNotesRoot: notesRoot?.fsPath === folderUri.fsPath,
+      folderBacklinks,
     };
   }
 
@@ -489,7 +503,11 @@ export class FolderOverviewViewProvider {
       case 'openNote': {
         if (message.noteUri) {
           const targetUri = this.resolveUri(message.noteUri);
-          await vscode.commands.executeCommand('vscode.openWith', targetUri, MarkdownEditorProvider.viewType);
+          if (typeof message.line === 'number') {
+            await vscode.commands.executeCommand('janus.openNoteAtLine', targetUri, message.line);
+          } else {
+            await vscode.commands.executeCommand('vscode.openWith', targetUri, MarkdownEditorProvider.viewType);
+          }
         }
         break;
       }

@@ -45,6 +45,8 @@ export interface NoteLinkItem {
   exists: boolean;
   viewType?: string;
   lineNumber?: number;
+  /** `folder` for links to folders; absent means a note or file. */
+  kind?: 'note' | 'folder';
 }
 
 export interface CompanionSummary {
@@ -228,6 +230,50 @@ export async function findMarkdownNotesInRoots(
   return allNotes;
 }
 
+async function directoryExists(uri: vscode.Uri): Promise<boolean> {
+  try {
+    return (await vscode.workspace.fs.stat(uri)).type === vscode.FileType.Directory;
+  } catch {
+    return false;
+  }
+}
+
+/** Finds a folder relative to the note, the notes root or the workspace folder, in that order. */
+async function resolveFolderTarget(
+  folderPath: string,
+  sourceNoteUri: vscode.Uri,
+  notesRootUri?: vscode.Uri
+): Promise<vscode.Uri | undefined> {
+  if (!folderPath) return notesRootUri;
+  const candidates = [vscode.Uri.file(path.resolve(path.dirname(sourceNoteUri.fsPath), folderPath))];
+  if (notesRootUri) candidates.push(vscode.Uri.joinPath(notesRootUri, folderPath));
+  const wsFolder = vscode.workspace.getWorkspaceFolder(sourceNoteUri);
+  if (wsFolder) candidates.push(vscode.Uri.joinPath(wsFolder.uri, folderPath));
+  for (const candidate of candidates) {
+    if (await directoryExists(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+function folderLinkItem(
+  link: ExtractedLink,
+  folderUri: vscode.Uri,
+  exists: boolean,
+  notesRootUri: vscode.Uri | undefined,
+  lineNumber: number | undefined
+): NoteLinkItem {
+  const rel = notesRootUri ? path.relative(notesRootUri.fsPath, folderUri.fsPath).replace(/\\/g, '/') : path.basename(folderUri.fsPath);
+  return {
+    title: link.label && link.label !== link.target ? link.label : path.basename(folderUri.fsPath),
+    target: link.target,
+    uri: folderUri.toString(),
+    relativePath: rel ? `${rel}/` : '',
+    exists,
+    lineNumber,
+    kind: 'folder',
+  };
+}
+
 async function fileExists(uri: vscode.Uri): Promise<boolean> {
   try {
     await vscode.workspace.fs.stat(uri);
@@ -249,6 +295,20 @@ export async function resolveOutgoingLink(
 ): Promise<NoteLinkItem> {
   const { cleanTarget, lineNumber } = parseLinkTargetAndLine(link.target);
   const targetLine = link.lineNumber ?? lineNumber;
+
+  // A trailing slash always means a folder
+  const folderPath = cleanTarget.replace(/^\.\//, '').replace(/\/+$/, '');
+  if (/\/$/.test(cleanTarget)) {
+    const folderUri = await resolveFolderTarget(folderPath, sourceNoteUri, notesRootUri);
+    return folderLinkItem(
+      link,
+      folderUri ?? vscode.Uri.file(path.resolve(path.dirname(sourceNoteUri.fsPath), folderPath)),
+      Boolean(folderUri),
+      notesRootUri,
+      targetLine
+    );
+  }
+
   const normalizedTarget = ensureNoteExtension(cleanTarget.replace(/^\.\//, ''));
   const sourceDir = path.dirname(sourceNoteUri.fsPath);
 
@@ -336,6 +396,14 @@ export async function resolveOutgoingLink(
       exists: true,
       lineNumber: targetLine,
     };
+  }
+
+  // Candidate 5: a folder, when no note matched and the target has no file extension
+  if (!/\.[a-z0-9]+$/i.test(folderPath)) {
+    const folderUri = await resolveFolderTarget(folderPath, sourceNoteUri, notesRootUri);
+    if (folderUri) {
+      return folderLinkItem(link, folderUri, true, notesRootUri, targetLine);
+    }
   }
 
   // Fallback: unresolved / non-existent target (placed relative to source note)
@@ -449,6 +517,58 @@ export async function loadAliasIndex(notes: vscode.Uri[]): Promise<AliasIndex> {
 /**
  * Finds all Markdown notes in `notesRoots` that contain an outgoing link to `targetNoteUri`.
  */
+/** A note that links to a folder, with the 1-based line of the link. */
+export interface FolderBacklink {
+  title: string;
+  uri: string;
+  relativePath: string;
+  line: number;
+}
+
+/**
+ * Notes that link to `folderUri` (see folder links in `resolveOutgoingLink`). Only links whose
+ * last path segment names the folder are resolved, which keeps the scan cheap.
+ */
+export async function findFolderBacklinks(
+  folderUri: vscode.Uri,
+  notesRoots: vscode.Uri | vscode.Uri[],
+  primaryRoot?: vscode.Uri
+): Promise<FolderBacklink[]> {
+  const roots = Array.isArray(notesRoots) ? notesRoots : [notesRoots];
+  const notesRoot = primaryRoot ?? roots[0];
+  const allNotes = await findMarkdownNotesInRoots(roots);
+  const folderName = path.basename(folderUri.fsPath).toLowerCase();
+  const result: FolderBacklink[] = [];
+
+  for (const note of allNotes) {
+    let text: string;
+    try {
+      text = Buffer.from(await vscode.workspace.fs.readFile(note)).toString('utf8');
+    } catch {
+      continue;
+    }
+    for (const occurrence of findLinkOccurrences(text)) {
+      const lastSegment = occurrence.path.replace(/\/+$/, '').split('/').pop()?.toLowerCase();
+      if (lastSegment !== folderName) continue;
+      const resolved = await resolveOutgoingLink(
+        { raw: occurrence.path, target: occurrence.path, label: occurrence.path, type: occurrence.type === 'wiki' ? 'wiki' : 'markdown' },
+        note,
+        notesRoot,
+        allNotes
+      );
+      if (resolved.kind === 'folder' && resolved.exists && vscode.Uri.parse(resolved.uri).fsPath === folderUri.fsPath) {
+        result.push({
+          title: path.basename(note.fsPath).replace(/\.(md|markdown)$/i, ''),
+          uri: note.toString(),
+          relativePath: notesRoot ? path.relative(notesRoot.fsPath, note.fsPath).replace(/\\/g, '/') : path.basename(note.fsPath),
+          line: occurrence.line,
+        });
+      }
+    }
+  }
+  return result;
+}
+
 export async function findBacklinks(
   targetNoteUri: vscode.Uri,
   notesRoots: vscode.Uri | vscode.Uri[]

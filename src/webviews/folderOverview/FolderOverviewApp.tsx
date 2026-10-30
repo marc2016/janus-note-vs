@@ -5,6 +5,34 @@ import {
   FolderNoteCard,
 } from '../../editors/folderOverviewViewProvider';
 import { TaskDateChips } from '../tasks/TaskDateChips';
+import type { FolderBacklink } from '../../services/noteLinkService';
+
+/** Notes that link to this folder; hidden when there are none. */
+export const FolderBacklinksSection: React.FC<{ backlinks?: FolderBacklink[]; onOpen: (backlink: FolderBacklink) => void }> = ({
+  backlinks,
+  onOpen,
+}) => {
+  if (!backlinks || backlinks.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      <h2 className="text-sm font-semibold text-[var(--vscode-foreground,#cccccc)]">Verlinkt von ({backlinks.length})</h2>
+      <div className="flex flex-wrap gap-2">
+        {backlinks.map((backlink) => (
+          <button
+            key={`${backlink.uri}:${backlink.line}`}
+            type="button"
+            onClick={() => onOpen(backlink)}
+            title={`${backlink.relativePath}, Zeile ${backlink.line} öffnen`}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--vscode-editorWidget-border,rgba(128,128,128,0.35))] px-3 py-1 text-xs hover:border-[var(--vscode-focusBorder,#007acc)] cursor-pointer"
+          >
+            <span className="font-medium">{backlink.title}</span>
+            <span className="opacity-60">:{backlink.line}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
 import type { TaskPriority } from '../../models/tasks';
 
 const PRIORITY_BADGE_CLASS: Record<TaskPriority, string> = {
@@ -469,6 +497,15 @@ export const FolderOverviewApp: React.FC = () => {
             </div>
           )}
         </div>
+      )}
+
+      {data.mode === 'folder' && (
+        <FolderBacklinksSection
+          backlinks={data.folderBacklinks}
+          onOpen={(backlink) =>
+            getVsCodeApi()?.postMessage({ type: 'openNote', noteUri: backlink.uri, line: backlink.line })
+          }
+        />
       )}
 
       {/* Notes Grid Section */}

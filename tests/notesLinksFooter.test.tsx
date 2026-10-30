@@ -138,3 +138,26 @@ describe('NotesLinksFooter Component', () => {
     });
   });
 });
+
+describe('folder links in the footer', () => {
+  it('shows a folder link with the folder hint and opens it on click target', () => {
+    const linksData: NoteLinksData = {
+      noteUri: 'file:///workspace/notes/plan.md',
+      companions: {},
+      outgoingLinks: [
+        {
+          title: 'App-Launch',
+          target: 'projects/App-Launch/',
+          uri: 'file:///workspace/notes/projects/App-Launch',
+          relativePath: 'projects/App-Launch/',
+          exists: true,
+          kind: 'folder',
+        },
+      ],
+      backlinks: [],
+    };
+    const markup = renderToStaticMarkup(<NotesLinksFooter linksData={linksData} onOpenLink={() => {}} onAddLink={() => {}} />);
+    expect(markup).toContain('App-Launch');
+    expect(markup).toContain('Klicken, um die Ordnerübersicht zu öffnen');
+  });
+});

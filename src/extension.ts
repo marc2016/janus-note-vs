@@ -248,6 +248,12 @@ export function activate(context: vscode.ExtensionContext) {
       chatViewProvider,
       { webviewOptions: { retainContextWhenHidden: true } }
     ),
+    vscode.commands.registerCommand('janus.openNoteAtLine', (uri: vscode.Uri, line?: number) =>
+      markdownEditor.provider.openNoteAtLine(uri, line)
+    ),
+    vscode.commands.registerCommand('janus.revealInNotesTree', (uri?: vscode.Uri) =>
+      syncSidebarSelectionWithActiveEditor(uri)
+    ),
     vscode.commands.registerCommand('janus.focusChatView', async () => {
       await vscode.commands.executeCommand('janus.chatView.focus');
     }),

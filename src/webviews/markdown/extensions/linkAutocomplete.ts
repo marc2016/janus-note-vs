@@ -15,6 +15,7 @@ export const FILE_TYPE_ICONS: Record<LinkCandidate['fileType'], string> = {
   image: '🖼️',
   pdf: '📑',
   file: '📎',
+  folder: '📁',
 };
 
 export function createLinkAutocompleteSource(

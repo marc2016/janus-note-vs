@@ -57,6 +57,12 @@ export class NoteGraphViewProvider {
           );
         }
         break;
+
+      case 'openFolder':
+        if (typeof message.uri === 'string') {
+          await vscode.commands.executeCommand('janus.openFolderOverview', vscode.Uri.parse(message.uri));
+        }
+        break;
     }
   }
 

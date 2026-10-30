@@ -285,6 +285,8 @@ export const NoteGraphCanvas: React.FC<NoteGraphCanvasProps> = ({ nodes, edges, 
       .join((enter) => {
         const g = enter.append('g').attr('class', 'node');
         g.append('circle');
+        // Folders are drawn as rounded squares
+        g.append('rect').attr('class', 'folder-shape');
         g.append('text')
           .attr('text-anchor', 'middle')
           .attr('fill', FOREGROUND)
@@ -326,7 +328,20 @@ export const NoteGraphCanvas: React.FC<NoteGraphCanvasProps> = ({ nodes, edges, 
       );
 
     nodeGroups
+      .select('rect')
+      .attr('display', (d) => (d.kind === 'folder' ? null : 'none'))
+      .attr('x', (d) => -d.radius)
+      .attr('y', (d) => -d.radius)
+      .attr('width', (d) => d.radius * 2)
+      .attr('height', (d) => d.radius * 2)
+      .attr('rx', 3)
+      .attr('fill', (d) => color(d.group))
+      .attr('stroke', 'var(--vscode-editor-foreground, #cccccc)')
+      .attr('stroke-width', 1);
+
+    nodeGroups
       .select('circle')
+      .attr('display', (d) => (d.kind === 'folder' ? 'none' : null))
       .attr('r', (d) => d.radius)
       .attr('fill', (d) => (d.ghost ? 'none' : color(d.group)))
       .attr('stroke', (d) => (d.ghost ? 'var(--vscode-descriptionForeground, #999999)' : 'none'))
@@ -336,7 +351,7 @@ export const NoteGraphCanvas: React.FC<NoteGraphCanvasProps> = ({ nodes, edges, 
     nodeGroups
       .select('text')
       .attr('fill-opacity', (d) => (d.ghost ? 0.6 : 0.9))
-      .text((d) => d.title);
+      .text((d) => (d.kind === 'folder' ? `📁 ${d.title}` : d.title));
 
     nodeGroups.selectAll<SVGTitleElement, SimNode>('title').data((d) => [d]).join('title').text((d) => d.relativePath);
 

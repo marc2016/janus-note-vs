@@ -99,6 +99,15 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   private readonly _pendingTextInsertions = new Map<number, (result: InsertTextResult) => void>();
   private _mermaidRequestId = 0;
 
+  /** Opens a note in the Janus editor and reveals `line` (1-based), also when it is already open. */
+  public async openNoteAtLine(uri: vscode.Uri, line?: number): Promise<void> {
+    if (line !== undefined) {
+      this.setPendingLineReveal(uri, line);
+      void this.getOpenWebviewPanel(uri)?.webview.postMessage({ type: 'revealLine', line });
+    }
+    await vscode.commands.executeCommand('vscode.openWith', uri, MarkdownEditorProvider.viewType);
+  }
+
   public setPendingLineReveal(uri: vscode.Uri, line: number): void {
     this._pendingLineReveals.set(uri.toString(), line);
   }
@@ -803,19 +812,17 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       let targetUri: vscode.Uri;
       let exists = false;
 
-      if (cleanTarget.startsWith('file://')) {
-        targetUri = vscode.Uri.parse(cleanTarget);
+      if (cleanTarget.startsWith('file://') || path.isAbsolute(cleanTarget)) {
+        targetUri = cleanTarget.startsWith('file://') ? vscode.Uri.parse(cleanTarget) : vscode.Uri.file(cleanTarget);
         try {
-          await vscode.workspace.fs.stat(targetUri);
+          const stat = await vscode.workspace.fs.stat(targetUri);
           exists = true;
-        } catch {
-          exists = false;
-        }
-      } else if (path.isAbsolute(cleanTarget)) {
-        targetUri = vscode.Uri.file(cleanTarget);
-        try {
-          await vscode.workspace.fs.stat(targetUri);
-          exists = true;
+          // e.g. a folder link clicked in the footer
+          if (stat.type === vscode.FileType.Directory) {
+            await vscode.commands.executeCommand('janus.openFolderOverview', targetUri);
+            await vscode.commands.executeCommand('janus.revealInNotesTree', targetUri);
+            return;
+          }
         } catch {
           exists = false;
         }
@@ -838,6 +845,19 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         );
         targetUri = vscode.Uri.parse(resolved.uri);
         exists = resolved.exists;
+
+        // Folder links open the Folder Overview instead of a note
+        if (resolved.kind === 'folder') {
+          if (!exists) {
+            void vscode.window.showInformationMessage(
+              `Der Ordner "${resolved.relativePath || cleanTarget}" existiert nicht.`
+            );
+            return;
+          }
+          await vscode.commands.executeCommand('janus.openFolderOverview', targetUri);
+          await vscode.commands.executeCommand('janus.revealInNotesTree', targetUri);
+          return;
+        }
       }
 
       // If target note does not exist, prompt user to confirm creation
@@ -883,17 +903,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       }
 
       if (viewType === MarkdownEditorProvider.viewType || isMarkdownNote(targetUri.fsPath)) {
-        if (targetLine !== undefined) {
-          this.setPendingLineReveal(targetUri, targetLine);
-          const existingPanel = this.getOpenWebviewPanel(targetUri);
-          if (existingPanel) {
-            void existingPanel.webview.postMessage({
-              type: 'revealLine',
-              line: targetLine,
-            });
-          }
-        }
-        await vscode.commands.executeCommand('vscode.openWith', targetUri, MarkdownEditorProvider.viewType);
+        await this.openNoteAtLine(targetUri, targetLine);
       } else if (viewType) {
         await vscode.commands.executeCommand('vscode.openWith', targetUri, viewType);
       } else {

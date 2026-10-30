@@ -224,3 +224,44 @@ describe('buildRenamePlan verification', () => {
     expect(plan.skipped).toBe(1);
   });
 });
+
+describe('folder links on rename', () => {
+  it('rewrites a folder link when the folder is renamed', () => {
+    const { texts } = rename(
+      {
+        'plan.md': 'Siehe [[projects/App-Launch/]] und [Ordner](projects/App-Launch)',
+        'projects/App-Launch/app.md': '# App',
+      },
+      renameFolder('projects/App-Launch', 'projects/Mobile-App')
+    );
+    expect(texts['plan.md']).toBe('Siehe [[projects/Mobile-App/]] und [Ordner](projects/Mobile-App)');
+  });
+
+  it('rewrites links into a subfolder when a parent folder moves', () => {
+    const { texts } = rename(
+      {
+        'plan.md': '[[projects/App-Launch/specs/]]',
+        'projects/App-Launch/specs/api.md': '# API',
+      },
+      renameFolder('projects', 'archiv/projects')
+    );
+    expect(texts['plan.md']).toBe('[[archiv/projects/App-Launch/specs/]]');
+  });
+
+  it('keeps note links and links to other folders unchanged', () => {
+    const { texts } = rename(
+      {
+        'plan.md': '[[knowledge/]] [[projects/App-Launch/app]]',
+        'knowledge/ki.md': '# KI',
+        'projects/App-Launch/app.md': '# App',
+      },
+      renameFolder('projects/App-Launch', 'projects/Mobile-App')
+    );
+    expect(texts['plan.md']).toBe('[[knowledge/]] [[projects/Mobile-App/app]]');
+  });
+
+  it('rewrites a link to an empty renamed folder', () => {
+    const { texts } = rename({ 'plan.md': '[[projects/Leer/]]' }, renameFolder('projects/Leer', 'projects/Neu'));
+    expect(texts['plan.md']).toBe('[[projects/Neu/]]');
+  });
+});

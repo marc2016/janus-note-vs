@@ -19,6 +19,8 @@ export interface GraphNode {
   /** Number of distinct linked notes (incoming and outgoing), ghosts excluded. */
   degree: number;
   ghost?: boolean;
+  /** `folder` for folders that notes link to; absent for notes. */
+  kind?: 'folder';
 }
 
 export interface GraphEdge {
@@ -134,6 +136,26 @@ export async function buildNoteGraph(
         resolutionCache.set(cacheKey, pending);
       }
       const resolved = await pending;
+
+      // Linked folders become their own nodes; missing folders are left out (no ghosts)
+      if (resolved.kind === 'folder') {
+        if (!resolved.exists) continue;
+        const folderUri = vscode.Uri.parse(resolved.uri);
+        const folderId = `folder:${folderUri.toString()}`;
+        if (!nodes.has(folderId)) {
+          const { relativePath, group } = describeNote(folderUri, roots);
+          nodes.set(folderId, {
+            id: folderId,
+            title: path.basename(folderUri.fsPath),
+            relativePath: `${relativePath}/`,
+            group,
+            degree: 0,
+            kind: 'folder',
+          });
+        }
+        addEdge(sourceId, folderId);
+        continue;
+      }
 
       if (resolved.exists) {
         const targetPath = vscode.Uri.parse(resolved.uri).fsPath;

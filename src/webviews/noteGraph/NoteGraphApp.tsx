@@ -60,7 +60,10 @@ export const NoteGraphApp: React.FC = () => {
   );
 
   const visibleNoteCount = visible ? visible.nodes.filter((n) => !n.ghost).length : 0;
-  const openNote = (id: string) => getVsCodeApi()?.postMessage({ type: 'openNote', uri: id });
+  const openNote = (id: string) =>
+    id.startsWith('folder:')
+      ? getVsCodeApi()?.postMessage({ type: 'openFolder', uri: id.slice('folder:'.length) })
+      : getVsCodeApi()?.postMessage({ type: 'openNote', uri: id });
 
   return (
     <div className="flex flex-col h-screen">
