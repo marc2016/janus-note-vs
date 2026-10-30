@@ -2,6 +2,8 @@
 
 Diese Wissensnotiz sammelt Tipps zur Nutzung der KI-Funktionen in Janus Note (verknüpft mit [[architektur]] und [[project-plan]]).
 
+#ki
+
 ## Verfügbare Funktionen in der Fußleiste
 
 1. **KI-Modell-Auswahl (`[KI: <Modell> ▾]`)**:

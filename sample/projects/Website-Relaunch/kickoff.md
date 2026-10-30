@@ -2,6 +2,8 @@
 
 Begleitend zum [[app-launch]] überarbeiten wir die komplette Marketing- und Dokumentations-Website. Das visuelle Fundament ist in [[design-system]] dokumentiert.
 
+#projekt/website #design
+
 ## Ziele des Relaunchs
 
 - Schnelle Ladezeiten (statisches Pre-Rendering + Edge-CDN)

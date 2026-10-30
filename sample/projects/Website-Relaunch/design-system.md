@@ -2,6 +2,8 @@
 
 Dieses Dokument gehört zum [[kickoff]] des Website-Relaunchs.
 
+#design
+
 ## Farbpalette & Tokens
 
 | Token | Hex (Dark) | Hex (Light) | Verwendung |

@@ -2,6 +2,8 @@
 
 Dies ist die zentrale Projekt-Notiz für unseren kommenden **App-Launch**. Die technische Systemübersicht befindet sich in [[architektur]], und die aktuellen Abstimmungen aus dem Team findest du in [[sprint-review]].
 
+#projekt/app-launch #mobile
+
 ## Meilensteine
 
 | Phase             | Zeitraum | Verantwortlich | Status    |

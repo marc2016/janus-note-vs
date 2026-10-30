@@ -87,3 +87,9 @@ Zum Ausprobieren: Neue Gedanken landen zuerst in der Inbox oder in der Tagesnoti
 - Für den Überblick rund um eine Notiz: Öffne z. B. [[architektur]] und führe **„Janus: Lokales Notiz-Netzwerk öffnen“** aus (auch im `…`-Menü des Editors). Das Netzwerk zeigt nur diese Notiz und ihre direkten Nachbarn; mit **Tiefe** 2 oder 3 kommen weitere Schritte dazu.
 - Wechselst du im Editor zu einer anderen Notiz oder klickst einen Nachbarn an, wandert die Mitte mit. Oben schaltest du zwischen **„Ganzes Netzwerk“** und **„Aktuelle Notiz“** um.
 
+
+## 15. Tags
+- Notizen lassen sich mit `#tags` ordnerübergreifend gruppieren: [[app-launch]] trägt `#projekt/app-launch` und `#mobile`, [[kickoff]] und [[design-system]] tragen `#design`, die Wissensnotizen `#ki`. [[architektur]] hat seine Tags im Frontmatter (`tags: [backend, projekt/app-launch]`).
+- Verschachtelte Tags wie `#projekt/app-launch` zählen auch für `#projekt` – so findest du alle Projekte auf einmal.
+- Tippe in einer Notiz `#`: Die Vorschlagsliste zeigt alle vorhandenen Tags mit der Anzahl ihrer Notizen. Mit `# ` (Überschrift) verschwindet sie wieder.
+- In der Notizen-Ansicht listet der Eintrag **Tags** jeden Tag mit seinen Notizen. Im Notiz-Netzwerk filterst du oben nach einem Tag, und im Chat sucht `#design typografie` nur in Notizen mit diesem Tag.

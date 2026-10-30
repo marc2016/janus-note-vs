@@ -1,6 +1,7 @@
 ---
 title: App-Launch Architektur
 aliases: [Systemdesign, Backend-Architektur]
+tags: [backend, projekt/app-launch]
 ---
 # System-Architektur (App-Launch)
 
