@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_GRAPH_FILTER, filterGraph } from '../src/webviews/noteGraph/graphFilter';
+import { DEFAULT_GRAPH_FILTER, filterGraph, localSubgraph, visibleGraph } from '../src/webviews/noteGraph/graphFilter';
 import type { NoteGraphData } from '../src/services/noteGraphService';
 
 const node = (id: string, relativePath: string, ghost = false) => ({
@@ -71,3 +71,63 @@ describe('filterGraph', () => {
     expect(ids(filterGraph(withAlias, { ...DEFAULT_GRAPH_FILTER, search: 'api' }))).toEqual(['rest']);
   });
 });
+
+describe('local graph mode', () => {
+  const local: NoteGraphData = {
+    nodes: [
+      node('plan', 'plan.md'),
+      node('architektur', 'architektur.md'),
+      node('kickoff', 'kickoff.md'),
+      node('api', 'api.md'),
+      node('einsam', 'einsam.md'),
+      node('ghost:fehlt', 'fehlt', true),
+    ],
+    edges: [
+      { source: 'plan', target: 'architektur', bidirectional: false },
+      { source: 'kickoff', target: 'plan', bidirectional: false },
+      { source: 'architektur', target: 'api', bidirectional: false },
+      { source: 'plan', target: 'ghost:fehlt', bidirectional: false },
+    ],
+  };
+  const edgeKeys = (result: NoteGraphData) => result.edges.map((e) => `${e.source}>${e.target}`).sort();
+  const localOptions = { ...DEFAULT_GRAPH_FILTER, mode: 'local' as const };
+
+  it('shows direct neighbours in both directions at depth 1', () => {
+    const result = visibleGraph(local, localOptions, 'plan')!;
+    expect(ids(result).sort()).toEqual(['architektur', 'kickoff', 'plan']);
+    expect(edgeKeys(result)).toEqual(['kickoff>plan', 'plan>architektur']);
+  });
+
+  it('reaches two steps at depth 2', () => {
+    const result = visibleGraph(local, { ...localOptions, depth: 2 }, 'plan')!;
+    expect(ids(result)).toContain('api');
+    expect(edgeKeys(result)).toContain('architektur>api');
+  });
+
+  it('shows only the centre when it has no links, even with orphans hidden', () => {
+    const result = visibleGraph(local, { ...localOptions, showOrphans: false }, 'einsam')!;
+    expect(ids(result)).toEqual(['einsam']);
+  });
+
+  it('keeps the centre when searching', () => {
+    const result = visibleGraph(local, { ...localOptions, search: 'kick' }, 'plan')!;
+    expect(ids(result).sort()).toEqual(['kickoff', 'plan']);
+    expect(edgeKeys(result)).toEqual(['kickoff>plan']);
+  });
+
+  it('shows ghost neighbours only with the ghost toggle', () => {
+    expect(ids(visibleGraph(local, localOptions, 'plan')!)).not.toContain('ghost:fehlt');
+    expect(ids(visibleGraph(local, { ...localOptions, showGhosts: true }, 'plan')!)).toContain('ghost:fehlt');
+  });
+
+  it('shows the whole graph again in whole-graph mode', () => {
+    expect(ids(visibleGraph(local, DEFAULT_GRAPH_FILTER, 'plan')!)).toEqual(['plan', 'architektur', 'kickoff', 'api', 'einsam']);
+  });
+
+  it('has no graph without a centre or with a centre missing from the data', () => {
+    expect(visibleGraph(local, localOptions, undefined)).toBeUndefined();
+    expect(visibleGraph(local, localOptions, 'neu')).toBeUndefined();
+    expect(localSubgraph(local, 'neu', 1)).toEqual({ nodes: [], edges: [] });
+  });
+});
+

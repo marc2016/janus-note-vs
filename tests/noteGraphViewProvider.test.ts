@@ -153,4 +153,70 @@ describe('NoteGraphViewProvider', () => {
     expect(postMessage).toHaveBeenCalledTimes(1);
     expect(postMessage).toHaveBeenCalledWith({ type: 'graphData', data: { nodes: [{ id: 'new' }], edges: [] } });
   });
+
+  describe('local graph centre', () => {
+    let tabsChanged: (() => void) | undefined;
+    const setActiveTab = (input: any) => {
+      (vscode.window.tabGroups as any).activeTabGroup = { activeTab: { input } };
+      tabsChanged?.();
+    };
+    const focusMessages = () =>
+      postMessage.mock.calls.map(([m]) => m).filter((m: any) => m.type === 'focusNote').map((m: any) => m.uri);
+    const plan = vscode.Uri.file('/workspace/notes/plan.md');
+    const kickoff = vscode.Uri.file('/workspace/notes/meetings/kickoff.md');
+
+    beforeEach(() => {
+      tabsChanged = undefined;
+      (vscode.window.tabGroups as any).activeTabGroup = undefined;
+      vi.spyOn(vscode.window.tabGroups, 'onDidChangeTabs').mockImplementation((listener: any) => {
+        tabsChanged = listener;
+        return { dispose: () => {} };
+      });
+    });
+
+    it('follows the editor to another note', async () => {
+      setActiveTab(new vscode.TabInputCustom(plan, 'janus.markdownEditor'));
+      await provider.open();
+      await provider.handleMessage({ type: 'ready' });
+      expect(focusMessages()).toEqual([plan.toString()]);
+
+      setActiveTab(new vscode.TabInputText(kickoff));
+      expect(focusMessages()).toEqual([plan.toString(), kickoff.toString()]);
+    });
+
+    it('keeps the centre when the graph panel or a file outside the collection is focused', async () => {
+      setActiveTab(new vscode.TabInputText(plan));
+      await provider.open();
+      await provider.handleMessage({ type: 'ready' });
+
+      setActiveTab(new vscode.TabInputWebview(NoteGraphViewProvider.viewType));
+      setActiveTab(new vscode.TabInputText(vscode.Uri.file('/workspace/src/extension.ts')));
+      setActiveTab(new vscode.TabInputText(vscode.Uri.file('/workspace/src/readme.md')));
+
+      expect(focusMessages()).toEqual([plan.toString()]);
+    });
+
+    it('opens beside the editor in local mode centred on the given note', async () => {
+      const createSpy = vi.mocked(vscode.window.createWebviewPanel);
+      await provider.openLocal(plan);
+      await provider.handleMessage({ type: 'ready' });
+
+      expect(createSpy.mock.calls[0][2]).toBe(vscode.ViewColumn.Beside);
+      expect(postMessage).toHaveBeenCalledWith({ type: 'setMode', mode: 'local' });
+      expect(focusMessages()).toEqual([plan.toString()]);
+    });
+
+    it('reuses an open panel and switches it to local mode', async () => {
+      const createSpy = vi.mocked(vscode.window.createWebviewPanel);
+      await provider.open();
+      await provider.handleMessage({ type: 'ready' });
+
+      await provider.openLocal(kickoff);
+
+      expect(createSpy).toHaveBeenCalledTimes(1);
+      expect(provider.getActivePanel()!.reveal).toHaveBeenCalled();
+      expect(postMessage).toHaveBeenCalledWith({ type: 'setMode', mode: 'local' });
+      expect(focusMessages()).toEqual([kickoff.toString()]);
+    });
+  });
 });

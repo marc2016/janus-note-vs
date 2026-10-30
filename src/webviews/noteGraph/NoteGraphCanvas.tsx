@@ -18,6 +18,8 @@ interface NoteGraphCanvasProps {
   groups: string[];
   isDark: boolean;
   onOpenNote: (id: string) => void;
+  /** Centre of the local graph: emphasized, always labelled, and kept in view. */
+  centreId?: string;
 }
 
 /** Labels fade in between these zoom levels. */
@@ -40,13 +42,19 @@ const TRANSITION_CSS = `
   .link { transition: stroke-opacity 180ms ease, stroke 180ms ease; }
 `;
 
-const nodeRadius = (node: GraphNode) => (node.ghost ? 3 : Math.min(3 + 2 * Math.sqrt(node.degree), 16));
+const CENTRE_MIN_RADIUS = 8;
+const RECENTRE_MS = 500;
+
+const nodeRadius = (node: GraphNode, centreId?: string) => {
+  const radius = node.ghost ? 3 : Math.min(3 + 2 * Math.sqrt(node.degree), 16);
+  return node.id === centreId ? Math.max(radius, CENTRE_MIN_RADIUS) : radius;
+};
 
 /**
  * Force-directed note graph. The simulation, zoom transform and node positions live in refs,
  * so data updates (filters, live rebuilds) do not reset the view.
  */
-export const NoteGraphCanvas: React.FC<NoteGraphCanvasProps> = ({ nodes, edges, groups, isDark, onOpenNote }) => {
+export const NoteGraphCanvas: React.FC<NoteGraphCanvasProps> = ({ nodes, edges, groups, isDark, onOpenNote, centreId }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const simulationRef = useRef<d3.Simulation<SimNode, SimLink> | null>(null);
@@ -54,6 +62,10 @@ export const NoteGraphCanvas: React.FC<NoteGraphCanvasProps> = ({ nodes, edges, 
   const adjacencyRef = useRef(new Map<string, Set<string>>());
   const zoomKRef = useRef(1);
   const hoveredRef = useRef<string | null>(null);
+  const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
+  const draggingRef = useRef(false);
+  const centreRef = useRef(centreId);
+  centreRef.current = centreId;
   const onOpenNoteRef = useRef(onOpenNote);
   onOpenNoteRef.current = onOpenNote;
 
@@ -82,7 +94,9 @@ export const NoteGraphCanvas: React.FC<NoteGraphCanvasProps> = ({ nodes, edges, 
     nodeSel.style('opacity', (d) => (!hovered || isNeighbour(hovered, d.id) ? 1 : FADED_NODE_OPACITY));
     nodeSel
       .select('text')
-      .style('opacity', (d) => (hovered && isNeighbour(hovered, d.id) ? 1 : zoomLabelOpacity));
+      .style('opacity', (d) =>
+        d.id === centreRef.current || (hovered && isNeighbour(hovered, d.id)) ? 1 : zoomLabelOpacity
+      );
 
     const isHighlighted = (d: SimLink) =>
       !!hovered && ((d.source as SimNode).id === hovered || (d.target as SimNode).id === hovered);
@@ -134,6 +148,7 @@ export const NoteGraphCanvas: React.FC<NoteGraphCanvasProps> = ({ nodes, edges, 
         applyHighlight();
       });
     svg.call(zoom).on('dblclick.zoom', null);
+    zoomRef.current = zoom;
 
     const { width, height } = container.getBoundingClientRect();
     const simulation = d3
@@ -212,6 +227,7 @@ export const NoteGraphCanvas: React.FC<NoteGraphCanvasProps> = ({ nodes, edges, 
       svg.selectAll('*').remove();
       svg.on('.zoom', null);
       simulationRef.current = null;
+      zoomRef.current = null;
     };
   }, []);
 
@@ -239,7 +255,7 @@ export const NoteGraphCanvas: React.FC<NoteGraphCanvasProps> = ({ nodes, edges, 
     for (const node of nodes) {
       const old = previous.get(node.id);
       if (old) {
-        next.set(node.id, Object.assign(old, node, { radius: nodeRadius(node) }));
+        next.set(node.id, Object.assign(old, node, { radius: nodeRadius(node, centreId) }));
         continue;
       }
       const anchorId = [...(adjacency.get(node.id) ?? [])].find((id) => previous.has(id));
@@ -247,7 +263,7 @@ export const NoteGraphCanvas: React.FC<NoteGraphCanvasProps> = ({ nodes, edges, 
       const jitter = () => (Math.random() - 0.5) * 40;
       next.set(node.id, {
         ...node,
-        radius: nodeRadius(node),
+        radius: nodeRadius(node, centreId),
         x: (anchor?.x ?? width / 2) + jitter(),
         y: (anchor?.y ?? height / 2) + jitter(),
       });
@@ -312,6 +328,7 @@ export const NoteGraphCanvas: React.FC<NoteGraphCanvasProps> = ({ nodes, edges, 
         d3
           .drag<SVGGElement, SimNode>()
           .on('start', (event, d) => {
+            draggingRef.current = true;
             if (!event.active) simulation.alphaTarget(0.2).restart();
             d.fx = d.x;
             d.fy = d.y;
@@ -321,6 +338,7 @@ export const NoteGraphCanvas: React.FC<NoteGraphCanvasProps> = ({ nodes, edges, 
             d.fy = event.y;
           })
           .on('end', (event, d) => {
+            draggingRef.current = false;
             if (!event.active) simulation.alphaTarget(0);
             d.fx = null;
             d.fy = null;
@@ -344,8 +362,10 @@ export const NoteGraphCanvas: React.FC<NoteGraphCanvasProps> = ({ nodes, edges, 
       .attr('display', (d) => (d.kind === 'folder' ? 'none' : null))
       .attr('r', (d) => d.radius)
       .attr('fill', (d) => (d.ghost ? 'none' : color(d.group)))
-      .attr('stroke', (d) => (d.ghost ? 'var(--vscode-descriptionForeground, #999999)' : 'none'))
-      .attr('stroke-width', 1)
+      .attr('stroke', (d) =>
+        d.id === centreId ? ACCENT : d.ghost ? 'var(--vscode-descriptionForeground, #999999)' : 'none'
+      )
+      .attr('stroke-width', (d) => (d.id === centreId ? 3 : 1))
       .attr('stroke-dasharray', (d) => (d.ghost ? '2,2' : null));
 
     nodeGroups
@@ -361,7 +381,20 @@ export const NoteGraphCanvas: React.FC<NoteGraphCanvasProps> = ({ nodes, edges, 
 
     applyLabelScale();
     applyHighlight();
-  }, [nodes, edges, groups, isDark]);
+  }, [nodes, edges, groups, isDark, centreId]);
+
+  // A new centre: move the view to it without changing the zoom level
+  useEffect(() => {
+    const svgEl = svgRef.current;
+    const zoom = zoomRef.current;
+    const centre = centreId ? simNodesRef.current.get(centreId) : undefined;
+    if (!svgEl || !zoom || !centre || draggingRef.current) return;
+    d3.select(svgEl)
+      .transition()
+      .duration(RECENTRE_MS)
+      .ease(d3.easeCubicOut)
+      .call(zoom.translateTo, centre.x ?? 0, centre.y ?? 0);
+  }, [centreId]);
 
   return (
     <div ref={containerRef} className="relative flex-1 min-h-0 overflow-hidden">

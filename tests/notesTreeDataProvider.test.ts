@@ -13,7 +13,7 @@ import {
   AssetsFolderTreeItem,
   ImageTreeItem,
 } from '../src/ui/notesTreeDataProvider';
-import { getActiveNoteUri } from '../src/extension';
+import { getActiveNoteUri } from '../src/ui/activeNote';
 import { __setConfigStore } from './__mocks__/vscode';
 
 describe('NotesTreeDataProvider', () => {

@@ -4,6 +4,8 @@ import { CompanionManager } from '../companion/companionManager';
 import { checkNotesRootStatus } from '../commands/notesRootCommands';
 import { buildNoteGraph } from '../services/noteGraphService';
 import { MarkdownEditorProvider } from './markdownEditorProvider';
+import { isMarkdownNote } from '../companion/companionPaths';
+import { getActiveNoteUri } from '../ui/activeNote';
 
 const REBUILD_DEBOUNCE_MS = 500;
 
@@ -15,6 +17,10 @@ export class NoteGraphViewProvider {
   private rebuildTimer: ReturnType<typeof setTimeout> | undefined;
   /** Incremented per build so a slow build cannot overwrite fresher data. */
   private buildGeneration = 0;
+  /** Centre of the local graph: the note most recently active in an editor. */
+  private lastNoteUri: vscode.Uri | undefined;
+  /** Mode to switch the webview to once it is ready (set by `openLocal`). */
+  private pendingMode: 'local' | undefined;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -42,10 +48,38 @@ export class NoteGraphViewProvider {
     this.createPanel();
   }
 
+  /** Opens the graph beside the editor (or reveals it) in local mode, centred on `noteUri`. */
+  public async openLocal(noteUri: vscode.Uri | undefined): Promise<void> {
+    const status = await checkNotesRootStatus(this.companionManager);
+    if (!status.isInitialized || !status.notesRootUri) {
+      vscode.window.showInformationMessage(
+        'Bitte richte zuerst einen Notizen-Ordner ein, um das Notiz-Netzwerk anzuzeigen.'
+      );
+      return;
+    }
+
+    if (noteUri && this.isCollectionNote(noteUri)) {
+      this.lastNoteUri = noteUri;
+    }
+    if (this.panel) {
+      this.panel.reveal();
+      await this.panel.webview.postMessage({ type: 'setMode', mode: 'local' });
+      await this.postFocus();
+      return;
+    }
+
+    this.pendingMode = 'local';
+    this.createPanel(vscode.ViewColumn.Beside);
+  }
+
   public async handleMessage(message: any): Promise<void> {
     switch (message?.type) {
       case 'ready':
         await this.postGraph();
+        if (this.pendingMode && this.panel) {
+          await this.panel.webview.postMessage({ type: 'setMode', mode: this.pendingMode });
+          this.pendingMode = undefined;
+        }
         break;
 
       case 'openNote':
@@ -83,6 +117,25 @@ export class NoteGraphViewProvider {
     const data = await buildNoteGraph(roots, this.companionManager.getNotesRootUri());
     if (!this.panel || generation !== this.buildGeneration) return;
     await this.panel.webview.postMessage({ type: 'graphData', data });
+    await this.postFocus();
+  }
+
+  private async postFocus(): Promise<void> {
+    if (!this.panel || !this.lastNoteUri) return;
+    await this.panel.webview.postMessage({ type: 'focusNote', uri: this.lastNoteUri.toString() });
+  }
+
+  /** Re-centres on the active editor's note; the graph panel, other webviews and files outside the collection keep the centre. */
+  private trackActiveNote(): void {
+    const uri = getActiveNoteUri();
+    if (!uri || !this.isCollectionNote(uri)) return;
+    if (this.lastNoteUri?.toString() === uri.toString()) return;
+    this.lastNoteUri = uri;
+    void this.postFocus();
+  }
+
+  private isCollectionNote(uri: vscode.Uri): boolean {
+    return uri.scheme === 'file' && isMarkdownNote(uri.fsPath) && this.isUnderNotesRoots(uri);
   }
 
   private isUnderNotesRoots(uri: vscode.Uri): boolean {
@@ -92,11 +145,13 @@ export class NoteGraphViewProvider {
     });
   }
 
-  private createPanel(): void {
+  private createPanel(column: vscode.ViewColumn = vscode.ViewColumn.One): void {
+    // The editor active before the panel opens is the first centre (unless `openLocal` set one)
+    if (!this.lastNoteUri) this.trackActiveNote();
     this.panel = vscode.window.createWebviewPanel(
       NoteGraphViewProvider.viewType,
       'Notiz-Netzwerk',
-      vscode.ViewColumn.One,
+      column,
       {
         enableScripts: true,
         retainContextWhenHidden: true,
@@ -118,6 +173,8 @@ export class NoteGraphViewProvider {
       watcher.onDidCreate(onNoteChange),
       watcher.onDidChange(onNoteChange),
       watcher.onDidDelete(onNoteChange),
+      vscode.window.tabGroups.onDidChangeTabs(() => this.trackActiveNote()),
+      vscode.window.onDidChangeActiveTextEditor(() => this.trackActiveNote()),
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration('janus.notesRoot') || e.affectsConfiguration('janus.includeFolders')) {
           this.scheduleRebuild();
@@ -133,6 +190,8 @@ export class NoteGraphViewProvider {
       for (const d of this.panelDisposables) d.dispose();
       this.panelDisposables = [];
       this.panel = undefined;
+      this.lastNoteUri = undefined;
+      this.pendingMode = undefined;
     });
   }
 

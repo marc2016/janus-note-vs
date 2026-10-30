@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { CompanionManager } from './companion/companionManager';
 import { repairBrokenLinksCommand } from './commands/brokenLinksCommand';
+import { getActiveNoteUri } from './ui/activeNote';
 import { CompanionCodeLensProvider } from './companion/companionCodeLensProvider';
 import { CompanionWatcher } from './companion/companionWatcher';
 import { TasksEditorProvider } from './editors/tasksEditorProvider';
@@ -59,38 +60,6 @@ import {
   FolderTreeItem,
   LinkedFolderTreeItem,
 } from './ui/notesTreeDataProvider';
-
-export function getActiveNoteUri(): vscode.Uri | undefined {
-  const tabGroups = vscode.window.tabGroups;
-  const activeTab = tabGroups?.activeTabGroup?.activeTab;
-  if (activeTab?.input) {
-    const input: any = activeTab.input;
-
-    if (input instanceof vscode.TabInputWebview || (input && typeof input.viewType === 'string')) {
-      if (input.viewType === CalendarViewProvider.monthViewType) {
-        return vscode.Uri.parse('janus-calendar:///all');
-      }
-      if (input.viewType === GlobalTasksViewProvider.viewType) {
-        return vscode.Uri.parse('janus-tasks:///all');
-      }
-      if (input.viewType === NoteGraphViewProvider.viewType) {
-        return vscode.Uri.parse('janus-graph:///all');
-      }
-    }
-
-    if (input instanceof vscode.TabInputText && input.uri) {
-      return input.uri;
-    }
-    if (input instanceof vscode.TabInputCustom && input.uri) {
-      return input.uri;
-    }
-    if (input && typeof input === 'object' && input.uri instanceof vscode.Uri) {
-      return input.uri;
-    }
-  }
-
-  return vscode.window.activeTextEditor?.document?.uri;
-}
 
 export function activate(context: vscode.ExtensionContext) {
   // 1. Core Services
@@ -454,6 +423,9 @@ export function activate(context: vscode.ExtensionContext) {
       }
       await vscode.commands.executeCommand('vscode.openWith', tasksUri, TasksEditorProvider.viewType);
       scheduleSyncSidebarSelection(tasksUri);
+    }),
+    vscode.commands.registerCommand('janus.openLocalNoteGraph', async (uri?: vscode.Uri) => {
+      await noteGraphViewProvider.openLocal(uri instanceof vscode.Uri ? uri : getActiveNoteUri());
     }),
     vscode.commands.registerCommand('janus.openNoteGraph', async () => {
       await noteGraphViewProvider.open();

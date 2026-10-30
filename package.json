@@ -223,6 +223,11 @@
         "icon": "$(type-hierarchy)"
       },
       {
+        "command": "janus.openLocalNoteGraph",
+        "title": "Janus: Lokales Notiz-Netzwerk öffnen",
+        "icon": "$(type-hierarchy-sub)"
+      },
+      {
         "command": "janus.selectAiModel",
         "title": "Janus: KI-Modell auswählen / konfigurieren",
         "icon": "$(sparkle)"
@@ -383,6 +388,11 @@
           "command": "janus.exportNoteToPdf",
           "when": "resourceExtname == .md || resourceExtname == .markdown || activeEditor == janus.markdownEditor",
           "group": "navigation@100"
+        },
+        {
+          "command": "janus.openLocalNoteGraph",
+          "when": "resourceExtname == .md || resourceExtname == .markdown || activeEditor == janus.markdownEditor",
+          "group": "1_janus@20"
         }
       ],
       "explorer/context": [
