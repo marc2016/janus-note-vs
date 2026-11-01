@@ -31,6 +31,106 @@
       "priority": "medium",
       "note": "app-launch.md",
       "createdAt": "2026-10-17T11:00:00.000Z"
+    },
+    {
+      "id": "t-app-4",
+      "title": "Crash-Reports der Beta-Tester sichten",
+      "completed": false,
+      "status": "todo",
+      "priority": "high",
+      "note": "app-launch.md",
+      "dueDate": "2026-10-30",
+      "createdAt": "2026-10-18T08:00:00.000Z"
+    },
+    {
+      "id": "t-app-5",
+      "title": "App-Store-Screenshots für iPad erstellen",
+      "completed": false,
+      "status": "todo",
+      "priority": "medium",
+      "scheduledDate": "2026-10-28",
+      "createdAt": "2026-10-18T09:00:00.000Z"
+    },
+    {
+      "id": "t-app-6",
+      "title": "Datenschutzerklärung mit Rechtsabteilung abstimmen",
+      "completed": false,
+      "status": "todo",
+      "priority": "high",
+      "dueDate": "2026-11-04",
+      "createdAt": "2026-10-19T10:00:00.000Z"
+    },
+    {
+      "id": "t-app-7",
+      "title": "Release Notes für Version 2.0 schreiben",
+      "completed": false,
+      "status": "todo",
+      "priority": "medium",
+      "note": "app-launch.md",
+      "scheduledDate": "2026-11-03",
+      "dueDate": "2026-11-10",
+      "createdAt": "2026-10-19T11:00:00.000Z"
+    },
+    {
+      "id": "t-app-8",
+      "title": "Push-Benachrichtigungen auf Android 15 testen",
+      "completed": false,
+      "status": "todo",
+      "priority": "low",
+      "dueDate": "2026-11-12",
+      "createdAt": "2026-10-20T09:30:00.000Z"
+    },
+    {
+      "id": "t-app-9",
+      "title": "APNs-Zertifikat erneuern",
+      "completed": false,
+      "status": "todo",
+      "priority": "high",
+      "scheduledDate": "2026-11-06",
+      "createdAt": "2026-10-21T08:15:00.000Z"
+    },
+    {
+      "id": "t-app-10",
+      "title": "Feedback-Formular in den Einstellungen verlinken",
+      "completed": false,
+      "status": "todo",
+      "priority": "low",
+      "createdAt": "2026-10-22T13:00:00.000Z"
+    },
+    {
+      "id": "t-app-11",
+      "title": "Analytics-Events für Onboarding definieren",
+      "completed": false,
+      "status": "todo",
+      "priority": "medium",
+      "note": "architektur.md",
+      "createdAt": "2026-10-23T15:00:00.000Z"
+    },
+    {
+      "id": "t-app-12",
+      "title": "Beta-Gruppe auf 200 Tester erweitern",
+      "completed": true,
+      "status": "done",
+      "priority": "medium",
+      "dueDate": "2026-10-25",
+      "createdAt": "2026-10-10T09:00:00.000Z"
+    },
+    {
+      "id": "t-app-13",
+      "title": "Splash-Screen-Animation abnehmen",
+      "completed": true,
+      "status": "done",
+      "priority": "low",
+      "createdAt": "2026-10-11T09:00:00.000Z"
+    },
+    {
+      "id": "t-app-14",
+      "title": "Backend-Endpunkte für Version 2.0 freigeben",
+      "completed": true,
+      "status": "done",
+      "priority": "high",
+      "note": "architektur.md",
+      "createdAt": "2026-10-12T09:00:00.000Z"
     }
   ]
 }

@@ -13,6 +13,7 @@ Willkommen im **Janus Note** Test-Workspace (`sample/`)! Hier kannst du alle Fun
 ## 2. Aufgaben per KI aus Notizen generieren
 Öffne [[app-launch]], [[kickoff]] oder [[sprint-review]] und klicke unten in der Fußleiste auf **„Aufgaben generieren"**:
 - Die KI liest die offenen Punkte aus dem Text und trägt neue Aufgaben ohne Duplikate in die `tasks.json` des jeweiligen Ordners ein.
+- Öffne `projects/App-Launch/tasks.json`: Die Liste scrollt, während Kopfzeile, Eingabe und Suche oben stehen bleiben. Über **„Sortieren“** wählst du *Datum* (Überfälliges zuerst), *Priorität* oder *Dateireihenfolge*. Erledigte Aufgaben liegen eingeklappt unter **„Erledigt (3)“**. Der farbige Balken links zeigt die Priorität, ein Klick darauf ändert sie. Über das Regler-Symbol neben dem Eingabefeld legst du Priorität, Notiz und in der globalen Liste den Zielordner für neue Aufgaben fest.
 
 ## 3. Verknüpfungen, Backlinks & Diagramme
 - **Projekte**: [[app-launch]], [[architektur]] (inkl. Mermaid-Diagramm), [[kickoff]], [[design-system]]
