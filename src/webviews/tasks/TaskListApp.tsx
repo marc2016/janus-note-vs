@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
@@ -7,6 +7,8 @@ import { Checkbox } from '../components/ui/checkbox';
 import { Select } from '../components/ui/select';
 import { MdiIcon } from '../components/ui/MdiIcon';
 import { TaskDateControls } from './TaskDateControls';
+import { getTaskDateState } from './taskDates';
+import { sortTasks, splitByCompletion, TaskSortMode } from './taskSort';
 import {
   mdiFormatListCheckbox,
   mdiPlus,
@@ -17,6 +19,7 @@ import {
   mdiFolderOutline,
   mdiChevronDown,
   mdiChevronRight,
+  mdiTune,
 } from '@mdi/js';
 
 declare function acquireVsCodeApi(): {
@@ -62,7 +65,32 @@ export interface TasksData {
   groups?: FolderGroupData[];
 }
 
-export type FilterMode = 'all' | 'open' | 'done';
+/** View preferences kept in the webview state; `collapsed` keys are `done:<uri|folder>` / `group:<uri>`. */
+interface TaskViewState {
+  sortMode: TaskSortMode;
+  collapsed: Record<string, boolean>;
+}
+
+const SORT_MODES: TaskSortMode[] = ['date', 'priority', 'file'];
+
+const SORT_LABELS: Record<TaskSortMode, string> = {
+  date: 'Datum',
+  priority: 'Priorität',
+  file: 'Dateireihenfolge',
+};
+
+function getInitialViewState(): TaskViewState {
+  const saved = getVsCodeApi()?.getState() as Partial<TaskViewState> | undefined;
+  return {
+    sortMode: saved?.sortMode && SORT_MODES.includes(saved.sortMode) ? saved.sortMode : 'date',
+    collapsed: saved?.collapsed && typeof saved.collapsed === 'object' ? saved.collapsed : {},
+  };
+}
+
+/** Done sections start collapsed, folder groups start expanded. */
+function isCollapsed(collapsed: Record<string, boolean>, key: string): boolean {
+  return collapsed[key] ?? key.startsWith('done:');
+}
 
 function getInitialData(): TasksData {
   try {
@@ -92,7 +120,7 @@ export const TaskListApp: React.FC = () => {
   const [boardTitle, setBoardTitle] = useState<string>(() => initialData.title || 'Aufgaben');
   const [tasks, setTasks] = useState<TaskItem[]>(() => initialData.tasks || []);
   const [groups, setGroups] = useState<FolderGroupData[]>(() => initialData.groups || []);
-  const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
+  const [viewState, setViewState] = useState<TaskViewState>(getInitialViewState);
 
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>('medium');
@@ -101,9 +129,12 @@ export const TaskListApp: React.FC = () => {
     initialData.groups && initialData.groups.length > 0 ? initialData.groups[0].uri : ''
   );
 
-  const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getVsCodeApi()?.setState(viewState);
+  }, [viewState]);
 
   useEffect(() => {
     const api = getVsCodeApi();
@@ -294,8 +325,6 @@ export const TaskListApp: React.FC = () => {
   };
 
   const filterTask = (task: TaskItem): boolean => {
-    if (filterMode === 'open' && task.completed) return false;
-    if (filterMode === 'done' && !task.completed) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchTitle = task.title.toLowerCase().includes(q);
@@ -305,6 +334,8 @@ export const TaskListApp: React.FC = () => {
     }
     return true;
   };
+
+  const isSearching = searchQuery.trim().length > 0;
 
   const allCurrentTasks = useMemo(() => {
     if (mode === 'global') {
@@ -317,223 +348,376 @@ export const TaskListApp: React.FC = () => {
     () => allCurrentTasks.filter((t) => !t.completed).length,
     [allCurrentTasks]
   );
-  const doneCount = useMemo(
-    () => allCurrentTasks.filter((t) => t.completed).length,
-    [allCurrentTasks]
-  );
 
-  const filteredFolderTasks = useMemo(
-    () => tasks.filter(filterTask),
-    [tasks, filterMode, searchQuery]
-  );
-
-  const toggleFolderCollapse = (uri: string) => {
-    setCollapsedFolders((prev) => ({ ...prev, [uri]: !prev[uri] }));
+  const toggleCollapsed = (key: string) => {
+    setViewState((prev) => ({
+      ...prev,
+      collapsed: {
+        ...prev.collapsed,
+        [key]: !isCollapsed(prev.collapsed, key),
+      },
+    }));
   };
 
-  return (
-    <div className="flex flex-col min-h-screen p-4 max-w-4xl mx-auto select-none bg-[var(--vscode-editor-background,inherit)] text-[var(--vscode-editor-foreground,inherit)]">
-      {/* Header with title, Badge counter, and shadcn Button filter pills */}
-      <header className="flex flex-wrap items-center justify-between gap-3 pb-3 mb-4 border-b border-[var(--vscode-editorWidget-border,rgba(128,128,128,0.25))]">
-        <div className="flex items-center gap-2.5">
-          <MdiIcon path={mdiFormatListCheckbox} size={22} className="text-primary" />
-          <h1 className="text-xl font-semibold tracking-tight">{boardTitle}</h1>
-          <Badge variant="default" className="rounded-full font-normal">
-            {openCount} offen · {doneCount} erledigt
-          </Badge>
-        </div>
+  const renderSections = (
+    list: TaskItem[],
+    doneKey: string,
+    folderUri?: string,
+    emptyText?: string
+  ) => {
+    const { open, done } = splitByCompletion(
+      sortTasks(list.filter(filterTask), viewState.sortMode)
+    );
+    // A search reveals matching completed tasks without touching the remembered state
+    const doneCollapsed = isSearching ? false : isCollapsed(viewState.collapsed, doneKey);
+    const renderRow = (task: TaskItem) => (
+      <TaskChecklistRow
+        key={task.id}
+        task={task}
+        onToggle={() => handleToggleTask(task, folderUri)}
+        onUpdate={(changes) => handleUpdateTaskField(task, changes, folderUri)}
+        onDelete={() => handleDeleteTask(task.id, folderUri)}
+        onOpenNote={(note) => handleOpenNote(note, folderUri ?? task.folderUri)}
+      />
+    );
 
-        {/* Filter Pills built with shadcn Button */}
-        <div className="flex items-center gap-1 p-1 rounded-lg border border-[var(--vscode-editorWidget-border,rgba(128,128,128,0.25))] bg-[var(--vscode-editorWidget-background,rgba(128,128,128,0.05))]">
-          {(
-            [
-              { id: 'all', label: `Alle (${allCurrentTasks.length})` },
-              { id: 'open', label: `Nur Offene (${openCount})` },
-              { id: 'done', label: `Erledigt (${doneCount})` },
-            ] as const
-          ).map((pill) => (
-            <Button
-              key={pill.id}
+    return (
+      <>
+        {open.length > 0 ? (
+          <div className="divide-y divide-[var(--vscode-editorWidget-border,rgba(128,128,128,0.12))]">
+            {open.map(renderRow)}
+          </div>
+        ) : (
+          emptyText && <div className="px-3 py-3 text-xs opacity-50">{emptyText}</div>
+        )}
+
+        {done.length > 0 && (
+          <div className="mt-1">
+            <button
               type="button"
-              size="sm"
-              variant={filterMode === pill.id ? 'default' : 'ghost'}
-              onClick={() => setFilterMode(pill.id)}
-              className="h-6 px-2.5 text-xs"
+              onClick={() => !isSearching && toggleCollapsed(doneKey)}
+              aria-expanded={!doneCollapsed}
+              className="flex items-center gap-1 w-full px-2 py-1.5 text-xs font-medium opacity-60 hover:opacity-100 rounded hover:bg-[var(--vscode-list-hoverBackground,rgba(128,128,128,0.06))]"
             >
-              {pill.label}
-            </Button>
-          ))}
-        </div>
-      </header>
-
-      {/* Error Message */}
-      {error && (
-        <Card className="mb-4 border-red-500/40 bg-red-500/10">
-          <CardContent className="flex items-center gap-2 p-3 text-sm text-red-500">
-            <MdiIcon path={mdiAlertCircleOutline} size={18} />
-            <span>{error}</span>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Quick-Add Input Bar wrapped in shadcn Card */}
-      <Card className="mb-3">
-        <CardContent className="p-2.5">
-          <form onSubmit={handleAddTask} className="flex flex-wrap items-center gap-2">
-            {mode === 'global' && groups.length > 0 && (
-              <Select
-                aria-label="Ziel-Ordner"
-                value={selectedFolderUri}
-                onChange={(e) => setSelectedFolderUri(e.target.value)}
-              >
-                {groups.map((g) => (
-                  <option key={g.uri} value={g.uri}>
-                    📁 {g.folder}
-                  </option>
-                ))}
-              </Select>
+              <MdiIcon path={doneCollapsed ? mdiChevronRight : mdiChevronDown} size={14} />
+              <span>Erledigt ({done.length})</span>
+            </button>
+            {!doneCollapsed && (
+              <div className="divide-y divide-[var(--vscode-editorWidget-border,rgba(128,128,128,0.12))]">
+                {done.map(renderRow)}
+              </div>
             )}
+          </div>
+        )}
+      </>
+    );
+  };
 
-            <Input
-              type="text"
-              placeholder="Neue Aufgabe eingeben und Enter drücken..."
-              value={newTaskTitle}
-              onChange={(e) => setNewTaskTitle(e.target.value)}
-              className="flex-1 min-w-[200px]"
+  const renderGlobalList = () => {
+    if (groups.length === 0) {
+      return (
+        <div className="p-8 text-center text-sm opacity-60">
+          Keine Ordner-Aufgabenlisten (tasks.json) im Workspace gefunden.
+        </div>
+      );
+    }
+    const visibleGroups = groups.filter((g) => !isSearching || g.tasks.some(filterTask));
+    if (visibleGroups.length === 0) {
+      return <div className="p-8 text-center text-sm opacity-60">Keine Aufgaben gefunden.</div>;
+    }
+    return visibleGroups.map((group) => {
+      const groupKey = `group:${group.uri}`;
+      const collapsed = isCollapsed(viewState.collapsed, groupKey);
+      const groupOpenCount = group.tasks.filter((t) => !t.completed).length;
+      return (
+        <section key={group.uri} className="mb-3">
+          <button
+            type="button"
+            onClick={() => toggleCollapsed(groupKey)}
+            aria-expanded={!collapsed}
+            className="sticky top-0 z-10 flex items-center gap-2 w-full px-2 py-1.5 text-sm font-medium text-left border-b border-[var(--vscode-editorWidget-border,rgba(128,128,128,0.2))] bg-[var(--vscode-editor-background,#1e1e1e)] hover:text-[var(--vscode-textLink-foreground,inherit)]"
+          >
+            <MdiIcon
+              path={collapsed ? mdiChevronRight : mdiChevronDown}
+              size={16}
+              className="opacity-60"
             />
+            <MdiIcon path={mdiFolderOutline} size={16} className="opacity-70" />
+            <span className="truncate">{group.folder}</span>
+            <span className="ml-auto text-xs font-normal opacity-50">{groupOpenCount} offen</span>
+          </button>
+          {!collapsed &&
+            renderSections(group.tasks, `done:${group.uri}`, group.uri, 'Keine offenen Aufgaben.')}
+        </section>
+      );
+    });
+  };
 
-            <Input
-              type="text"
-              placeholder="Notiz (optional, z.B. meeting.md)"
-              value={newTaskNote}
-              onChange={(e) => setNewTaskNote(e.target.value)}
-              className="w-48 text-xs"
-            />
+  const renderFolderList = () => {
+    if (tasks.length === 0) {
+      return (
+        <div className="p-8 text-center text-sm opacity-60">
+          Noch keine Aufgaben vorhanden. Tippe oben eine Aufgabe ein und drücke Enter.
+        </div>
+      );
+    }
+    if (isSearching && !tasks.some(filterTask)) {
+      return <div className="p-8 text-center text-sm opacity-60">Keine Aufgaben gefunden.</div>;
+    }
+    return renderSections(tasks, 'done:folder', undefined, 'Alle Aufgaben erledigt.');
+  };
 
+  const targetFolder = groups.find((g) => g.uri === selectedFolderUri) ?? groups[0];
+
+  return (
+    <div className="flex flex-col h-screen select-none bg-[var(--vscode-editor-background,inherit)] text-[var(--vscode-editor-foreground,inherit)]">
+      {/* Fixed toolbar: header, quick-add and search stay visible */}
+      <div className="shrink-0 w-full max-w-4xl mx-auto px-4 pt-4 pb-2 flex flex-col gap-2.5">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <MdiIcon path={mdiFormatListCheckbox} size={22} className="text-primary shrink-0" />
+            <h1 className="text-xl font-semibold tracking-tight truncate">{boardTitle}</h1>
+            <span className="text-xs opacity-60 whitespace-nowrap">{openCount} offen</span>
+          </div>
+          <label className="flex items-center gap-1.5 text-xs opacity-80">
+            <span>Sortieren:</span>
             <Select
-              aria-label="Priorität"
-              value={newTaskPriority}
-              onChange={(e) => setNewTaskPriority(e.target.value as TaskPriority)}
+              aria-label="Sortierung"
+              value={viewState.sortMode}
+              onChange={(e) =>
+                setViewState((prev) => ({
+                  ...prev,
+                  sortMode: e.target.value as TaskSortMode,
+                }))
+              }
+              className="h-7"
             >
-              <option value="high">Prio: Hoch</option>
-              <option value="medium">Prio: Mittel</option>
-              <option value="low">Prio: Niedrig</option>
+              {SORT_MODES.map((m) => (
+                <option key={m} value={m}>
+                  {SORT_LABELS[m]}
+                </option>
+              ))}
             </Select>
+          </label>
+        </header>
 
-            <Button type="submit" size="sm">
-              <MdiIcon path={mdiPlus} size={16} />
-              <span>Hinzufügen</span>
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+        {error && (
+          <Card className="border-red-500/40 bg-red-500/10">
+            <CardContent className="flex items-center gap-2 p-3 text-sm text-red-500">
+              <MdiIcon path={mdiAlertCircleOutline} size={18} />
+              <span>{error}</span>
+            </CardContent>
+          </Card>
+        )}
 
-      {/* Search / Quick Filter Bar */}
-      <div className="relative mb-4">
+        <QuickAddBar
+          title={newTaskTitle}
+          onTitleChange={setNewTaskTitle}
+          priority={newTaskPriority}
+          onPriorityChange={setNewTaskPriority}
+          note={newTaskNote}
+          onNoteChange={setNewTaskNote}
+          folders={mode === 'global' ? groups : undefined}
+          targetFolder={mode === 'global' ? targetFolder : undefined}
+          onFolderChange={setSelectedFolderUri}
+          onSubmit={handleAddTask}
+        />
+
+        <div className="relative">
+          <MdiIcon
+            path={mdiMagnify}
+            size={16}
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 opacity-50 pointer-events-none"
+          />
+          <Input
+            type="search"
+            placeholder="Aufgaben oder verknüpfte Notizen durchsuchen..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-8 text-xs h-8"
+          />
+        </div>
+      </div>
+
+      {/* Scrollable task list */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="w-full max-w-4xl mx-auto px-4 pb-6">
+          {mode === 'global' ? renderGlobalList() : renderFolderList()}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/** Closes a popover on outside click or Escape while it is open. */
+function useDismiss(open: boolean, ref: React.RefObject<HTMLElement | null>, onClose: () => void) {
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('mousedown', handlePointerDown, true);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown, true);
+      window.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, [open, ref, onClose]);
+}
+
+interface QuickAddBarProps {
+  title: string;
+  onTitleChange: (value: string) => void;
+  priority: TaskPriority;
+  onPriorityChange: (value: TaskPriority) => void;
+  note: string;
+  onNoteChange: (value: string) => void;
+  /** Only set in global mode. */
+  folders?: FolderGroupData[];
+  targetFolder?: FolderGroupData;
+  onFolderChange: (uri: string) => void;
+  onSubmit: (e: React.FormEvent) => void;
+}
+
+const QuickAddBar: React.FC<QuickAddBarProps> = ({
+  title,
+  onTitleChange,
+  priority,
+  onPriorityChange,
+  note,
+  onNoteChange,
+  folders,
+  targetFolder,
+  onFolderChange,
+  onSubmit,
+}) => {
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const containerRef = useRef<HTMLFormElement | null>(null);
+  useDismiss(optionsOpen, containerRef, () => setOptionsOpen(false));
+
+  const chipClass =
+    'rounded-full font-normal cursor-pointer shrink-0 hover:border-[var(--vscode-focusBorder,#007acc)]';
+  const openOptions = () => setOptionsOpen(true);
+
+  return (
+    <form ref={containerRef} onSubmit={onSubmit} className="relative flex items-center gap-1.5">
+      <div className="relative flex-1 min-w-0">
         <MdiIcon
-          path={mdiMagnify}
+          path={mdiPlus}
           size={16}
           className="absolute left-2.5 top-1/2 -translate-y-1/2 opacity-50 pointer-events-none"
         />
         <Input
-          type="search"
-          placeholder="Aufgaben oder verknüpfte Notizen durchsuchen..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-8 text-xs h-8"
+          type="text"
+          placeholder="Neue Aufgabe eingeben und Enter drücken..."
+          value={title}
+          onChange={(e) => onTitleChange(e.target.value)}
+          className="pl-8"
         />
       </div>
 
-      {/* Checklist Content */}
-      {mode === 'global' ? (
-        <div className="flex flex-col gap-4 flex-1">
-          {groups.length === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="p-8 text-center text-sm opacity-60">
-                Keine Ordner-Aufgabenlisten (tasks.json) im Workspace gefunden.
-              </CardContent>
-            </Card>
-          ) : (
-            groups.map((group) => {
-              const filteredTasks = group.tasks.filter(filterTask);
-              const groupOpenCount = group.tasks.filter((t) => !t.completed).length;
-              const isCollapsed = Boolean(collapsedFolders[group.uri]);
-
-              if (filteredTasks.length === 0 && (filterMode !== 'all' || searchQuery.trim())) {
-                return null;
-              }
-
-              return (
-                <Card key={group.uri} className="overflow-hidden">
-                  <CardHeader
-                    onClick={() => toggleFolderCollapse(group.uri)}
-                    className="flex flex-row items-center justify-between space-y-0 px-3 py-2.5 border-b border-[var(--vscode-editorWidget-border,rgba(128,128,128,0.15))] hover:bg-[var(--vscode-list-hoverBackground,rgba(128,128,128,0.08))] cursor-pointer"
-                  >
-                    <CardTitle className="flex items-center gap-2 text-sm font-medium">
-                      <MdiIcon
-                        path={isCollapsed ? mdiChevronRight : mdiChevronDown}
-                        size={16}
-                        className="opacity-70"
-                      />
-                      <MdiIcon path={mdiFolderOutline} size={16} className="text-primary" />
-                      <span>{group.folder}</span>
-                    </CardTitle>
-                    <CardDescription className="text-xs">
-                      {groupOpenCount} offen / {group.tasks.length} gesamt
-                    </CardDescription>
-                  </CardHeader>
-
-                  {!isCollapsed && (
-                    <CardContent className="p-0 divide-y divide-[var(--vscode-editorWidget-border,rgba(128,128,128,0.12))]">
-                      {filteredTasks.length === 0 ? (
-                        <div className="px-4 py-3 text-xs opacity-50">
-                          Keine Aufgaben in diesem Ordner.
-                        </div>
-                      ) : (
-                        filteredTasks.map((task) => (
-                          <TaskChecklistRow
-                            key={task.id}
-                            task={task}
-                            onToggle={() => handleToggleTask(task, group.uri)}
-                            onUpdate={(changes) => handleUpdateTaskField(task, changes, group.uri)}
-                            onDelete={() => handleDeleteTask(task.id, group.uri)}
-                            onOpenNote={(note) => handleOpenNote(note, group.uri)}
-                          />
-                        ))
-                      )}
-                    </CardContent>
-                  )}
-                </Card>
-              );
-            })
-          )}
-        </div>
-      ) : (
-        <Card className="overflow-hidden">
-          <CardContent className="p-0 divide-y divide-[var(--vscode-editorWidget-border,rgba(128,128,128,0.12))]">
-            {filteredFolderTasks.length === 0 ? (
-              <div className="p-8 text-center text-sm opacity-60">
-                {tasks.length === 0
-                  ? 'Noch keine Aufgaben vorhanden. Tippe oben eine Aufgabe ein und drücke Enter.'
-                  : 'Keine Aufgaben für den aktuellen Filter gefunden.'}
-              </div>
-            ) : (
-              filteredFolderTasks.map((task) => (
-                <TaskChecklistRow
-                  key={task.id}
-                  task={task}
-                  onToggle={() => handleToggleTask(task)}
-                  onUpdate={(changes) => handleUpdateTaskField(task, changes)}
-                  onDelete={() => handleDeleteTask(task.id)}
-                  onOpenNote={(note) => handleOpenNote(note, task.folderUri)}
-                />
-              ))
-            )}
-          </CardContent>
-        </Card>
+      {targetFolder && (
+        <Badge
+          variant="outline"
+          role="button"
+          onClick={openOptions}
+          title="Ziel-Ordner"
+          className={chipClass}
+        >
+          <MdiIcon path={mdiFolderOutline} size={12} />
+          <span className="truncate max-w-[120px]">{targetFolder.folder}</span>
+        </Badge>
       )}
-    </div>
+      {priority !== 'medium' && (
+        <Badge
+          variant={priority}
+          role="button"
+          onClick={openOptions}
+          title="Priorität"
+          className={chipClass}
+        >
+          {PRIORITY_LABELS[priority]}
+        </Badge>
+      )}
+      {note.trim() && (
+        <Badge
+          variant="outline"
+          role="button"
+          onClick={openOptions}
+          title="Verknüpfte Notiz"
+          className={chipClass}
+        >
+          <MdiIcon path={mdiFileDocumentOutline} size={12} />
+          <span className="truncate max-w-[120px]">{note.trim()}</span>
+        </Badge>
+      )}
+
+      <Button
+        type="button"
+        variant={optionsOpen ? 'default' : 'ghost'}
+        size="icon"
+        onClick={() => setOptionsOpen((o) => !o)}
+        title="Optionen für neue Aufgabe"
+        aria-label="Optionen für neue Aufgabe"
+        aria-expanded={optionsOpen}
+        className="h-8 w-8 shrink-0"
+      >
+        <MdiIcon path={mdiTune} size={16} />
+      </Button>
+
+      {optionsOpen && (
+        <div className="absolute right-0 top-10 z-30 flex flex-col gap-2 w-64 p-3 rounded-md border shadow-lg text-xs border-[var(--vscode-editorWidget-border,rgba(128,128,128,0.35))] bg-[var(--vscode-editorWidget-background,#252526)]">
+          {folders && folders.length > 0 && (
+            <label className="flex flex-col gap-1">
+              <span className="opacity-70">Ziel-Ordner</span>
+              <Select
+                aria-label="Ziel-Ordner"
+                value={targetFolder?.uri ?? ''}
+                onChange={(e) => onFolderChange(e.target.value)}
+              >
+                {folders.map((g) => (
+                  <option key={g.uri} value={g.uri}>
+                    {g.folder}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          )}
+          <label className="flex flex-col gap-1">
+            <span className="opacity-70">Priorität</span>
+            <Select
+              aria-label="Priorität"
+              value={priority}
+              onChange={(e) => onPriorityChange(e.target.value as TaskPriority)}
+            >
+              <option value="high">Hoch</option>
+              <option value="medium">Mittel</option>
+              <option value="low">Niedrig</option>
+            </Select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="opacity-70">Notiz (optional)</span>
+            <Input
+              type="text"
+              placeholder="z.B. meeting.md"
+              value={note}
+              onChange={(e) => onNoteChange(e.target.value)}
+              className="h-8 text-xs"
+            />
+          </label>
+        </div>
+      )}
+    </form>
   );
+};
+
+const PRIORITY_BAR_COLORS: Record<TaskPriority, string> = {
+  high: 'bg-red-500',
+  medium: 'bg-amber-500/80',
+  low: 'bg-slate-500/50',
 };
 
 interface TaskChecklistRowProps {
@@ -570,10 +754,28 @@ const TaskChecklistRow: React.FC<TaskChecklistRowProps> = ({
 
   const priority: TaskPriority = task.priority || 'medium';
   const checkboxId = `task-check-${task.id}`;
+  const priorityTitle = `Priorität: ${PRIORITY_LABELS[priority]}`;
+  const dateState = getTaskDateState(task);
+  const hasOverdue = dateState.dueOverdue || dateState.scheduledOverdue;
+  const cyclePriority = () => onUpdate({ priority: NEXT_PRIORITY[priority] });
 
   return (
-    <div className="group flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--vscode-list-hoverBackground,rgba(128,128,128,0.06))] transition-colors">
-      {/* Accessible label + shadcn Checkbox */}
+    <div className="group relative flex items-center gap-2 pl-3 pr-1.5 py-1 hover:bg-[var(--vscode-list-hoverBackground,rgba(128,128,128,0.06))] transition-colors">
+      {/* Priority bar: wide hit area, narrow visible stripe */}
+      <button
+        type="button"
+        onClick={cyclePriority}
+        title={priorityTitle}
+        aria-label={priorityTitle}
+        className="absolute left-0 inset-y-0 w-2.5 flex items-stretch py-1.5 focus-visible:outline-1 focus-visible:outline-[var(--vscode-focusBorder,#007acc)]"
+      >
+        <span
+          className={`w-1 rounded-r ${PRIORITY_BAR_COLORS[priority]} ${
+            task.completed ? 'opacity-40' : ''
+          } group-hover:w-1.5 transition-all`}
+        />
+      </button>
+
       <label
         htmlFor={checkboxId}
         className="inline-flex items-center justify-center min-h-[28px] min-w-[28px] cursor-pointer"
@@ -586,7 +788,6 @@ const TaskChecklistRow: React.FC<TaskChecklistRowProps> = ({
         />
       </label>
 
-      {/* Editable Title with immediate visual strikethrough when completed */}
       <div className="flex-1 min-w-0">
         {isEditingTitle ? (
           <Input
@@ -617,48 +818,32 @@ const TaskChecklistRow: React.FC<TaskChecklistRowProps> = ({
         )}
       </div>
 
-      {/* Optional Note Reference Chip built with shadcn Badge */}
-      {task.note && (
-        <Badge
-          variant="outline"
-          role="button"
-          tabIndex={0}
-          onClick={() => onOpenNote(task.note!)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              onOpenNote(task.note!);
-            }
-          }}
-          title={`Notiz öffnen: ${task.note}`}
-          className="rounded-full font-normal hover:border-[var(--vscode-focusBorder,#007acc)] cursor-pointer shrink-0"
-        >
-          <MdiIcon path={mdiFileDocumentOutline} size={12} />
-          <span className="truncate max-w-[140px]">{task.note}</span>
-        </Badge>
-      )}
+      {/* Fixed-width columns keep note and dates aligned across rows */}
+      <div className="flex w-32 shrink-0">
+        {task.note && (
+          <Badge
+            variant="outline"
+            role="button"
+            tabIndex={0}
+            onClick={() => onOpenNote(task.note!)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onOpenNote(task.note!);
+              }
+            }}
+            title={`Notiz öffnen: ${task.note}`}
+            className="max-w-full rounded-full font-normal border-transparent opacity-60 group-hover:opacity-100 group-hover:border-[var(--vscode-editorWidget-border,rgba(128,128,128,0.35))] hover:!border-[var(--vscode-focusBorder,#007acc)] cursor-pointer transition-opacity"
+          >
+            <MdiIcon path={mdiFileDocumentOutline} size={12} className="shrink-0" />
+            <span className="truncate">{task.note}</span>
+          </Badge>
+        )}
+      </div>
 
-      {/* Due / scheduled date chips with date picker */}
-      <TaskDateControls task={task} onUpdate={onUpdate} />
-      {/* Priority Pill built with shadcn Badge (click to cycle priority) */}
-      <Badge
-        variant={priority}
-        role="button"
-        tabIndex={0}
-        onClick={() => onUpdate({ priority: NEXT_PRIORITY[priority] })}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onUpdate({ priority: NEXT_PRIORITY[priority] });
-          }
-        }}
-        title="Priorität ändern (Klicken)"
-        className="rounded-full cursor-pointer shrink-0"
-      >
-        {PRIORITY_LABELS[priority]}
-      </Badge>
+      {/* Date chips are muted until hover unless a date is overdue */}
+      <TaskDateControls task={task} onUpdate={onUpdate} muted={!hasOverdue} />
 
-      {/* Delete Button (visible on hover / focus) */}
       <Button
         variant="ghost"
         size="icon"

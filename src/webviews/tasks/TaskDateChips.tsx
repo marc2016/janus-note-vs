@@ -17,12 +17,18 @@ export interface TaskDateChipsProps {
   task: { dueDate?: string; scheduledDate?: string; completed?: boolean };
   /** Makes chips interactive; without it they are plain read-only badges. */
   onChipClick?: (field: DateField) => void;
+  /** Restricts which date fields are rendered (default: all). */
+  fields?: DateField[];
 }
 
 /**
  * Due / scheduled date chips for a task, with overdue and "after due" hints.
  */
-export const TaskDateChips: React.FC<TaskDateChipsProps> = ({ task, onChipClick }) => {
+export const TaskDateChips: React.FC<TaskDateChipsProps> = ({
+  task,
+  onChipClick,
+  fields = FIELD_ORDER,
+}) => {
   const today = todayIso();
   const state = getTaskDateState(task, today);
 
@@ -47,7 +53,7 @@ export const TaskDateChips: React.FC<TaskDateChipsProps> = ({ task, onChipClick 
 
   return (
     <>
-      {FIELD_ORDER.map((field) => {
+      {fields.map((field) => {
         const value = task[field];
         if (!isIsoDate(value)) return null;
         const title = chipTitle(field, value);

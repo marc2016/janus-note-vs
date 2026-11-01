@@ -1,32 +1,33 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { MdiIcon } from '../components/ui/MdiIcon';
-import { mdiCalendarPlus, mdiClose } from '@mdi/js';
+import { mdiClose, mdiPlus } from '@mdi/js';
 import { isIsoDate } from './taskDates';
 import { DateField, FIELD_META, FIELD_ORDER, TaskDateChips } from './TaskDateChips';
 
 export interface TaskDateControlsProps {
   task: { dueDate?: string; scheduledDate?: string; completed?: boolean };
   onUpdate: (changes: { dueDate?: string; scheduledDate?: string }) => void;
+  /** Dims set chips until the row is hovered. */
+  muted?: boolean;
 }
 
 /**
- * Due / scheduled date chips for a task row, with a "+ Datum" menu and a native date picker.
+ * Due / scheduled date chips for a task row, each in a fixed-width slot so dates line up
+ * across rows. An empty slot offers "+ Geplant" / "+ Fällig" on hover; a native date picker edits.
  */
-export const TaskDateControls: React.FC<TaskDateControlsProps> = ({ task, onUpdate }) => {
-  const [menuOpen, setMenuOpen] = useState(false);
+export const TaskDateControls: React.FC<TaskDateControlsProps> = ({
+  task,
+  onUpdate,
+  muted = false,
+}) => {
   const [editing, setEditing] = useState<DateField | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const missing = FIELD_ORDER.filter((f) => !isIsoDate(task[f]));
-
-  // Close popovers on outside click or Escape
+  // Close the popover on outside click or Escape
   useEffect(() => {
-    if (!menuOpen && !editing) return;
-    const close = () => {
-      setMenuOpen(false);
-      setEditing(null);
-    };
+    if (!editing) return;
+    const close = () => setEditing(null);
     const handlePointerDown = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) close();
     };
@@ -39,12 +40,7 @@ export const TaskDateControls: React.FC<TaskDateControlsProps> = ({ task, onUpda
       window.removeEventListener('mousedown', handlePointerDown, true);
       window.removeEventListener('keydown', handleKeyDown, true);
     };
-  }, [menuOpen, editing]);
-
-  const startEditing = (field: DateField) => {
-    setMenuOpen(false);
-    setEditing(field);
-  };
+  }, [editing]);
 
   const commit = (field: DateField, value: string | undefined) => {
     onUpdate({ [field]: value && isIsoDate(value) ? value : undefined });
@@ -52,54 +48,48 @@ export const TaskDateControls: React.FC<TaskDateControlsProps> = ({ task, onUpda
   };
 
   return (
-    <div ref={containerRef} className="relative flex items-center gap-1 shrink-0">
-      <TaskDateChips task={task} onChipClick={startEditing} />
+    <div ref={containerRef} className="flex items-center gap-1 shrink-0">
+      {FIELD_ORDER.map((field) => {
+        const isSet = isIsoDate(task[field]);
+        return (
+          <div key={field} className="relative flex items-center w-[88px]">
+            {isSet ? (
+              // Only the chip is dimmed: opacity on the slot would trap the popover in its stacking context
+              <span
+                className={`inline-flex transition-opacity ${
+                  muted ? 'opacity-70 group-hover:opacity-100' : ''
+                }`}
+              >
+                <TaskDateChips task={task} fields={[field]} onChipClick={setEditing} />
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setEditing(field)}
+                title={FIELD_META[field].menuLabel}
+                aria-label={FIELD_META[field].menuLabel}
+                className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs whitespace-nowrap transition-opacity hover:bg-[var(--vscode-list-hoverBackground,rgba(128,128,128,0.1))] ${
+                  editing === field
+                    ? 'opacity-100'
+                    : 'opacity-0 group-hover:opacity-60 focus-visible:opacity-100 hover:!opacity-100'
+                }`}
+              >
+                <MdiIcon path={mdiPlus} size={12} />
+                {FIELD_META[field].label}
+              </button>
+            )}
 
-      {missing.length > 0 && (
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => (missing.length === 1 ? startEditing(missing[0]) : setMenuOpen((o) => !o))}
-          title={missing.length === 1 ? FIELD_META[missing[0]].menuLabel : 'Datum hinzufügen'}
-          aria-label="Datum hinzufügen"
-          className={`h-6 w-6 transition-opacity ${
-            menuOpen || editing
-              ? 'opacity-100'
-              : 'opacity-0 group-hover:opacity-75 focus-visible:opacity-100 hover:!opacity-100'
-          }`}
-        >
-          <MdiIcon path={mdiCalendarPlus} size={15} />
-        </Button>
-      )}
-
-      {menuOpen && (
-        <div
-          role="menu"
-          className="absolute right-0 top-7 z-20 flex flex-col min-w-[140px] py-1 rounded-md border shadow-lg text-xs border-[var(--vscode-menu-border,rgba(128,128,128,0.35))] bg-[var(--vscode-menu-background,#252526)] text-[var(--vscode-menu-foreground,inherit)]"
-        >
-          {missing.map((field) => (
-            <button
-              key={field}
-              type="button"
-              role="menuitem"
-              onClick={() => startEditing(field)}
-              className="flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[var(--vscode-menu-selectionBackground,#04395e)] hover:text-[var(--vscode-menu-selectionForeground,#fff)]"
-            >
-              <MdiIcon path={FIELD_META[field].icon} size={13} />
-              {FIELD_META[field].menuLabel}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {editing && (
-        <DateEditPopover
-          label={FIELD_META[editing].label}
-          value={task[editing]}
-          onCommit={(value) => commit(editing, value)}
-          onRemove={isIsoDate(task[editing]) ? () => commit(editing, undefined) : undefined}
-        />
-      )}
+            {editing === field && (
+              <DateEditPopover
+                label={FIELD_META[field].label}
+                value={task[field]}
+                onCommit={(value) => commit(field, value)}
+                onRemove={isSet ? () => commit(field, undefined) : undefined}
+              />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 };
