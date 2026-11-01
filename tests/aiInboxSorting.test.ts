@@ -992,7 +992,8 @@ describe('aiInboxSorting', () => {
       });
       expect(infoSpy).toHaveBeenCalledWith(
         '1 Abschnitt(e) einsortiert, 1 in der Inbox verblieben.',
-        'Notiz öffnen'
+        'Notiz öffnen',
+        'Rückgängig'
       );
     });
 
@@ -1078,7 +1079,7 @@ describe('aiInboxSorting', () => {
         skippedChanged: [],
         remainingBlockCount: 2,
       });
-      expect(infoSpy).toHaveBeenCalledWith('1 Abschnitt(e) einsortiert und verlinkt.', 'Notiz öffnen');
+      expect(infoSpy).toHaveBeenCalledWith('1 Abschnitt(e) einsortiert und verlinkt.', 'Notiz öffnen', 'Rückgängig');
     });
 
     it('mentions blocks that changed during sorting', () => {

@@ -243,6 +243,11 @@
         "icon": "$(inbox)"
       },
       {
+        "command": "janus.undoInboxSort",
+        "title": "Janus: Letzte Inbox-Sortierung rückgängig machen",
+        "icon": "$(discard)"
+      },
+      {
         "command": "janus.openSettings",
         "title": "Janus: Einstellungen öffnen",
         "icon": "$(gear)"

@@ -12,6 +12,7 @@ import {
 } from '../commands/notesRootCommands';
 import { DAILY_NOTES_FOLDER, isDailyNotePath } from './dailyNotePaths';
 import { SORTED_LINK_RE } from './sortedLinkScan';
+import { InboxSortUndoRecord, writeNoteText } from './inboxSortUndo';
 
 const RawInboxSortItemSchema = z.object({
   block: z.coerce.number().int().positive(),
@@ -62,6 +63,8 @@ export interface SortInboxResult {
   remainingBlockCount: number;
   skippedEmpty?: boolean;
   cancelled?: boolean;
+  /** What this run changed; set only when at least one block was written. */
+  undo?: InboxSortUndoRecord;
 }
 
 export interface NoteOutline {
@@ -999,6 +1002,9 @@ export class AiInboxSorterService {
       }
       return cached;
     };
+    const appended = new Map<string, InboxSortUndoRecord['appended'][number]>();
+    const created: InboxSortUndoRecord['created'] = [];
+    const createdFolders: vscode.Uri[] = [];
     for (const { proposal: item, text: blockText, block } of executable) {
       links.push({ endLine: block.endLine ?? 0, target: item.targetRelativePath.replace(/\.(md|markdown)$/i, '') });
       const segments = item.targetRelativePath.split('/');
@@ -1011,6 +1017,14 @@ export class AiInboxSorterService {
         pathExists
       );
       if (segments.length > 1) {
+        // Remember the folders this run creates, deepest first, so undo can remove them again
+        for (let depth = segments.length - 1; depth >= 1; depth--) {
+          const folderUri = vscode.Uri.joinPath(notesRootUri, ...segments.slice(0, depth));
+          if (await this.fileExists(folderUri)) {
+            break;
+          }
+          createdFolders.push(folderUri);
+        }
         const parentUri = vscode.Uri.joinPath(notesRootUri, ...segments.slice(0, -1));
         await vscode.workspace.fs.createDirectory(parentUri);
       }
@@ -1025,6 +1039,10 @@ export class AiInboxSorterService {
         const formattedSection = formatAppendedInboxSection(item.title, text, headingSuffix);
         const updatedText = `${trimmedExisting}${separator}${formattedSection}\n`;
         await vscode.workspace.fs.writeFile(targetUri, Buffer.from(updatedText, 'utf-8'));
+        const note = appended.get(targetUri.fsPath) ?? { uri: targetUri, textBefore: existingText, textAfter: '', sections: [] };
+        note.textAfter = updatedText;
+        note.sections.push(`${separator}${formattedSection}`);
+        appended.set(targetUri.fsPath, note);
 
         sortedItems.push({
           ...item,
@@ -1037,6 +1055,7 @@ export class AiInboxSorterService {
           .replace(/\.(md|markdown)$/i, '');
         const fileContent = /^#\s+/.test(text) ? `${text}\n` : `# ${baseTitle}\n\n${text}\n`;
         await vscode.workspace.fs.writeFile(targetUri, Buffer.from(fileContent, 'utf-8'));
+        created.push({ uri: targetUri, text: fileContent });
 
         sortedItems.push({
           ...item,
@@ -1057,20 +1076,7 @@ export class AiInboxSorterService {
         ? `# Inbox\n\n${remainingBlocks.map((b) => b.text).join('\n\n')}\n`
         : '# Inbox\n\n';
 
-    await vscode.workspace.fs.writeFile(inboxUri, Buffer.from(updatedInboxContent, 'utf-8'));
-
-    if (openInboxDoc) {
-      const currentDocText = openInboxDoc.getText();
-      if (currentDocText !== updatedInboxContent && typeof openInboxDoc.positionAt === 'function') {
-        const fullRange = new vscode.Range(
-          openInboxDoc.positionAt(0),
-          openInboxDoc.positionAt(currentDocText.length)
-        );
-        const edit = new vscode.WorkspaceEdit();
-        edit.replace(openInboxDoc.uri, fullRange, updatedInboxContent);
-        await vscode.workspace.applyEdit(edit);
-      }
-    }
+    await writeNoteText(inboxUri, updatedInboxContent, openInboxDoc);
 
     return {
       inboxUri,
@@ -1079,6 +1085,19 @@ export class AiInboxSorterService {
       unassignedBlocks: unassignedAtConfirm,
       skippedChanged,
       remainingBlockCount: remainingBlocks.length,
+      undo: {
+        source: {
+          uri: inboxUri,
+          kind: source.kind,
+          textBefore: currentText,
+          textAfter: updatedInboxContent,
+          removedBlocks: isDaily ? [] : executable.map((e) => e.text),
+          links: links.map((l) => `-> [[${l.target}]]`),
+        },
+        appended: [...appended.values()],
+        created,
+        createdFolders,
+      },
     };
   }
 }

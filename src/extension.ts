@@ -7,7 +7,7 @@ import { CompanionCodeLensProvider } from './companion/companionCodeLensProvider
 import { CompanionWatcher } from './companion/companionWatcher';
 import { TasksEditorProvider } from './editors/tasksEditorProvider';
 import { ChartEditorProvider } from './editors/chartEditorProvider';
-import { MarkdownEditorProvider, showInboxSortResult } from './editors/markdownEditorProvider';
+import { MarkdownEditorProvider, runUndoInboxSort, showInboxSortResult } from './editors/markdownEditorProvider';
 import { GlobalTasksViewProvider } from './editors/globalTasksViewProvider';
 import { CalendarViewProvider } from './editors/calendarViewProvider';
 import { CalendarDayDetailsViewProvider } from './editors/calendarDayDetailsViewProvider';
@@ -506,6 +506,14 @@ export function activate(context: vscode.ExtensionContext) {
           `KI-Inbox-Sortierung fehlgeschlagen: ${err?.message || String(err)}`
         );
       }
+    }),
+    vscode.commands.registerCommand('janus.undoInboxSort', async () => {
+      try {
+        await runUndoInboxSort();
+      } catch (err: any) {
+        vscode.window.showErrorMessage(`Rückgängigmachen fehlgeschlagen: ${err?.message || String(err)}`);
+      }
+      notesTreeDataProvider.refresh();
     }),
     vscode.commands.registerCommand('janus.setNotesRoot', setNotesRootCommand),
     vscode.commands.registerCommand('janus.resetNotesRoot', resetNotesRootCommand),

@@ -24,6 +24,7 @@ import { saveImageNextToNote, validateImage } from '../services/imageAssetServic
 import { findFencedBlocks, locateMermaidBlock } from '../services/markdownScan';
 import { repairLinkInNote } from '../commands/brokenLinksCommand';
 import { getTagIndex } from '../services/noteTagService';
+import { rememberSortRun, undoLastSortRun, UndoReport } from '../services/inboxSortUndo';
 
 /**
  * Reports the outcome of an inbox sorting run, shared by the `janus.sortInbox` command and the
@@ -33,6 +34,7 @@ export function showInboxSortResult(result: SortInboxResult): void {
   if (result.cancelled) {
     return;
   }
+  rememberSortRun(result.undo);
   const isDaily = result.source === 'daily';
   if (result.skippedEmpty) {
     void vscode.window.showInformationMessage(
@@ -56,10 +58,13 @@ export function showInboxSortResult(result: SortInboxResult): void {
     void vscode.window
       .showInformationMessage(
         `${summary}${changedHint}`,
-        'Notiz öffnen'
+        'Notiz öffnen',
+        'Rückgängig'
       )
       .then((action) => {
-        if (action === 'Notiz öffnen') {
+        if (action === 'Rückgängig') {
+          void vscode.commands.executeCommand('janus.undoInboxSort');
+        } else if (action === 'Notiz öffnen') {
           void vscode.commands.executeCommand(
             'vscode.openWith',
             firstTarget.targetUri,
@@ -74,6 +79,21 @@ export function showInboxSortResult(result: SortInboxResult): void {
       `Keine sortierbaren Abschnitte in der ${isDaily ? 'Tagesnotiz' : 'Inbox'} erkannt.`
     );
   }
+}
+
+/** Undoes the last sort run and reports what was undone and which edited notes were kept. */
+export async function runUndoInboxSort(): Promise<UndoReport | undefined> {
+  const report = await undoLastSortRun();
+  if (!report) {
+    void vscode.window.showInformationMessage('Keine Sortierung zum Rückgängigmachen vorhanden.');
+    return undefined;
+  }
+  const kept =
+    report.keptNotes.length > 0
+      ? ` Unverändert gelassen (seitdem bearbeitet): ${report.keptNotes.join(', ')}.`
+      : '';
+  void vscode.window.showInformationMessage(`Sortierung rückgängig gemacht.${kept}`);
+  return report;
 }
 
 export type MermaidReplaceResult = 'ok' | 'changed' | 'missing' | 'invalid';
