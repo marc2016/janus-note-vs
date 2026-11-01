@@ -1,7 +1,7 @@
 # Inbox
 
 Willkommen in deinen Janus Notes!
-Hier kannst du schnell neue Notizen, spontane Gedanken und Aufgaben erfassen. Über den Button **„Inbox einsortieren"** in der Fußleiste kann die KI diese Abschnitte automatisch in bestehende Projekte einsortieren oder als neue Notizen anlegen.
+Hier kannst du schnell neue Notizen, spontane Gedanken und Aufgaben erfassen. Über den Button **„Inbox einsortieren"** in der Fußleiste kann die KI diese Abschnitte automatisch in bestehende Projekte einsortieren oder als neue Notizen anlegen. Passt ein Ziel nicht, änderst du es in der Vorschau über das Stift-Symbol.
 
 ## App-Launch: Beta-Feedback & Push-Notifications
 Beim heutigen Testlauf der mobilen App ist aufgefallen, dass die Push-Notifications unter iOS 18 erst verzögert ankommen.

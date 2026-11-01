@@ -6,6 +6,7 @@ Willkommen im **Janus Note** Test-Workspace (`sample/`)! Hier kannst du alle Fun
 Öffne die [[inbox]] – dort warten bereits mehrere verschiedene Gedanken und Abschnitte:
 - Klicke unten in der Fußleiste auf **„Inbox einsortieren"**, um die Abschnitte per KI in bestehende Notizen (wie [[app-launch]] oder [[kickoff]]) anzuhängen oder als neue Notiz anzulegen.
 - Standardmäßig erscheint zuerst die **Vorschau** (QuickPick), in der du einzelne Vorschläge an- oder abwählen kannst.
+- Über das **Stift-Symbol** einer Zeile änderst du das Ziel: eine andere bestehende Notiz oder eine neue Notiz (z. B. `Projekte/Beta/feedback`). So kannst du auch Abschnitte ohne KI-Vorschlag („Kein Ziel“) einsortieren.
 
 ## 2. Aufgaben per KI aus Notizen generieren
 Öffne [[app-launch]], [[kickoff]] oder [[sprint-review]] und klicke unten in der Fußleiste auf **„Aufgaben generieren"**:
