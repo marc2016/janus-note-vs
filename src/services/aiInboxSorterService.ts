@@ -556,6 +556,108 @@ export function parseAiInboxSortItems(rawResponse: string, blocks: InboxBlock[])
   return results;
 }
 
+/** One block in the sort preview; `target` is a sanitized note path, missing for blocks without a target. */
+interface PreviewRow {
+  block: InboxBlock;
+  title: string;
+  target?: string;
+  picked: boolean;
+}
+
+type PreviewItem = vscode.QuickPickItem & { row?: PreviewRow; isToggleMode?: boolean };
+
+type PreviewOutcome =
+  | { kind: 'accept'; selected: PreviewItem[] }
+  | { kind: 'edit'; row: PreviewRow; selected: PreviewItem[] }
+  | { kind: 'cancel' };
+
+const EDIT_TARGET_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('edit'), tooltip: 'Ziel ändern' };
+
+/** Shows the multi-select sort preview once; pressing a row's edit button closes it with an edit request. */
+function showSortPreview(items: PreviewItem[], options: { title: string; placeholder: string }): Promise<PreviewOutcome> {
+  const qp = vscode.window.createQuickPick<PreviewItem>();
+  qp.canSelectMany = true;
+  qp.ignoreFocusOut = true;
+  qp.matchOnDescription = true;
+  qp.title = options.title;
+  qp.placeholder = options.placeholder;
+  qp.items = items;
+  qp.selectedItems = items.filter((item) => item.picked);
+
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (outcome: PreviewOutcome) => {
+      if (done) {
+        return;
+      }
+      done = true;
+      resolve(outcome);
+      qp.dispose();
+    };
+    qp.onDidAccept(() => finish({ kind: 'accept', selected: [...qp.selectedItems] }));
+    qp.onDidTriggerItemButton((e) => {
+      if (e.item.row) {
+        finish({ kind: 'edit', row: e.item.row, selected: [...qp.selectedItems] });
+      }
+    });
+    // Also fires on dispose after accept or edit; `done` keeps that from counting as cancel
+    qp.onDidHide(() => finish({ kind: 'cancel' }));
+    qp.show();
+  });
+}
+
+const INVALID_TARGET_MESSAGE =
+  'Ungültiger Pfad – erlaubt sind Notizen unter meetings/, projects/ oder knowledge/ (ohne "..", nicht inbox.md oder journal/).';
+
+/**
+ * Lets the user pick an existing note in the canonical root folders or enter a new note path.
+ * Returns a sanitized relative path, or undefined when the user cancels.
+ */
+async function pickSortTarget(outlines: NoteOutline[], currentTarget?: string): Promise<string | undefined> {
+  type TargetItem = vscode.QuickPickItem & { target?: string; isNew?: boolean };
+  const noteItems: TargetItem[] = outlines
+    .filter((o) => sanitizeRelativeNotePath(o.relativePath) === o.relativePath)
+    .map((o) => ({
+      label: `${o.relativePath === currentTarget ? '$(check) ' : ''}${formatRelativePathWithLocalizedRoot(o.relativePath)}`,
+      description: o.title,
+      target: o.relativePath,
+    }));
+  const items: TargetItem[] = [{ label: '$(new-file) Neue Notiz…', isNew: true }];
+  if (noteItems.length > 0) {
+    items.push({ label: 'Bestehende Notizen (Abschnitt wird angehängt)', kind: vscode.QuickPickItemKind.Separator }, ...noteItems);
+  }
+
+  const picked = await vscode.window.showQuickPick(items, {
+    title: 'Ziel für den Abschnitt wählen',
+    placeHolder: 'Bestehende Notiz suchen oder neue Notiz anlegen',
+    matchOnDescription: true,
+  });
+  if (!picked) {
+    return undefined;
+  }
+  if (!picked.isNew) {
+    return picked.target;
+  }
+
+  const folder = currentTarget ? `${path.posix.dirname(currentTarget)}/` : '';
+  const value = await vscode.window.showInputBox({
+    title: 'Neue Notiz',
+    prompt: 'Pfad der neuen Notiz relativ zum Notizen-Ordner, z. B. projects/App-Launch/feedback.md',
+    value: folder,
+    valueSelection: [folder.length, folder.length],
+    validateInput: (input) => {
+      const normalized = sanitizeRelativeNotePath(input);
+      if (!normalized) {
+        return INVALID_TARGET_MESSAGE;
+      }
+      return normalized === input.trim()
+        ? undefined
+        : { message: `Wird gespeichert als ${normalized}`, severity: vscode.InputBoxValidationSeverity.Info };
+    },
+  });
+  return value === undefined ? undefined : sanitizeRelativeNotePath(value) ?? undefined;
+}
+
 type SortSource =
   | { kind: 'inbox'; uri: vscode.Uri; relPath: string; openDoc?: vscode.TextDocument }
   | { kind: 'daily'; uri: vscode.Uri; relPath: string; openDoc?: vscode.TextDocument; date: string };
@@ -654,6 +756,38 @@ export class AiInboxSorterService {
       { kind: 'daily', uri: noteUri, relPath, date, openDoc: matchingDocument(openDocument, noteUri) },
       token
     );
+  }
+
+  private async buildPreviewItems(
+    notesRootUri: vscode.Uri,
+    rows: PreviewRow[],
+    directModePicked: boolean
+  ): Promise<PreviewItem[]> {
+    const items: PreviewItem[] = [];
+    for (const row of rows) {
+      const detail = row.block.text.replace(/\s+/g, ' ').slice(0, 140);
+      if (!row.target) {
+        items.push({ label: '$(circle-slash) Kein Ziel', description: row.title, detail, buttons: [EDIT_TARGET_BUTTON], picked: row.picked, row });
+        continue;
+      }
+      const exists = await this.fileExists(vscode.Uri.joinPath(notesRootUri, ...row.target.split('/')));
+      const actionLabel = exists ? '$(add) Anhängen an' : '$(new-file) Neu erstellen';
+      items.push({
+        label: `${actionLabel}: ${formatRelativePathWithLocalizedRoot(row.target)}`,
+        description: `${row.title} (${row.target})`,
+        detail,
+        buttons: [EDIT_TARGET_BUTTON],
+        picked: row.picked,
+        row,
+      });
+    }
+    items.push({
+      label: '$(gear) Direkt-Modus aktivieren (zukünftig ohne Vorschau einsortieren)',
+      description: 'Einstellung janus.ai.inboxSortConfirm umschalten',
+      picked: directModePicked,
+      isToggleMode: true,
+    });
+    return items;
   }
 
   private readSourceBlocks(source: SortSource, text: string): InboxBlock[] {
@@ -767,70 +901,69 @@ export class AiInboxSorterService {
     }
 
     let selectedProposals = proposals;
+    let unassignedAtConfirm = unassignedBlocks;
 
     if (this.isConfirmPreviewEnabled()) {
-      type SortQuickPickItem = vscode.QuickPickItem & {
-        proposal?: InboxSortProposal;
-        isToggleMode?: boolean;
-      };
-
-      const quickPickItems: SortQuickPickItem[] = [];
-      for (const proposal of proposals) {
-        const targetUri = vscode.Uri.joinPath(
-          notesRootUri,
-          ...proposal.targetRelativePath.split('/')
-        );
-        const alreadyExists = await this.fileExists(targetUri);
-        const actionLabel = alreadyExists ? '$(add) Anhängen an' : '$(new-file) Neu erstellen';
-        const displayPath = formatRelativePathWithLocalizedRoot(proposal.targetRelativePath);
-
-        quickPickItems.push({
-          label: `${actionLabel}: ${displayPath}`,
-          description: `${proposal.title} (${proposal.targetRelativePath})`,
-          detail: proposal.block.text.replace(/\s+/g, ' ').slice(0, 140),
-          picked: true,
-          proposal,
-        });
-      }
-
-      if (unassignedBlocks.length > 0) {
-        quickPickItems.push({
-          label: isDaily
-            ? `${unassignedBlocks.length} Abschnitt(e) ohne Vorschlag bleiben ohne Link in der Tagesnotiz`
-            : `${unassignedBlocks.length} Abschnitt(e) ohne Vorschlag bleiben in der Inbox`,
-          kind: vscode.QuickPickItemKind.Separator,
-        });
-      }
-
-      quickPickItems.push({
-        label: '$(gear) Direkt-Modus aktivieren (zukünftig ohne Vorschau einsortieren)',
-        description: 'Einstellung janus.ai.inboxSortConfirm umschalten',
-        picked: false,
-        isToggleMode: true,
+      const proposalByBlock = new Map(proposals.map((p) => [p.block, p]));
+      const rows: PreviewRow[] = blocks.map((block) => {
+        const proposal = proposalByBlock.get(block);
+        return proposal
+          ? { block, title: proposal.title, target: proposal.targetRelativePath, picked: true }
+          : { block, title: fallbackBlockTitle(block), picked: false };
       });
+      let directModePicked = false;
 
-      const picked = await vscode.window.showQuickPick(quickPickItems, {
-        canPickMany: true,
-        title: isDaily ? 'KI Tagesnotiz-Sortierung – Vorschau bestätigen' : 'KI Inbox-Sortierung – Vorschau bestätigen',
-        placeHolder: isDaily
-          ? 'Wähle die Abschnitte aus, die kopiert und in der Tagesnotiz verlinkt werden sollen (Bestehende Dateien werden nur ergänzt)'
-          : 'Wähle die Abschnitte aus, die einsortiert werden sollen (Bestehende Dateien werden nur ergänzt, nichts wird gelöscht)',
-      });
+      // The preview closes while the target picker is open and is rebuilt from `rows` afterwards
+      for (;;) {
+        const items = await this.buildPreviewItems(notesRootUri, rows, directModePicked);
+        const outcome = await showSortPreview(items, {
+          title: isDaily ? 'KI Tagesnotiz-Sortierung – Vorschau bestätigen' : 'KI Inbox-Sortierung – Vorschau bestätigen',
+          placeholder: isDaily
+            ? 'Wähle die Abschnitte aus, die kopiert und in der Tagesnotiz verlinkt werden sollen ($(edit) ändert das Ziel)'
+            : 'Wähle die Abschnitte aus, die einsortiert werden sollen ($(edit) ändert das Ziel, bestehende Dateien werden nur ergänzt)',
+        });
 
-      if (!picked) {
-        return emptyResult(blocks, { unassignedBlocks, cancelled: true });
+        if (outcome.kind === 'cancel') {
+          return emptyResult(blocks, { unassignedBlocks, cancelled: true });
+        }
+
+        for (const row of rows) {
+          row.picked = outcome.selected.some((item) => item.row === row);
+        }
+        directModePicked = outcome.selected.some((item) => item.isToggleMode);
+
+        if (outcome.kind === 'accept') {
+          break;
+        }
+
+        const target = await pickSortTarget(outlines, outcome.row.target);
+        if (target) {
+          outcome.row.target = target;
+          outcome.row.picked = true;
+        }
       }
 
-      if (picked.some((p) => p.isToggleMode)) {
+      if (directModePicked) {
         await this.setConfirmPreviewEnabled(false);
       }
 
-      selectedProposals = picked
-        .filter((p): p is SortQuickPickItem & { proposal: InboxSortProposal } => Boolean(p.proposal))
-        .map((p) => p.proposal);
+      selectedProposals = [];
+      for (const row of rows) {
+        if (!row.picked || !row.target) {
+          continue;
+        }
+        const exists = await this.fileExists(vscode.Uri.joinPath(notesRootUri, ...row.target.split('/')));
+        selectedProposals.push({
+          block: row.block,
+          title: row.title,
+          action: exists ? 'append' : 'create',
+          targetRelativePath: row.target,
+        });
+      }
+      unassignedAtConfirm = rows.filter((row) => !row.target).map((row) => row.block);
 
       if (selectedProposals.length === 0) {
-        return emptyResult(blocks, { unassignedBlocks, cancelled: true });
+        return emptyResult(blocks, { unassignedBlocks: unassignedAtConfirm, cancelled: true });
       }
     }
 
@@ -914,7 +1047,7 @@ export class AiInboxSorterService {
     }
 
     if (consumed.size === 0) {
-      return emptyResult(currentBlocks, { unassignedBlocks, skippedChanged });
+      return emptyResult(currentBlocks, { unassignedBlocks: unassignedAtConfirm, skippedChanged });
     }
 
     const remainingBlocks = currentBlocks.filter((_, i) => !consumed.has(i));
@@ -943,7 +1076,7 @@ export class AiInboxSorterService {
       inboxUri,
       source: source.kind,
       sortedItems,
-      unassignedBlocks,
+      unassignedBlocks: unassignedAtConfirm,
       skippedChanged,
       remainingBlockCount: remainingBlocks.length,
     };

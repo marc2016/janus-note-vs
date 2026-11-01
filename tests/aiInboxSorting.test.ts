@@ -16,7 +16,26 @@ import * as path from 'path';
 import { CompanionManager } from '../src/companion/companionManager';
 import { MarkdownEditorProvider } from '../src/editors/markdownEditorProvider';
 import * as markdownEditorModule from '../src/editors/markdownEditorProvider';
-import { __setConfigStore } from './__mocks__/vscode';
+import { __setConfigStore, MockQuickPick } from './__mocks__/vscode';
+
+/** Drives the sort preview: each step handles one opening of the preview; without a step it is closed. */
+function drivePreview(...steps: Array<(qp: MockQuickPick<any>) => void>): any[][] {
+  const shown: any[][] = [];
+  vi.spyOn(vscode.window, 'createQuickPick').mockImplementation(() => {
+    const qp = new MockQuickPick<any>();
+    qp.onShow = (q) => {
+      shown.push([...q.items]);
+      const step = steps.shift();
+      if (step) {
+        step(q);
+      } else {
+        q.hide();
+      }
+    };
+    return qp as any;
+  });
+  return shown;
+}
 
 describe('aiInboxSorting', () => {
   let mockContext: vscode.ExtensionContext;
@@ -382,10 +401,10 @@ describe('aiInboxSorting', () => {
         })
       );
 
-      // Simulate user selecting ONLY the first item in QuickPick
-      vi.spyOn(vscode.window, 'showQuickPick').mockImplementation(async (items: any) => {
-        expect(items[0].label).toContain('Allgemeine Meetings/Erster.md');
-        return [items[0]];
+      // Simulate user selecting ONLY the first item in the preview
+      drivePreview((qp) => {
+        expect(qp.items[0].label).toContain('Allgemeine Meetings/Erster.md');
+        qp.accept([qp.items[0]]);
       });
 
       const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
@@ -497,9 +516,7 @@ describe('aiInboxSorting', () => {
         docText = '# Inbox\n\n## A\nalpha\n\n## B\nbeta geändert\n\n## C\nneu\n';
         return assign([1, 'knowledge/a.md'], [2, 'knowledge/b.md']);
       });
-      vi.spyOn(vscode.window, 'showQuickPick').mockImplementation(async (items: any) =>
-        items.filter((i: any) => i.proposal)
-      );
+      drivePreview((qp) => qp.accept(qp.items.filter((i: any) => i.row?.target)));
 
       const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
       const result = await sorter.sortInbox(openDoc.uri, openDoc);
@@ -539,23 +556,239 @@ describe('aiInboxSorting', () => {
       expect(fsMap.get('/workspace/inbox.md')).toBe('# Inbox\n\nBleibt ![Skizze](assets/skizze.png)\n');
     });
 
-    it('lists unassigned blocks as a separator in the preview', async () => {
+    it('lists unassigned blocks unselected and without a target in the preview', async () => {
       fsMap.set('/workspace/inbox.md', '# Inbox\n\nEins.\n\nZwei.\n');
       const aiModelService = new AiModelService(mockContext);
       vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue(assign([1, 'knowledge/eins.md']));
-      let shownItems: any[] = [];
-      vi.spyOn(vscode.window, 'showQuickPick').mockImplementation(async (items: any) => {
-        shownItems = items;
-        return undefined;
+      let selected: any[] = [];
+      const shown = drivePreview((qp) => {
+        selected = qp.selectedItems;
+        qp.hide();
       });
 
       const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
       const result = await sorter.sortInbox(vscode.Uri.file('/workspace/inbox.md'));
 
       expect(result.cancelled).toBe(true);
-      const separator = shownItems.find((i) => i.kind === vscode.QuickPickItemKind.Separator);
-      expect(separator?.label).toBe('1 Abschnitt(e) ohne Vorschlag bleiben in der Inbox');
+      const rows = shown[0].filter((i) => i.row);
+      expect(rows.map((i) => i.label)).toEqual(['$(new-file) Neu erstellen: Wissensbasis/eins.md', '$(circle-slash) Kein Ziel']);
+      expect(rows[1].description).toBe('Zwei.');
+      expect(rows.every((i) => i.buttons?.length === 1)).toBe(true);
+      expect(selected).toEqual([rows[0]]);
       expect(fsMap.get('/workspace/inbox.md')).toBe('# Inbox\n\nEins.\n\nZwei.\n');
+    });
+  });
+
+  describe('AiInboxSorterService editing targets in the preview', () => {
+    const assign = (...items: Array<[number, string]>) =>
+      JSON.stringify({
+        items: items.map(([block, target]) => ({ block, title: `Titel ${block}`, action: 'append', targetRelativePath: target })),
+      });
+    const row = (qp: MockQuickPick<any>, index: number) => qp.items.find((i: any) => i.row?.block.index === index);
+    const editThenAccept = (index: number) => [
+      (qp: MockQuickPick<any>) => qp.triggerItemButton(row(qp, index)),
+      (qp: MockQuickPick<any>) => qp.accept(),
+    ];
+    const pickNote = (relPath: string) =>
+      vi.spyOn(vscode.window, 'showQuickPick').mockImplementation(async (items: any) =>
+        items.find((i: any) => i.target === relPath)
+      );
+    const pickNewNote = (input: string) => {
+      vi.spyOn(vscode.window, 'showQuickPick').mockImplementation(async (items: any) => items.find((i: any) => i.isNew));
+      return vi.spyOn(vscode.window, 'showInputBox').mockResolvedValue(input);
+    };
+
+    beforeEach(() => {
+      // Directory listing derived from fsMap, so existing notes show up as targets
+      vi.spyOn(vscode.workspace.fs, 'readDirectory').mockImplementation(async (uri: vscode.Uri) => {
+        const prefix = `${uri.fsPath.replace(/\/$/, '')}/`;
+        const entries = new Map<string, vscode.FileType>();
+        for (const key of fsMap.keys()) {
+          if (key.startsWith(prefix)) {
+            const [first, ...rest] = key.slice(prefix.length).split('/');
+            entries.set(first, rest.length > 0 ? vscode.FileType.Directory : vscode.FileType.File);
+          }
+        }
+        return [...entries];
+      });
+    });
+
+    it('redirects a proposal to another existing note', async () => {
+      fsMap.set('/workspace/inbox.md', '# Inbox\n\nPush-Zertifikat erneuern\n');
+      fsMap.set('/workspace/knowledge/ideen.md', '# Ideen\n');
+      fsMap.set('/workspace/projects/App-Launch/app-launch.md', '# App-Launch\n');
+      const aiModelService = new AiModelService(mockContext);
+      vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue(assign([1, 'knowledge/ideen.md']));
+      const shown = drivePreview(...editThenAccept(1));
+      pickNote('projects/App-Launch/app-launch.md');
+
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+      const result = await sorter.sortInbox(vscode.Uri.file('/workspace/inbox.md'));
+
+      expect(shown[1][0].label).toBe('$(add) Anhängen an: Projekte/App-Launch/app-launch.md');
+      expect(result.sortedItems.map((i) => i.targetRelativePath)).toEqual(['projects/App-Launch/app-launch.md']);
+      expect(fsMap.get('/workspace/projects/App-Launch/app-launch.md')).toMatch(
+        /^# App-Launch\n\n## Titel 1 \(\d{4}-\d{2}-\d{2} \d{2}:\d{2}\)\n\nPush-Zertifikat erneuern\n$/
+      );
+      expect(fsMap.get('/workspace/knowledge/ideen.md')).toBe('# Ideen\n');
+      expect(fsMap.get('/workspace/inbox.md')).toBe('# Inbox\n\n');
+    });
+
+    it('offers only notes in the canonical root folders as existing targets', async () => {
+      fsMap.set('/workspace/inbox.md', '# Inbox\n\nEins.\n');
+      fsMap.set('/workspace/knowledge/ideen.md', '# Ideen\n');
+      fsMap.set('/workspace/journal/2026-10-28.md', '# Tag\n');
+      fsMap.set('/workspace/archiv/alt.md', '# Alt\n');
+      const aiModelService = new AiModelService(mockContext);
+      vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue(assign([1, 'knowledge/ideen.md']));
+      drivePreview(...editThenAccept(1));
+      let offered: any[] = [];
+      vi.spyOn(vscode.window, 'showQuickPick').mockImplementation(async (items: any) => {
+        offered = items;
+        return undefined;
+      });
+
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+      await sorter.sortInbox(vscode.Uri.file('/workspace/inbox.md'));
+
+      expect(offered.filter((i) => i.target).map((i) => [i.label, i.description])).toEqual([
+        ['$(check) Wissensbasis/ideen.md', 'Ideen'],
+      ]);
+      expect(offered[0].isNew).toBe(true);
+    });
+
+    it('redirects a proposal to a new note with a localized path', async () => {
+      fsMap.set('/workspace/inbox.md', '# Inbox\n\nBeta-Feedback sammeln\n');
+      fsMap.set('/workspace/knowledge/ideen.md', '# Ideen\n');
+      const aiModelService = new AiModelService(mockContext);
+      vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue(assign([1, 'knowledge/ideen.md']));
+      const shown = drivePreview(...editThenAccept(1));
+      const inputSpy = pickNewNote('Projekte/Beta/feedback');
+
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+      const result = await sorter.sortInbox(vscode.Uri.file('/workspace/inbox.md'));
+
+      expect(inputSpy.mock.calls[0][0]?.value).toBe('knowledge/');
+      expect(shown[1][0].label).toBe('$(new-file) Neu erstellen: Projekte/Beta/feedback.md');
+      expect(result.sortedItems[0].effectiveAction).toBe('create');
+      expect(fsMap.get('/workspace/projects/Beta/feedback.md')).toBe('# feedback\n\nBeta-Feedback sammeln\n');
+      expect(fsMap.get('/workspace/knowledge/ideen.md')).toBe('# Ideen\n');
+    });
+
+    it('rejects invalid new note paths in the input box', async () => {
+      fsMap.set('/workspace/inbox.md', '# Inbox\n\nEins.\n');
+      const aiModelService = new AiModelService(mockContext);
+      vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue(assign([1, 'knowledge/eins.md']));
+      drivePreview(...editThenAccept(1));
+      let validate: ((v: string) => any) | undefined;
+      vi.spyOn(vscode.window, 'showQuickPick').mockImplementation(async (items: any) => items.find((i: any) => i.isNew));
+      vi.spyOn(vscode.window, 'showInputBox').mockImplementation(async (options: any) => {
+        validate = options.validateInput;
+        return undefined;
+      });
+
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+      const result = await sorter.sortInbox(vscode.Uri.file('/workspace/inbox.md'));
+
+      for (const input of ['../geheim.md', 'inbox.md', 'journal/2026-11-01.md']) {
+        expect(validate!(input)).toContain('Ungültiger Pfad');
+      }
+      expect(validate!('knowledge/neu.md')).toBeUndefined();
+      expect(validate!('Wissensbasis/neu').message).toBe('Wird gespeichert als knowledge/neu.md');
+      // Cancelled input keeps the AI target
+      expect(result.sortedItems.map((i) => i.targetRelativePath)).toEqual(['knowledge/eins.md']);
+    });
+
+    it('assigns a block the AI left unassigned', async () => {
+      fsMap.set('/workspace/inbox.md', '# Inbox\n\n## Eins\na\n\n## Zwei\nb\n\n## Sync\nc\n');
+      fsMap.set('/workspace/meetings/sync.md', '# Sync\n');
+      const aiModelService = new AiModelService(mockContext);
+      vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue(
+        assign([1, 'knowledge/eins.md'], [2, 'knowledge/zwei.md'])
+      );
+      let reopenedSelection: any[] = [];
+      drivePreview(
+        (qp) => qp.triggerItemButton(row(qp, 3)),
+        (qp) => {
+          reopenedSelection = qp.selectedItems.map((i: any) => i.row?.block.index);
+          qp.accept();
+        }
+      );
+      pickNote('meetings/sync.md');
+
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+      const result = await sorter.sortInbox(vscode.Uri.file('/workspace/inbox.md'));
+
+      expect(reopenedSelection).toEqual([1, 2, 3]);
+      expect(result.sortedItems).toHaveLength(3);
+      expect(result.unassignedBlocks).toEqual([]);
+      expect(fsMap.get('/workspace/meetings/sync.md')).toMatch(/^# Sync\n\n## Sync \(\d{4}-\d{2}-\d{2} \d{2}:\d{2}\)\n\nc\n$/);
+      expect(fsMap.get('/workspace/inbox.md')).toBe('# Inbox\n\n');
+    });
+
+    it('keeps the row and all other selections when the target choice is cancelled', async () => {
+      fsMap.set('/workspace/inbox.md', '# Inbox\n\nEins.\n\nZwei.\n');
+      const aiModelService = new AiModelService(mockContext);
+      vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue(
+        assign([1, 'knowledge/eins.md'], [2, 'knowledge/zwei.md'])
+      );
+      let reopened: { labels: string[]; selected: number[] } | undefined;
+      drivePreview(
+        (qp) => {
+          // Deselect block 2, then open the target choice of block 1
+          qp.selectedItems = [row(qp, 1)];
+          qp.triggerItemButton(row(qp, 1));
+        },
+        (qp) => {
+          reopened = {
+            labels: qp.items.filter((i: any) => i.row).map((i: any) => i.label),
+            selected: qp.selectedItems.map((i: any) => i.row?.block.index),
+          };
+          qp.accept();
+        }
+      );
+      vi.spyOn(vscode.window, 'showQuickPick').mockResolvedValue(undefined);
+
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+      const result = await sorter.sortInbox(vscode.Uri.file('/workspace/inbox.md'));
+
+      expect(reopened).toEqual({
+        labels: ['$(new-file) Neu erstellen: Wissensbasis/eins.md', '$(new-file) Neu erstellen: Wissensbasis/zwei.md'],
+        selected: [1],
+      });
+      expect(result.sortedItems.map((i) => i.targetRelativePath)).toEqual(['knowledge/eins.md']);
+      expect(fsMap.get('/workspace/inbox.md')).toBe('# Inbox\n\nZwei.\n');
+    });
+
+    it('leaves a selected block without a target in the inbox', async () => {
+      fsMap.set('/workspace/inbox.md', '# Inbox\n\nEins.\n\nZwei.\n');
+      const aiModelService = new AiModelService(mockContext);
+      vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue(assign([1, 'knowledge/eins.md']));
+      drivePreview((qp) => qp.accept(qp.items.filter((i: any) => i.row)));
+
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+      const result = await sorter.sortInbox(vscode.Uri.file('/workspace/inbox.md'));
+
+      expect(result.sortedItems).toHaveLength(1);
+      expect(result.unassignedBlocks.map((b) => b.text)).toEqual(['Zwei.']);
+      expect(fsMap.get('/workspace/inbox.md')).toBe('# Inbox\n\nZwei.\n');
+    });
+
+    it('edits a daily note target and links the new target', async () => {
+      const dailyPath = '/workspace/journal/2026-10-29.md';
+      fsMap.set(dailyPath, '# Donnerstag\n\nDark Mode für die App\n');
+      fsMap.set('/workspace/knowledge/ideen.md', '# Ideen\n');
+      const aiModelService = new AiModelService(mockContext);
+      vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue(assign([1, 'knowledge/ideen.md']));
+      drivePreview(...editThenAccept(1));
+      pickNewNote('knowledge/dark-mode.md');
+
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+      await sorter.sortDailyNote(vscode.Uri.file(dailyPath));
+
+      expect(fsMap.get('/workspace/knowledge/dark-mode.md')).toBe('# dark-mode\n\nDark Mode für die App\n');
+      expect(fsMap.get('/workspace/knowledge/ideen.md')).toBe('# Ideen\n');
+      expect(fsMap.get(dailyPath)).toBe('# Donnerstag\n\nDark Mode für die App\n\n-> [[knowledge/dark-mode]]\n');
     });
   });
 
@@ -645,9 +878,7 @@ describe('aiInboxSorting', () => {
       vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue(
         assign([1, 'knowledge/eins.md', 'create'], [2, 'knowledge/zwei.md', 'create'])
       );
-      vi.spyOn(vscode.window, 'showQuickPick').mockImplementation(async (items: any) =>
-        items.filter((item: any) => item.proposal?.block.index === 2)
-      );
+      drivePreview((qp) => qp.accept(qp.items.filter((item: any) => item.row?.block.index === 2)));
       const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
 
       const result = await sorter.sortDailyNote(dailyUri);

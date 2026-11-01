@@ -121,6 +121,12 @@ export function __getConfigStore() {
   return _configStore;
 }
 
+export enum InputBoxValidationSeverity {
+  Info = 1,
+  Warning = 2,
+  Error = 3,
+}
+
 export enum QuickPickItemKind {
   Separator = -1,
   Default = 0,
@@ -192,6 +198,54 @@ export enum TreeItemCollapsibleState {
   Expanded = 2,
 }
 
+/**
+ * Controllable QuickPick: tests drive it with `accept()`, `hide()` and `triggerItemButton()`.
+ * `onShow` runs on every `show()` so a test can react to each time the pick opens.
+ */
+export class MockQuickPick<T = any> {
+  items: T[] = [];
+  selectedItems: T[] = [];
+  activeItems: T[] = [];
+  canSelectMany = false;
+  matchOnDescription = false;
+  matchOnDetail = false;
+  ignoreFocusOut = false;
+  title?: string;
+  placeholder?: string;
+  visible = false;
+  onShow?: (qp: MockQuickPick<T>) => void;
+  private readonly acceptEmitter = new EventEmitter<void>();
+  private readonly hideEmitter = new EventEmitter<void>();
+  private readonly itemButtonEmitter = new EventEmitter<{ item: T; button: any }>();
+  readonly onDidAccept = this.acceptEmitter.event;
+  readonly onDidHide = this.hideEmitter.event;
+  readonly onDidTriggerItemButton = this.itemButtonEmitter.event;
+
+  show() {
+    this.visible = true;
+    this.onShow?.(this);
+  }
+
+  hide() {
+    if (!this.visible) return;
+    this.visible = false;
+    this.hideEmitter.fire();
+  }
+
+  dispose() {
+    this.visible = false;
+  }
+
+  accept(selected: T[] = this.selectedItems) {
+    this.selectedItems = selected;
+    this.acceptEmitter.fire();
+  }
+
+  triggerItemButton(item: T, button: any = (item as any).buttons?.[0]) {
+    this.itemButtonEmitter.fire({ item, button });
+  }
+}
+
 export class ThemeIcon {
   constructor(public readonly id: string, public readonly color?: any) {}
 }
@@ -257,6 +311,7 @@ export const window = {
   showOpenDialog: async () => undefined,
   showInputBox: async (_options?: any): Promise<string | undefined> => undefined,
   showQuickPick: async (_items?: any, _options?: any): Promise<any> => undefined,
+  createQuickPick: <T = any>() => new MockQuickPick<T>(),
   registerCustomEditorProvider: () => ({ dispose: () => {} }),
   registerTreeDataProvider: () => ({ dispose: () => {} }),
   createTreeView: (_viewId?: string, options?: any) => ({
