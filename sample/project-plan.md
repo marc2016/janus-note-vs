@@ -8,6 +8,7 @@ Willkommen im **Janus Note** Test-Workspace (`sample/`)! Hier kannst du alle Fun
 - Standardmäßig erscheint zuerst die **Vorschau** (QuickPick), in der du einzelne Vorschläge an- oder abwählen kannst.
 - Über das **Stift-Symbol** einer Zeile änderst du das Ziel: eine andere bestehende Notiz oder eine neue Notiz (z. B. `Projekte/Beta/feedback`). So kannst du auch Abschnitte ohne KI-Vorschlag („Kein Ziel“) einsortieren.
 - Danach bietet die Meldung **„Rückgängig“** an (oder der Befehl *Janus: Letzte Inbox-Sortierung rückgängig machen*): angehängte Abschnitte verschwinden, neue Notizen werden gelöscht und die Abschnitte kommen zurück in die Inbox. Was du seitdem bearbeitet hast, bleibt erhalten.
+- Mit der Zeile **„Aufgaben aus einsortierten Abschnitten erzeugen“** in der Vorschau (oder dauerhaft über die Einstellung *Beim Einsortieren Aufgaben erzeugen*) legt die KI zusätzlich Aufgaben an – in der `tasks.json` des Ordners, in den der Abschnitt einsortiert wurde. Der Abschnitt „App-Launch: Beta-Feedback“ in der [[inbox]] enthält z. B. das Erneuern des APNs-Zertifikats.
 
 ## 2. Aufgaben per KI aus Notizen generieren
 Öffne [[app-launch]], [[kickoff]] oder [[sprint-review]] und klicke unten in der Fußleiste auf **„Aufgaben generieren"**:
