@@ -223,6 +223,78 @@ describe('aiTaskGeneration', () => {
     });
   });
 
+  describe('AiTaskGeneratorService.extractTasksFromBlocks', () => {
+    const root = vscode.Uri.file('/workspace');
+    let files: Map<string, any>;
+    let folderTasksService: FolderTasksService;
+    let aiModelService: AiModelService;
+    let generator: AiTaskGeneratorService;
+
+    beforeEach(() => {
+      files = new Map([
+        [
+          '/workspace/projects/App-Launch/tasks.json',
+          { version: 1, tasks: [{ id: 'e1', title: 'Beta verteilen', completed: false, status: 'todo', priority: 'medium' }] },
+        ],
+      ]);
+      aiModelService = new AiModelService(mockContext);
+      folderTasksService = new FolderTasksService();
+      generator = new AiTaskGeneratorService(aiModelService, folderTasksService);
+      vi.spyOn(vscode.workspace.fs, 'stat').mockImplementation(async (uri: vscode.Uri) => {
+        if (!files.has(uri.fsPath)) throw new Error('not found');
+        return { type: vscode.FileType.File, ctime: 0, mtime: 0, size: 1 };
+      });
+      vi.spyOn(folderTasksService, 'readFolderCompanion').mockImplementation(async (uri: vscode.Uri) =>
+        structuredClone(files.get(uri.fsPath) ?? { version: 1, tasks: [] })
+      );
+      vi.spyOn(folderTasksService, 'writeFolderCompanion').mockImplementation(async (uri: vscode.Uri, companion: any) => {
+        files.set(uri.fsPath, companion);
+      });
+    });
+
+    it('adds each task to the folder of its block target in one request', async () => {
+      const promptSpy = vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue(
+        JSON.stringify({
+          tasks: [
+            { block: 1, title: 'APNs-Zertifikat erneuern', priority: 'high', dueDate: '05.11.2026' },
+            { block: 2, title: 'Agenda verschicken' },
+            { block: 1, title: 'beta verteilen' }, // duplicate of an existing folder task
+            { block: 2, title: 'Agenda Verschicken' }, // duplicate within the run
+            { block: 7, title: 'Unbekannter Block' },
+          ],
+        })
+      );
+
+      const results = await generator.extractTasksFromBlocks(root, [
+        { text: 'APNs-Zertifikat bis 05.11. erneuern', targetUri: vscode.Uri.file('/workspace/projects/App-Launch/app-launch.md') },
+        { text: 'Agenda für den Sync verschicken', targetUri: vscode.Uri.file('/workspace/meetings/sync.md') },
+      ]);
+
+      expect(promptSpy).toHaveBeenCalledTimes(1);
+      const userPrompt = promptSpy.mock.calls[0][1];
+      expect(userPrompt).toContain('[Block 1] (Ziel: projects/App-Launch/app-launch.md)\nAPNs-Zertifikat bis 05.11. erneuern');
+      expect(userPrompt).toContain('- projects/App-Launch/:\n  - Beta verteilen (todo)');
+      expect(results.map((r) => [r.tasksUri.fsPath, r.existedBefore, r.added.map((t) => [t.title, t.note])])).toEqual([
+        ['/workspace/projects/App-Launch/tasks.json', true, [['APNs-Zertifikat erneuern', 'app-launch.md']]],
+        ['/workspace/meetings/tasks.json', false, [['Agenda verschicken', 'sync.md']]],
+      ]);
+      expect(results[0].added[0].dueDate).toBe('2026-11-05');
+      expect(files.get('/workspace/projects/App-Launch/tasks.json').tasks.map((t: any) => t.title)).toEqual([
+        'Beta verteilen',
+        'APNs-Zertifikat erneuern',
+      ]);
+    });
+
+    it('writes nothing when no tasks are found', async () => {
+      vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue('{"tasks": []}');
+      const results = await generator.extractTasksFromBlocks(root, [
+        { text: 'Nur eine Idee', targetUri: vscode.Uri.file('/workspace/knowledge/idee.md') },
+      ]);
+      expect(results).toEqual([]);
+      expect(folderTasksService.writeFolderCompanion).not.toHaveBeenCalled();
+    });
+  });
+
   describe('MarkdownEditorProvider AI Webview Messages', () => {
     it('handles generateAiTasks and selectAiModel messages from the footer bar', async () => {
       const companionManager = new CompanionManager();

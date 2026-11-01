@@ -792,6 +792,112 @@ describe('aiInboxSorting', () => {
     });
   });
 
+  describe('AiInboxSorterService task extraction', () => {
+    const sortResponse = (...items: Array<[number, string]>) =>
+      JSON.stringify({
+        items: items.map(([block, target]) => ({ block, title: `Titel ${block}`, action: 'append', targetRelativePath: target })),
+      });
+    const taskResponse = (...tasks: Array<[number, string]>) =>
+      JSON.stringify({ tasks: tasks.map(([block, title]) => ({ block, title })) });
+    const tasksOf = (fsPath: string) => JSON.parse(fsMap.get(fsPath) ?? '{"tasks": []}').tasks.map((t: any) => [t.title, t.note]);
+
+    beforeEach(() => {
+      vi.spyOn(vscode.workspace.fs, 'readDirectory').mockResolvedValue([]);
+      fsMap.set('/workspace/projects/App-Launch/app-launch.md', '# App-Launch\n');
+    });
+
+    it('extracts tasks from written blocks into the target folder in direct mode', async () => {
+      __setConfigStore({ 'janus.ai.inboxSortConfirm': false, 'janus.ai.inboxSortExtractTasks': true });
+      fsMap.set('/workspace/inbox.md', '# Inbox\n\nAPNs-Zertifikat bis Donnerstag erneuern\n');
+      const aiModelService = new AiModelService(mockContext);
+      const promptSpy = vi
+        .spyOn(aiModelService, 'completePrompt')
+        .mockResolvedValueOnce(sortResponse([1, 'projects/App-Launch/app-launch.md']))
+        .mockResolvedValueOnce(taskResponse([1, 'APNs-Zertifikat erneuern']));
+
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+      const result = await sorter.sortInbox(vscode.Uri.file('/workspace/inbox.md'));
+
+      expect(promptSpy).toHaveBeenCalledTimes(2);
+      expect(promptSpy.mock.calls[1][1]).toContain('[Block 1] (Ziel: projects/App-Launch/app-launch.md)\nAPNs-Zertifikat bis Donnerstag erneuern');
+      expect(result.createdTasks).toBe(1);
+      expect(tasksOf('/workspace/projects/App-Launch/tasks.json')).toEqual([['APNs-Zertifikat erneuern', 'app-launch.md']]);
+      expect(result.undo?.tasks).toHaveLength(1);
+    });
+
+    it('sends no task request when extraction is disabled', async () => {
+      __setConfigStore({ 'janus.ai.inboxSortConfirm': false });
+      fsMap.set('/workspace/inbox.md', '# Inbox\n\nAPNs erneuern\n');
+      const aiModelService = new AiModelService(mockContext);
+      const promptSpy = vi
+        .spyOn(aiModelService, 'completePrompt')
+        .mockResolvedValue(sortResponse([1, 'projects/App-Launch/app-launch.md']));
+
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+      const result = await sorter.sortInbox(vscode.Uri.file('/workspace/inbox.md'));
+
+      expect(promptSpy).toHaveBeenCalledTimes(1);
+      expect(result.createdTasks).toBe(0);
+      expect(fsMap.has('/workspace/projects/App-Launch/tasks.json')).toBe(false);
+    });
+
+    it('enables extraction for one run in the preview and sends only selected blocks', async () => {
+      fsMap.set('/workspace/inbox.md', '# Inbox\n\nEins erledigen\n\nZwei erledigen\n');
+      const aiModelService = new AiModelService(mockContext);
+      const promptSpy = vi
+        .spyOn(aiModelService, 'completePrompt')
+        .mockResolvedValueOnce(sortResponse([1, 'projects/App-Launch/app-launch.md'], [2, 'knowledge/zwei.md']))
+        .mockResolvedValueOnce(taskResponse([1, 'Eins erledigen']));
+      let rowPicked: boolean | undefined;
+      drivePreview((qp) => {
+        const extractRow = qp.items.find((i: any) => i.isExtractTasks);
+        rowPicked = qp.selectedItems.includes(extractRow);
+        qp.accept([qp.items.find((i: any) => i.row?.block.index === 1), extractRow]);
+      });
+
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+      const result = await sorter.sortInbox(vscode.Uri.file('/workspace/inbox.md'));
+
+      expect(rowPicked).toBe(false);
+      expect(result.createdTasks).toBe(1);
+      expect(promptSpy.mock.calls[1][1]).toContain('Eins erledigen');
+      expect(promptSpy.mock.calls[1][1]).not.toContain('Zwei erledigen');
+      expect(vscode.workspace.getConfiguration('janus.ai').get('inboxSortExtractTasks', false)).toBe(false);
+    });
+
+    it('keeps the sort when task extraction fails', async () => {
+      __setConfigStore({ 'janus.ai.inboxSortConfirm': false, 'janus.ai.inboxSortExtractTasks': true });
+      fsMap.set('/workspace/inbox.md', '# Inbox\n\nAPNs erneuern\n');
+      const aiModelService = new AiModelService(mockContext);
+      vi.spyOn(aiModelService, 'completePrompt')
+        .mockResolvedValueOnce(sortResponse([1, 'projects/App-Launch/app-launch.md']))
+        .mockRejectedValueOnce(new Error('Kein Modell'));
+
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+      const result = await sorter.sortInbox(vscode.Uri.file('/workspace/inbox.md'));
+
+      expect(result.taskExtractionFailed).toBe('Kein Modell');
+      expect(result.sortedItems).toHaveLength(1);
+      expect(fsMap.get('/workspace/projects/App-Launch/app-launch.md')).toContain('APNs erneuern');
+      expect(fsMap.get('/workspace/inbox.md')).toBe('# Inbox\n\n');
+    });
+
+    it('extracts tasks from daily note blocks', async () => {
+      __setConfigStore({ 'janus.ai.inboxSortConfirm': false, 'janus.ai.inboxSortExtractTasks': true });
+      fsMap.set('/workspace/journal/2026-10-29.md', '# Donnerstag\n\n## Sync\nAgenda verschicken\n');
+      fsMap.set('/workspace/meetings/sync.md', '# Sync\n');
+      const aiModelService = new AiModelService(mockContext);
+      vi.spyOn(aiModelService, 'completePrompt')
+        .mockResolvedValueOnce(sortResponse([1, 'meetings/sync.md']))
+        .mockResolvedValueOnce(taskResponse([1, 'Agenda verschicken']));
+
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+      await sorter.sortDailyNote(vscode.Uri.file('/workspace/journal/2026-10-29.md'));
+
+      expect(tasksOf('/workspace/meetings/tasks.json')).toEqual([['Agenda verschicken', 'sync.md']]);
+    });
+  });
+
   describe('splitDailyNoteBlocks', () => {
     it('leaves out frontmatter and the title heading', () => {
       const text = '---\ndate: 2026-10-29\n---\n# Donnerstag, 29.10.2026\n\n## Call\nText\n\n## Idee\nDark Mode\n';
@@ -1095,6 +1201,38 @@ describe('aiInboxSorting', () => {
       });
       expect(infoSpy).toHaveBeenCalledWith(
         'Keine Abschnitte einsortiert. 1 Abschnitt(e) wurden währenddessen geändert und nicht verschoben.'
+      );
+    });
+
+    it('reports created tasks and failed task extraction', () => {
+      const infoSpy = vi.spyOn(vscode.window, 'showInformationMessage').mockResolvedValue(undefined);
+      const base = {
+        inboxUri: vscode.Uri.file('/workspace/inbox.md'),
+        sortedItems: [
+          {
+            block: { index: 1, text: 'x' },
+            title: 'x',
+            action: 'create' as const,
+            targetRelativePath: 'knowledge/x.md',
+            targetUri: vscode.Uri.file('/workspace/knowledge/x.md'),
+            effectiveAction: 'create' as const,
+          },
+        ],
+        unassignedBlocks: [],
+        skippedChanged: [],
+        remainingBlockCount: 0,
+      };
+      markdownEditorModule.showInboxSortResult({ ...base, createdTasks: 2 } as any);
+      expect(infoSpy).toHaveBeenLastCalledWith(
+        '1 Abschnitt(e) einsortiert, 0 in der Inbox verblieben. 2 Aufgabe(n) erzeugt.',
+        'Notiz öffnen',
+        'Rückgängig'
+      );
+      markdownEditorModule.showInboxSortResult({ ...base, createdTasks: 0, taskExtractionFailed: 'Kein Modell' } as any);
+      expect(infoSpy).toHaveBeenLastCalledWith(
+        '1 Abschnitt(e) einsortiert, 0 in der Inbox verblieben. Aufgaben konnten nicht erzeugt werden: Kein Modell',
+        'Notiz öffnen',
+        'Rückgängig'
       );
     });
   });

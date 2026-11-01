@@ -81,6 +81,11 @@
           "default": true,
           "description": "Show a preview confirmation list before sorting inbox.md entries into notes and folders."
         },
+        "janus.ai.inboxSortExtractTasks": {
+          "type": "boolean",
+          "default": false,
+          "description": "Extract tasks with AI from the blocks written while sorting the inbox or a daily note, into the tasks.json of each target note's folder."
+        },
         "janus.export.browserPath": {
           "type": "string",
           "default": "",

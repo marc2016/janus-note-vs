@@ -8,6 +8,7 @@ export interface JanusSettingsState {
   ollamaBaseUrl: string;
   customBaseUrl: string;
   inboxSortConfirm: boolean;
+  inboxSortExtractTasks: boolean;
   notesRoot: string;
   apiKeyStatus: Record<'openai' | 'anthropic' | 'gemini' | 'custom', boolean>;
   discoveredModels: {
@@ -83,6 +84,7 @@ export class SettingsViewProvider {
 
     const aiCfg = vscode.workspace.getConfiguration('janus.ai');
     const inboxSortConfirm = aiCfg.get<boolean>('inboxSortConfirm', true);
+    const inboxSortExtractTasks = aiCfg.get<boolean>('inboxSortExtractTasks', false);
 
     const janusCfg = vscode.workspace.getConfiguration('janus');
     const notesRoot = janusCfg.get<string>('notesRoot', '') || '';
@@ -105,6 +107,7 @@ export class SettingsViewProvider {
       ollamaBaseUrl,
       customBaseUrl,
       inboxSortConfirm,
+      inboxSortExtractTasks,
       notesRoot,
       apiKeyStatus: {
         openai: Boolean(openaiKey && openaiKey.trim()),
@@ -154,6 +157,9 @@ export class SettingsViewProvider {
       }
       if (typeof message.inboxSortConfirm === 'boolean') {
         await aiCfg.update('inboxSortConfirm', message.inboxSortConfirm, target);
+      }
+      if (typeof message.inboxSortExtractTasks === 'boolean') {
+        await aiCfg.update('inboxSortExtractTasks', message.inboxSortExtractTasks, target);
       }
 
       const nextProvider: AiProviderType =

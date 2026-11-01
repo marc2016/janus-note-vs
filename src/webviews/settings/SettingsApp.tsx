@@ -35,6 +35,7 @@ export interface JanusSettingsState {
   ollamaBaseUrl: string;
   customBaseUrl: string;
   inboxSortConfirm: boolean;
+  inboxSortExtractTasks: boolean;
   notesRoot: string;
   apiKeyStatus: Record<'openai' | 'anthropic' | 'gemini' | 'custom', boolean>;
   discoveredModels: {
@@ -81,6 +82,7 @@ function getInitialState(): JanusSettingsState {
     ollamaBaseUrl: 'http://localhost:11434',
     customBaseUrl: 'https://api.openai.com/v1',
     inboxSortConfirm: true,
+    inboxSortExtractTasks: false,
     notesRoot: '',
     apiKeyStatus: {
       openai: false,
@@ -538,6 +540,28 @@ export const SettingsApp: React.FC = () => {
               </span>
               <span className="text-[11px] opacity-75">
                 Wenn aktiviert (`janus.ai.inboxSortConfirm`), zeigt Janus vor dem Verschieben von Einträgen aus `inbox.md` eine Auswahlliste der vorgeschlagenen Ziel-Notizen an.
+              </span>
+            </div>
+          </label>
+
+          <label className="flex items-start gap-2.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={state.inboxSortExtractTasks}
+              onChange={(e) =>
+                post({
+                  type: 'updateAiConfig',
+                  inboxSortExtractTasks: e.target.checked,
+                })
+              }
+              className="mt-0.5 h-4 w-4 cursor-pointer"
+            />
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs font-medium">
+                Beim Einsortieren Aufgaben erzeugen
+              </span>
+              <span className="text-[11px] opacity-75">
+                Wenn aktiviert (`janus.ai.inboxSortExtractTasks`), erzeugt die KI aus den einsortierten Abschnitten Aufgaben im Ordner der jeweiligen Ziel-Notiz. In der Vorschau lässt sich das pro Lauf umschalten.
               </span>
             </div>
           </label>

@@ -96,7 +96,7 @@ describe('undo inbox sort', () => {
     expect(fsMap.get(inboxUri.fsPath)).toBe('# Inbox\n\n');
     const report = await runUndoInboxSort();
 
-    expect(report).toEqual({ undone: 2, keptNotes: [] });
+    expect(report).toEqual({ undone: 2, keptNotes: [], keptTasks: 0 });
     expect(fsMap.get('/workspace/projects/app.md')).toBe('# App\n\nInhalt\n');
     expect(fsMap.has('/workspace/knowledge/neu.md')).toBe(false);
     expect(dirs.has('/workspace/knowledge')).toBe(false);
@@ -245,5 +245,55 @@ describe('undo inbox sort', () => {
     expect(fsMap.get('/workspace/projects/app.md')).toBe(edited);
     expect(report?.keptNotes).toEqual(['projects/app.md']);
     expect(fsMap.get(inboxUri.fsPath)).toBe('# Inbox\n\nEins zwei.\n');
+  });
+
+  describe('created tasks', () => {
+    const tasksPath = '/workspace/projects/App-Launch/tasks.json';
+    const titles = (fsPath: string) => JSON.parse(fsMap.get(fsPath)!).tasks.map((t: any) => t.title);
+
+    beforeEach(() => {
+      __setConfigStore({ 'janus.ai.inboxSortConfirm': false, 'janus.ai.inboxSortExtractTasks': true });
+      fsMap.set(inboxUri.fsPath, '# Inbox\n\nZertifikat und Onboarding erledigen\n');
+      fsMap.set('/workspace/projects/App-Launch/app-launch.md', '# App-Launch\n');
+      fsMap.set(tasksPath, JSON.stringify({ version: 1, tasks: [{ id: 'alt', title: 'Bestehend', status: 'todo' }] }));
+      vi.spyOn(aiModelService, 'completePrompt')
+        .mockResolvedValueOnce(
+          JSON.stringify({ items: [{ block: 1, title: 'T', action: 'append', targetRelativePath: 'projects/App-Launch/app-launch.md' }] })
+        )
+        .mockResolvedValueOnce(JSON.stringify({ tasks: [{ block: 1, title: 'Zertifikat' }, { block: 1, title: 'Onboarding' }] }));
+    });
+
+    it('removes the created tasks and keeps the existing one', async () => {
+      await sortInbox();
+      expect(titles(tasksPath)).toEqual(['Bestehend', 'Zertifikat', 'Onboarding']);
+      const report = await runUndoInboxSort();
+
+      expect(titles(tasksPath)).toEqual(['Bestehend']);
+      expect(report?.keptTasks).toBe(0);
+    });
+
+    it('keeps a created task that was completed before undo', async () => {
+      const infoSpy = vi.spyOn(vscode.window, 'showInformationMessage').mockResolvedValue(undefined);
+      await sortInbox();
+      const companion = JSON.parse(fsMap.get(tasksPath)!);
+      companion.tasks[1].status = 'done';
+      companion.tasks[1].completed = true;
+      fsMap.set(tasksPath, JSON.stringify(companion));
+      const report = await runUndoInboxSort();
+
+      expect(titles(tasksPath)).toEqual(['Bestehend', 'Zertifikat']);
+      expect(report?.keptTasks).toBe(1);
+      expect(infoSpy).toHaveBeenLastCalledWith('Sortierung rückgängig gemacht. 1 geänderte Aufgabe(n) behalten.');
+    });
+
+    it('deletes a tasks.json the run created once it is empty', async () => {
+      fsMap.delete(tasksPath);
+      await sortInbox();
+      expect(fsMap.has(tasksPath)).toBe(true);
+      await runUndoInboxSort();
+
+      expect(fsMap.has(tasksPath)).toBe(false);
+      expect(fsMap.get('/workspace/projects/App-Launch/app-launch.md')).toBe('# App-Launch\n');
+    });
   });
 });

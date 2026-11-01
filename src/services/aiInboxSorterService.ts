@@ -13,6 +13,7 @@ import {
 import { DAILY_NOTES_FOLDER, isDailyNotePath } from './dailyNotePaths';
 import { SORTED_LINK_RE } from './sortedLinkScan';
 import { InboxSortUndoRecord, writeNoteText } from './inboxSortUndo';
+import { AiTaskGeneratorService, SortedBlockForTasks } from './aiTaskGeneratorService';
 
 const RawInboxSortItemSchema = z.object({
   block: z.coerce.number().int().positive(),
@@ -65,6 +66,10 @@ export interface SortInboxResult {
   cancelled?: boolean;
   /** What this run changed; set only when at least one block was written. */
   undo?: InboxSortUndoRecord;
+  /** Number of tasks extracted from the written blocks. */
+  createdTasks?: number;
+  /** Error message when task extraction was requested but failed; the blocks stay written. */
+  taskExtractionFailed?: string;
 }
 
 export interface NoteOutline {
@@ -567,7 +572,7 @@ interface PreviewRow {
   picked: boolean;
 }
 
-type PreviewItem = vscode.QuickPickItem & { row?: PreviewRow; isToggleMode?: boolean };
+type PreviewItem = vscode.QuickPickItem & { row?: PreviewRow; isToggleMode?: boolean; isExtractTasks?: boolean };
 
 type PreviewOutcome =
   | { kind: 'accept'; selected: PreviewItem[] }
@@ -672,8 +677,13 @@ function matchingDocument(doc: vscode.TextDocument | undefined, uri: vscode.Uri)
 export class AiInboxSorterService {
   constructor(
     private readonly aiModelService: AiModelService,
-    private readonly companionManager: CompanionManager = new CompanionManager()
+    private readonly companionManager: CompanionManager = new CompanionManager(),
+    private readonly taskGenerator: AiTaskGeneratorService = new AiTaskGeneratorService(aiModelService)
   ) {}
+
+  public isExtractTasksEnabled(): boolean {
+    return vscode.workspace.getConfiguration('janus.ai').get<boolean>('inboxSortExtractTasks', false);
+  }
 
   public isConfirmPreviewEnabled(): boolean {
     const cfg = vscode.workspace.getConfiguration('janus.ai');
@@ -764,7 +774,8 @@ export class AiInboxSorterService {
   private async buildPreviewItems(
     notesRootUri: vscode.Uri,
     rows: PreviewRow[],
-    directModePicked: boolean
+    directModePicked: boolean,
+    extractTasksPicked: boolean
   ): Promise<PreviewItem[]> {
     const items: PreviewItem[] = [];
     for (const row of rows) {
@@ -784,6 +795,12 @@ export class AiInboxSorterService {
         row,
       });
     }
+    items.push({
+      label: '$(checklist) Aufgaben aus einsortierten Abschnitten erzeugen',
+      description: 'Nur für diesen Lauf (Standard: janus.ai.inboxSortExtractTasks)',
+      picked: extractTasksPicked,
+      isExtractTasks: true,
+    });
     items.push({
       label: '$(gear) Direkt-Modus aktivieren (zukünftig ohne Vorschau einsortieren)',
       description: 'Einstellung janus.ai.inboxSortConfirm umschalten',
@@ -905,6 +922,7 @@ export class AiInboxSorterService {
 
     let selectedProposals = proposals;
     let unassignedAtConfirm = unassignedBlocks;
+    let extractTasks = this.isExtractTasksEnabled();
 
     if (this.isConfirmPreviewEnabled()) {
       const proposalByBlock = new Map(proposals.map((p) => [p.block, p]));
@@ -915,10 +933,11 @@ export class AiInboxSorterService {
           : { block, title: fallbackBlockTitle(block), picked: false };
       });
       let directModePicked = false;
+      let extractTasksPicked = extractTasks;
 
       // The preview closes while the target picker is open and is rebuilt from `rows` afterwards
       for (;;) {
-        const items = await this.buildPreviewItems(notesRootUri, rows, directModePicked);
+        const items = await this.buildPreviewItems(notesRootUri, rows, directModePicked, extractTasksPicked);
         const outcome = await showSortPreview(items, {
           title: isDaily ? 'KI Tagesnotiz-Sortierung – Vorschau bestätigen' : 'KI Inbox-Sortierung – Vorschau bestätigen',
           placeholder: isDaily
@@ -934,6 +953,7 @@ export class AiInboxSorterService {
           row.picked = outcome.selected.some((item) => item.row === row);
         }
         directModePicked = outcome.selected.some((item) => item.isToggleMode);
+        extractTasksPicked = outcome.selected.some((item) => item.isExtractTasks);
 
         if (outcome.kind === 'accept') {
           break;
@@ -949,6 +969,7 @@ export class AiInboxSorterService {
       if (directModePicked) {
         await this.setConfirmPreviewEnabled(false);
       }
+      extractTasks = extractTasksPicked;
 
       selectedProposals = [];
       for (const row of rows) {
@@ -1005,6 +1026,7 @@ export class AiInboxSorterService {
     const appended = new Map<string, InboxSortUndoRecord['appended'][number]>();
     const created: InboxSortUndoRecord['created'] = [];
     const createdFolders: vscode.Uri[] = [];
+    const taskBlocks: SortedBlockForTasks[] = [];
     for (const { proposal: item, text: blockText, block } of executable) {
       links.push({ endLine: block.endLine ?? 0, target: item.targetRelativePath.replace(/\.(md|markdown)$/i, '') });
       const segments = item.targetRelativePath.split('/');
@@ -1029,6 +1051,7 @@ export class AiInboxSorterService {
         await vscode.workspace.fs.createDirectory(parentUri);
       }
 
+      taskBlocks.push({ text: blockText, targetUri });
       const exists = await this.fileExists(targetUri);
       if (exists) {
         // STRICT APPEND-ONLY PROTECTION: Never delete or overwrite existing content
@@ -1078,6 +1101,20 @@ export class AiInboxSorterService {
 
     await writeNoteText(inboxUri, updatedInboxContent, openInboxDoc);
 
+    // Tasks come last: a failure here must not affect the blocks already written
+    let createdTasks = 0;
+    let taskExtractionFailed: string | undefined;
+    let tasks: InboxSortUndoRecord['tasks'] = [];
+    if (extractTasks) {
+      try {
+        const results = await this.taskGenerator.extractTasksFromBlocks(notesRootUri, taskBlocks, token);
+        tasks = results.map((r) => ({ uri: r.tasksUri, existedBefore: r.existedBefore, added: r.added }));
+        createdTasks = results.reduce((sum, r) => sum + r.added.length, 0);
+      } catch (err: any) {
+        taskExtractionFailed = err?.message || String(err);
+      }
+    }
+
     return {
       inboxUri,
       source: source.kind,
@@ -1085,6 +1122,8 @@ export class AiInboxSorterService {
       unassignedBlocks: unassignedAtConfirm,
       skippedChanged,
       remainingBlockCount: remainingBlocks.length,
+      createdTasks,
+      taskExtractionFailed,
       undo: {
         source: {
           uri: inboxUri,
@@ -1097,6 +1136,7 @@ export class AiInboxSorterService {
         appended: [...appended.values()],
         created,
         createdFolders,
+        tasks,
       },
     };
   }

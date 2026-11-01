@@ -55,9 +55,14 @@ export function showInboxSortResult(result: SortInboxResult): void {
     const summary = isDaily
       ? `${result.sortedItems.length} Abschnitt(e) einsortiert und verlinkt.`
       : `${result.sortedItems.length} Abschnitt(e) einsortiert, ${result.remainingBlockCount} in der Inbox verblieben.`;
+    const taskHint = result.taskExtractionFailed
+      ? ` Aufgaben konnten nicht erzeugt werden: ${result.taskExtractionFailed}`
+      : result.createdTasks
+        ? ` ${result.createdTasks} Aufgabe(n) erzeugt.`
+        : '';
     void vscode.window
       .showInformationMessage(
-        `${summary}${changedHint}`,
+        `${summary}${taskHint}${changedHint}`,
         'Notiz öffnen',
         'Rückgängig'
       )
@@ -92,7 +97,8 @@ export async function runUndoInboxSort(): Promise<UndoReport | undefined> {
     report.keptNotes.length > 0
       ? ` Unverändert gelassen (seitdem bearbeitet): ${report.keptNotes.join(', ')}.`
       : '';
-  void vscode.window.showInformationMessage(`Sortierung rückgängig gemacht.${kept}`);
+  const keptTasks = report.keptTasks > 0 ? ` ${report.keptTasks} geänderte Aufgabe(n) behalten.` : '';
+  void vscode.window.showInformationMessage(`Sortierung rückgängig gemacht.${kept}${keptTasks}`);
   return report;
 }
 

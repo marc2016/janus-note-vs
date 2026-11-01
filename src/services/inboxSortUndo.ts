@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { TaskItem } from '../models/tasks';
+import { FolderTasksService } from './folderTasksService';
 
 /** What one sort run changed, so it can be undone. Texts are the full file contents read and written. */
 export interface InboxSortUndoRecord {
@@ -18,12 +20,16 @@ export interface InboxSortUndoRecord {
   created: Array<{ uri: vscode.Uri; text: string }>;
   /** Folders the run created, deepest first. */
   createdFolders: vscode.Uri[];
+  /** Tasks extracted from the written blocks, per `tasks.json`. */
+  tasks: Array<{ uri: vscode.Uri; existedBefore: boolean; added: TaskItem[] }>;
 }
 
 export interface UndoReport {
   undone: number;
   /** Notes left unchanged because they were edited after the sort, relative to the notes root when possible. */
   keptNotes: string[];
+  /** Created tasks left in place because they were changed after the sort. */
+  keptTasks: number;
 }
 
 let lastRun: InboxSortUndoRecord | undefined;
@@ -108,6 +114,49 @@ async function isEmptyFolder(uri: vscode.Uri): Promise<boolean> {
   }
 }
 
+/** Compares tasks by their stored JSON, ignoring key order and undefined fields. */
+function sameTask(a: TaskItem, b: TaskItem): boolean {
+  const normalize = (task: TaskItem) => {
+    const plain = JSON.parse(JSON.stringify(task)) as Record<string, unknown>;
+    return JSON.stringify(Object.keys(plain).sort().map((key) => [key, plain[key]]));
+  };
+  return normalize(a) === normalize(b);
+}
+
+/** Removes created tasks that are unchanged; returns how many were removed and how many were kept. */
+async function undoCreatedTasks(
+  entries: InboxSortUndoRecord['tasks'],
+  folderTasksService: FolderTasksService
+): Promise<{ removed: number; kept: number }> {
+  let removed = 0;
+  let kept = 0;
+  for (const entry of entries) {
+    const companion = await folderTasksService.readFolderCompanion(entry.uri);
+    const added = new Map(entry.added.map((task) => [task.id, task]));
+    const remaining = companion.tasks.filter((task) => {
+      const recorded = added.get(task.id);
+      if (!recorded) {
+        return true;
+      }
+      if (sameTask(task, recorded)) {
+        removed += 1;
+        return false;
+      }
+      kept += 1;
+      return true;
+    });
+    if (remaining.length === companion.tasks.length) {
+      continue;
+    }
+    if (remaining.length === 0 && !entry.existedBefore) {
+      await vscode.workspace.fs.delete(entry.uri);
+    } else {
+      await folderTasksService.writeFolderCompanion(entry.uri, { ...companion, tasks: remaining });
+    }
+  }
+  return { removed, kept };
+}
+
 function displayPath(uri: vscode.Uri, sourceUri: vscode.Uri, kind: 'inbox' | 'daily'): string {
   // The source note lies in the notes root (inbox) or one folder below it (journal)
   const root = kind === 'inbox' ? path.dirname(sourceUri.fsPath) : path.dirname(path.dirname(sourceUri.fsPath));
@@ -118,14 +167,16 @@ function displayPath(uri: vscode.Uri, sourceUri: vscode.Uri, kind: 'inbox' | 'da
  * Undoes the remembered sort run once. Text written after the sort is never removed: edited notes
  * are kept and reported, and an edited inbox gets the sorted blocks back at its end.
  */
-export async function undoLastSortRun(): Promise<UndoReport | undefined> {
+export async function undoLastSortRun(
+  folderTasksService: FolderTasksService = new FolderTasksService()
+): Promise<UndoReport | undefined> {
   const run = lastRun;
   if (!run) {
     return undefined;
   }
   lastRun = undefined;
 
-  const report: UndoReport = { undone: 0, keptNotes: [] };
+  const report: UndoReport = { undone: 0, keptNotes: [], keptTasks: 0 };
   const name = (uri: vscode.Uri) => displayPath(uri, run.source.uri, run.source.kind);
 
   // Appended sections first: a note created by the run may have received further sections
@@ -148,6 +199,11 @@ export async function undoLastSortRun(): Promise<UndoReport | undefined> {
     await writeNoteText(note.uri, restored);
     report.undone += note.sections.length;
   }
+
+  // Before created notes and folders: a tasks.json created by the run would keep its folder alive
+  const taskUndo = await undoCreatedTasks(run.tasks, folderTasksService);
+  report.undone += taskUndo.removed;
+  report.keptTasks = taskUndo.kept;
 
   for (const note of run.created) {
     const current = await readNoteText(note.uri);

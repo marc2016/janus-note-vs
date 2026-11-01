@@ -108,6 +108,16 @@ describe('SettingsViewProvider', () => {
     expect(configStore.get('janus.ai.inboxSortConfirm')).toBe(true);
   });
 
+  it('reads and updates the task extraction setting for inbox sorting', async () => {
+    configStore.set('janus.ai.inboxSortExtractTasks', true);
+    expect((await provider.getSettingsState()).inboxSortExtractTasks).toBe(true);
+
+    await provider.handleMessage({ type: 'updateAiConfig', inboxSortExtractTasks: false });
+
+    expect(configStore.get('janus.ai.inboxSortExtractTasks')).toBe(false);
+    expect((await provider.getSettingsState()).inboxSortExtractTasks).toBe(false);
+  });
+
   it('saves and clears API keys via SecretStorage', async () => {
     await provider.handleMessage({
       type: 'saveApiKey',
