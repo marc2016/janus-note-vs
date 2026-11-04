@@ -101,3 +101,8 @@ Zum Ausprobieren: Neue Gedanken landen zuerst in der Inbox oder in der Tagesnoti
 ## 16. Mit den Pfeiltasten durch Überschriften
 - Stell den Cursor in die Zeile direkt unter einer Überschrift, z. B. unter „15. Tags“, und drück **Pfeil hoch**: Der Cursor landet in der Überschrift, und das `## ` wird sichtbar.
 - Das gilt auch für Zeilen, die mit **Fett**, `Code` oder einem Link wie [[architektur]] beginnen – in jedem Modus der Syntax-Anzeige.
+
+## 17. Ruhiger Cursor im Modus „Auto“
+- In der Zeile mit dem Cursor zeigt der Editor die ganze Markdown-Syntax dieser Zeile, in allen anderen Zeilen ist sie versteckt.
+- Stell den Cursor ans Ende dieser Zeile mit **fett**, *kursiv*, `Code` und [[architektur]] und geh mit **Pfeil links** und **Pfeil rechts** hin und her: Kein Zeichen der Zeile verrutscht, der Cursor bleibt dort, wo du ihn siehst.
+- Auch **Backspace** direkt hinter `**fett**` löscht nur das sichtbare Zeichen davor, ohne dass sich der Rest der Zeile verschiebt.
