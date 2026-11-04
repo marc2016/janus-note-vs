@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import {
   CalendarService,
   extractNoteEventsFromMarkdown,
+  templateHeadingPatterns,
   normalizeDate,
   cleanEventTitle,
 } from '../src/services/calendarService';
@@ -116,6 +117,115 @@ End of notes.
         ['2026-10-29', 'Donnerstag'],
         ['2026-11-05', expect.stringContaining('Review')],
       ]);
+    });
+
+    describe('journal entries', () => {
+      const template = templateHeadingPatterns(
+        '---\ndate: {{date}}\n---\n# {{weekday}}, {{date:DD.MM.YYYY}}\n\n## Notizen\n\n## Für morgen\n- [ ]\n'
+      );
+      const sample = [
+        '---',
+        'date: 2026-10-29',
+        '---',
+        '# Donnerstag, 29.10.2026',
+        '',
+        '## Call mit Anna: Crash-Reporting (09:40)',
+        'Sentry meldet doppelte Events.',
+        '',
+        '## Notizen',
+        '',
+        '## Idee: Dunkelmodus',
+        'Farbtokens',
+        '',
+        '## Für morgen',
+        '- [ ] Release-Notes',
+      ].join('\n');
+
+      it('lists # and ## headings except the title and template headings, with their time', () => {
+        const events = extractNoteEventsFromMarkdown(sample, dailyUri, dummyRootUri, { dailyTemplateHeadings: template });
+        expect(events.map((e) => [e.kind, e.date, e.time, e.title, e.line])).toEqual([
+          ['journal', '2026-10-29', '09:40', 'Call mit Anna: Crash-Reporting', 6],
+          ['journal', '2026-10-29', undefined, 'Idee: Dunkelmodus', 11],
+        ]);
+      });
+
+      it('replaces the whole-note entry only when there are journal entries', () => {
+        const events = extractNoteEventsFromMarkdown(sample, dailyUri, dummyRootUri, { dailyTemplateHeadings: template });
+        expect(events.some((e) => e.kind === 'note')).toBe(false);
+
+        const onlyTemplate = '---\ndate: 2026-10-29\n---\n# Donnerstag, 29.10.2026\n\n## Notizen\nText\n';
+        const plain = extractNoteEventsFromMarkdown(onlyTemplate, dailyUri, dummyRootUri, { dailyTemplateHeadings: template });
+        expect(plain.map((e) => [e.kind, e.title])).toEqual([['note', 'Donnerstag, 29.10.2026']]);
+      });
+
+      it('keeps appointments in a daily note with journal entries', () => {
+        const content = '# Donnerstag\n\n## Planung\nReview am 05.11.2026\n';
+        const events = extractNoteEventsFromMarkdown(content, dailyUri, dummyRootUri);
+        expect(events.map((e) => [e.kind, e.date])).toEqual([
+          ['note', '2026-11-05'],
+          ['journal', '2026-10-29'],
+        ]);
+      });
+
+      it('ignores ### headings, headings in code and treats all headings as entries without a template', () => {
+        const content = '# Titel\n\n### Detail\n\n```\n## Beispiel\n```\n\n## Notizen\n\n# Abend (19:00)\n';
+        const events = extractNoteEventsFromMarkdown(content, dailyUri, dummyRootUri);
+        expect(events.map((e) => [e.title, e.time])).toEqual([
+          ['Notizen', undefined],
+          ['Abend', '19:00'],
+        ]);
+      });
+
+      it('marks entries whose block has a sorted link', () => {
+        const content = '# Titel\n\n## Call mit Anna (09:40)\nText\n\n-> [[projects/App-Launch/architektur]]\n\n## Idee\nOffen\n';
+        const events = extractNoteEventsFromMarkdown(content, dailyUri, dummyRootUri);
+        expect(events.map((e) => [e.title, e.sorted])).toEqual([
+          ['Call mit Anna', true],
+          ['Idee', false],
+        ]);
+      });
+
+      it('matches template placeholders against any text', () => {
+        const patterns = templateHeadingPatterns('# {{weekday}}\n## Rückblick {{date:DD.MM.YYYY}}\n### Tief\n');
+        expect(patterns.some((p) => p.test('Rückblick 29.10.2026'))).toBe(true);
+        expect(patterns.some((p) => p.test('Rückblick'))).toBe(false);
+        expect(patterns.some((p) => p.test('Tief'))).toBe(false);
+      });
+
+      it('loads the template once and lists journal entries after appointments and tasks of the day', async () => {
+        const tasks = new FolderTasksService();
+        vi.spyOn(tasks, 'loadAllTasks').mockResolvedValue([
+          {
+            folder: 'projects',
+            uri: vscode.Uri.file('/workspace/notes/projects/tasks.json'),
+            tasks: [{ id: 't1', title: 'Pitch Deck', completed: false, status: 'todo', dueDate: '2026-10-29' }],
+          },
+        ]);
+        vi.spyOn(vscode.workspace.fs, 'readDirectory').mockImplementation(async (uri) => {
+          if (uri.fsPath === '/workspace/notes') return [['journal', vscode.FileType.Directory]];
+          if (uri.fsPath === '/workspace/notes/journal') return [['2026-10-29.md', vscode.FileType.File]];
+          if (uri.fsPath === '/workspace/notes/.templates') return [['tagesnotiz.md', vscode.FileType.File]];
+          return [];
+        });
+        const files: Record<string, string> = {
+          '/workspace/notes/journal/2026-10-29.md':
+            '# Donnerstag\n\n## Gelesen\nArtikel\n\n## Notizen\n\n## Call mit Anna (09:40)\n- 29.10.2026 10:00 Review\n',
+          '/workspace/notes/.templates/tagesnotiz.md': '# {{weekday}}\n\n## Notizen\n',
+        };
+        const readFile = vi
+          .spyOn(vscode.workspace.fs, 'readFile')
+          .mockImplementation(async (uri) => Buffer.from(files[uri.fsPath] ?? '', 'utf-8'));
+
+        const entries = await new CalendarService(tasks).loadAllCalendarEntries(dummyRootUri);
+
+        expect(entries.map((e) => [e.kind, e.time, e.title])).toEqual([
+          ['task', undefined, 'Pitch Deck'],
+          ['note', '10:00', 'Review'],
+          ['journal', undefined, 'Gelesen'],
+          ['journal', '09:40', 'Call mit Anna'],
+        ]);
+        expect(readFile.mock.calls.filter(([uri]) => uri.fsPath.endsWith('tagesnotiz.md'))).toHaveLength(1);
+      });
     });
 
     it('ignores date-named files outside journal/', () => {

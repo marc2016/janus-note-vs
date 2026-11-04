@@ -168,6 +168,25 @@ describe('CalendarDayDetailsViewProvider', () => {
     );
   });
 
+  it('opens a journal entry at its heading line and other entries as before', async () => {
+    provider.setNotesRootUri(notesRootUri);
+    const execSpy = vi.spyOn(vscode.commands, 'executeCommand').mockResolvedValue(undefined);
+
+    await provider.handleMessage({ type: 'openNote', note: 'journal/2026-10-29.md', line: 11, revealLine: true });
+    await provider.handleMessage({ type: 'openNote', note: 'meetings/kickoff.md', line: 3, revealLine: false });
+
+    expect(execSpy).toHaveBeenCalledWith(
+      'janus.openNoteAtLine',
+      expect.objectContaining({ path: '/workspace/notes/journal/2026-10-29.md' }),
+      11
+    );
+    expect(execSpy).toHaveBeenCalledWith(
+      'vscode.openWith',
+      expect.objectContaining({ path: '/workspace/notes/meetings/kickoff.md' }),
+      'janus.markdownEditor'
+    );
+  });
+
   it('toggles a scheduled task entry in the folder tasks.json and keeps its dates', async () => {
     provider.setNotesRootUri(notesRootUri);
     const folderTasksUri = vscode.Uri.file('/workspace/notes/projects/tasks.json');

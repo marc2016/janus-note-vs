@@ -83,6 +83,19 @@ describe('CalendarViewProvider', () => {
     );
   });
 
+  it('opens a journal entry at its heading line', async () => {
+    await provider.open(notesRootUri);
+    const execSpy = vi.spyOn(vscode.commands, 'executeCommand').mockResolvedValue(undefined);
+
+    await provider.handleMessage({ type: 'openNote', note: 'journal/2026-10-29.md', line: 6, revealLine: true });
+
+    expect(execSpy).toHaveBeenCalledWith(
+      'janus.openNoteAtLine',
+      expect.objectContaining({ path: '/workspace/notes/journal/2026-10-29.md' }),
+      6
+    );
+  });
+
   it('handles toggleTask message by mutating task in folder and calling onDidMutate', async () => {
     await provider.open(notesRootUri);
     const folderTasksUri = vscode.Uri.file('/workspace/notes/projects/tasks.json');

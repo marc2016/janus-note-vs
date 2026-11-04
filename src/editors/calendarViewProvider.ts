@@ -197,6 +197,11 @@ export class CalendarViewProvider {
       }
 
       try {
+        // Journal entries open at their heading; other entries open the note as before
+        if (message.revealLine === true && typeof message.line === 'number' && message.line > 0) {
+          await vscode.commands.executeCommand('janus.openNoteAtLine', targetUri, message.line);
+          return;
+        }
         await vscode.commands.executeCommand(
           'vscode.openWith',
           targetUri,

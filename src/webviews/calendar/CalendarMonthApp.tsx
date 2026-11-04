@@ -13,6 +13,8 @@ import {
   mdiCheckboxBlankCircleOutline,
   mdiCalendarAlert,
   mdiCalendarClock,
+  mdiNotebookOutline,
+  mdiCheck,
 } from '@mdi/js';
 
 declare function acquireVsCodeApi(): {
@@ -31,7 +33,7 @@ export function getVsCodeApi() {
 
 export interface CalendarEntryData {
   id: string;
-  kind: 'note' | 'task';
+  kind: 'note' | 'task' | 'journal';
   date: string; // YYYY-MM-DD
   time?: string; // HH:MM
   title: string;
@@ -42,6 +44,8 @@ export interface CalendarEntryData {
   dateKind?: 'due' | 'scheduled';
   taskId?: string;
   completed?: boolean;
+  /** Journal entry whose block was already sorted. */
+  sorted?: boolean;
   priority?: 'low' | 'medium' | 'high';
   folder?: string;
   folderUri?: string;
@@ -150,13 +154,14 @@ export const CalendarMonthApp: React.FC<{ initialData?: CalendarInitialData }> =
     });
   };
 
-  const handleOpenNote = (e: React.MouseEvent, notePath?: string, line?: number) => {
+  const handleOpenNote = (e: React.MouseEvent, notePath?: string, line?: number, revealLine = false) => {
     e.stopPropagation();
     if (!notePath) return;
     getVsCodeApi()?.postMessage({
       type: 'openNote',
       note: notePath,
       line,
+      revealLine,
     });
   };
 
@@ -314,9 +319,17 @@ export const CalendarMonthApp: React.FC<{ initialData?: CalendarInitialData }> =
                 {dayEvents.slice(0, 3).map((item) => (
                   <div
                     key={item.id}
-                    onClick={(e) => handleOpenNote(e, item.notePath, item.line)}
+                    onClick={(e) => handleOpenNote(e, item.notePath, item.line, item.kind === 'journal')}
                     title={`${
-                      item.kind === 'task' ? (item.dateKind === 'scheduled' ? 'Geplant: ' : 'Fällig: ') : ''
+                      item.kind === 'task'
+                        ? item.dateKind === 'scheduled'
+                          ? 'Geplant: '
+                          : 'Fällig: '
+                        : item.kind === 'journal'
+                          ? item.sorted
+                            ? 'Journal (einsortiert): '
+                            : 'Journal: '
+                          : ''
                     }${item.time ? item.time + ' ' : ''}${item.title}${
                       item.notePath ? ' (' + item.notePath + ')' : ''
                     }`}
@@ -327,7 +340,9 @@ export const CalendarMonthApp: React.FC<{ initialData?: CalendarInitialData }> =
                           : `bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 font-medium ${
                               item.dateKind === 'scheduled' ? 'border-dashed' : ''
                             }`
-                        : 'bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/25 font-medium'
+                        : item.kind === 'journal'
+                          ? 'bg-violet-500/15 text-violet-600 dark:text-violet-400 border border-violet-500/25 font-medium'
+                          : 'bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/25 font-medium'
                     }`}
                   >
                     {item.kind === 'task' ? (
@@ -351,7 +366,14 @@ export const CalendarMonthApp: React.FC<{ initialData?: CalendarInitialData }> =
                     ) : item.time ? (
                       <span className="text-[10px] font-mono shrink-0 opacity-80">{item.time}</span>
                     ) : (
-                      <MdiIcon path={mdiFileDocumentOutline} size={12} className="shrink-0 opacity-70" />
+                      <MdiIcon
+                        path={item.kind === 'journal' ? mdiNotebookOutline : mdiFileDocumentOutline}
+                        size={12}
+                        className="shrink-0 opacity-70"
+                      />
+                    )}
+                    {item.kind === 'journal' && item.sorted && (
+                      <MdiIcon path={mdiCheck} size={11} className="shrink-0" aria-label="einsortiert" />
                     )}
                     <span className="truncate">{item.title}</span>
                   </div>

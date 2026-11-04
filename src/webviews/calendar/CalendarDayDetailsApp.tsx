@@ -13,6 +13,7 @@ import {
   mdiCalendarClock,
   mdiAlertCircleOutline,
   mdiNotebookOutline,
+  mdiCheck,
 } from '@mdi/js';
 import { CalendarEntryData, CalendarInitialData, getVsCodeApi } from './CalendarMonthApp';
 
@@ -84,12 +85,13 @@ export const CalendarDayDetailsApp: React.FC<{ initialData?: CalendarInitialData
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  const handleOpenNote = (notePath?: string, line?: number) => {
+  const handleOpenNote = (notePath?: string, line?: number, revealLine = false) => {
     if (!notePath) return;
     getVsCodeApi()?.postMessage({
       type: 'openNote',
       note: notePath,
       line,
+      revealLine,
     });
   };
 
@@ -127,6 +129,11 @@ export const CalendarDayDetailsApp: React.FC<{ initialData?: CalendarInitialData
 
   const scheduledTasks = useMemo(() => {
     return dayEvents.filter((e) => e.kind === 'task' && e.dateKind === 'scheduled');
+  }, [dayEvents]);
+
+  // Journal entries keep the order of the daily note (the host already sorts them by line)
+  const journalEntries = useMemo(() => {
+    return dayEvents.filter((e) => e.kind === 'journal');
   }, [dayEvents]);
 
   const renderTaskSection = (heading: string, icon: string, items: CalendarEntryData[]) => (
@@ -247,7 +254,7 @@ export const CalendarDayDetailsApp: React.FC<{ initialData?: CalendarInitialData
       {dayEvents.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="p-6 text-center text-xs opacity-60">
-            Keine Termine, fälligen oder geplanten Aufgaben an diesem Tag vorhanden.
+            Keine Termine, Aufgaben oder Journal-Einträge an diesem Tag vorhanden.
           </CardContent>
         </Card>
       ) : (
@@ -312,6 +319,56 @@ export const CalendarDayDetailsApp: React.FC<{ initialData?: CalendarInitialData
           {dueTasks.length > 0 && renderTaskSection('Fällige Aufgaben', mdiCalendarAlert, dueTasks)}
           {scheduledTasks.length > 0 &&
             renderTaskSection('Geplante Aufgaben', mdiCalendarClock, scheduledTasks)}
+
+          {/* Section: Journal-Einträge der Tagesnotiz */}
+          {journalEntries.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <h2 className="text-[11px] font-semibold uppercase tracking-wider opacity-70 flex items-center gap-1.5">
+                <MdiIcon path={mdiNotebookOutline} size={14} className="text-violet-400 shrink-0" />
+                <span>Journal ({journalEntries.length})</span>
+              </h2>
+
+              <div className="flex flex-col gap-2">
+                {journalEntries.map((item) => (
+                  <Card key={item.id} className="overflow-hidden border-l-4 border-l-violet-500">
+                    <CardContent className="p-2.5 flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {item.time && (
+                            <Badge variant="outline" className="font-mono text-[10px] gap-1 py-0.5 shrink-0">
+                              <MdiIcon path={mdiClockOutline} size={11} />
+                              <span>{item.time}</span>
+                            </Badge>
+                          )}
+                          {item.sorted && (
+                            <Badge variant="outline" className="text-[10px] gap-1 py-0.5 shrink-0 opacity-80">
+                              <MdiIcon path={mdiCheck} size={11} />
+                              <span>Einsortiert</span>
+                            </Badge>
+                          )}
+                        </div>
+
+                        {item.notePath && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleOpenNote(item.notePath, item.line, true)}
+                            className="h-5 px-1.5 text-[10px] shrink-0 gap-1 hover:border-[var(--vscode-focusBorder,#007acc)]"
+                            title={`Tagesnotiz öffnen: ${item.notePath}`}
+                          >
+                            <MdiIcon path={mdiNotebookOutline} size={11} />
+                            <span>Öffnen</span>
+                          </Button>
+                        )}
+                      </div>
+
+                      <div className="text-xs font-medium leading-snug break-words">{item.title}</div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

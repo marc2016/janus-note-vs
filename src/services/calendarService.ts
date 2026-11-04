@@ -2,9 +2,11 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { FolderTasksService } from './folderTasksService';
 import { isMarkdownNote } from '../companion/companionPaths';
-import { isDailyNotePath } from './dailyNotePaths';
+import { DAILY_NOTE_TEMPLATE, isDailyNotePath } from './dailyNotePaths';
+import { findSortedLinks } from './sortedLinkScan';
+import { listTemplates } from './noteTemplateService';
 
-export type CalendarEntryKind = 'note' | 'task';
+export type CalendarEntryKind = 'note' | 'task' | 'journal';
 export type TaskDateKind = 'due' | 'scheduled';
 
 export interface CalendarEntry {
@@ -22,6 +24,8 @@ export interface CalendarEntry {
   dateKind?: TaskDateKind;
   taskId?: string;
   completed?: boolean;
+  // For journal entries: the block was already sorted (`-> [[…]]` line)
+  sorted?: boolean;
   priority?: 'low' | 'medium' | 'high';
   folder?: string;
   folderUri?: string;
@@ -65,10 +69,103 @@ export function cleanEventTitle(rawLine: string, dateToken: string, timeToken?: 
   return cleaned;
 }
 
+export interface NoteEventOptions {
+  /** Heading patterns of the `tagesnotiz` template; matching daily note headings are not journal entries. */
+  dailyTemplateHeadings?: RegExp[];
+}
+
+const JOURNAL_HEADING_RE = /^(#{1,2})\s+(.+?)\s*$/;
+const HEADING_TIME_RE = /\s*\((\d{2}:\d{2})\)$/;
+
+/**
+ * Turns the template's `#`/`##` heading texts into patterns; `{{…}}` placeholders match any text.
+ * The template's title (first `#` heading) is left out: it becomes the note's title, which is never
+ * a journal entry, and a placeholder title like `# {{weekday}}` would otherwise match every heading.
+ */
+export function templateHeadingPatterns(templateText: string): RegExp[] {
+  const patterns: RegExp[] = [];
+  let inCode = false;
+  let titleSeen = false;
+  for (const line of templateText.split(/\r?\n/)) {
+    if (/^\s*(```|~~~)/.test(line)) {
+      inCode = !inCode;
+      continue;
+    }
+    const match = !inCode && line.match(JOURNAL_HEADING_RE);
+    if (!match) continue;
+    if (match[1] === '#' && !titleSeen) {
+      titleSeen = true;
+      continue;
+    }
+    const source = match[2]
+      .split(/\{\{[^}]*\}\}/)
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('.+');
+    patterns.push(new RegExp(`^${source}$`));
+  }
+  return patterns;
+}
+
+/**
+ * Journal entries of a daily note: its `#` and `##` headings outside frontmatter and fenced code,
+ * without the title (first `#` heading) and without headings that match the daily note template.
+ */
+export function extractJournalEntries(
+  content: string,
+  date: string,
+  noteUri: vscode.Uri,
+  noteRelPath: string,
+  templateHeadings: RegExp[] = []
+): CalendarEntry[] {
+  const lines = content.split(/\r?\n/);
+  const fm = content.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/);
+  const firstBodyLine = fm ? fm[0].split(/\r?\n/).length - (fm[0].endsWith('\n') ? 1 : 0) : 0;
+  const sortedHeadingLines = new Set(
+    findSortedLinks(content)
+      .map((link) => link.headingLine)
+      .filter((line): line is number => line !== undefined)
+  );
+  const entries: CalendarEntry[] = [];
+  let inCode = false;
+  let titleSeen = false;
+  for (let i = firstBodyLine; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*(```|~~~)/.test(line)) {
+      inCode = !inCode;
+      continue;
+    }
+    if (inCode) continue;
+    const match = line.match(JOURNAL_HEADING_RE);
+    if (!match) continue;
+    if (match[1] === '#' && !titleSeen) {
+      titleSeen = true;
+      continue;
+    }
+    const text = match[2];
+    if (templateHeadings.some((pattern) => pattern.test(text))) continue;
+    const timeMatch = text.match(HEADING_TIME_RE);
+    const title = timeMatch ? text.slice(0, timeMatch.index).trim() : text;
+    if (!title) continue;
+    entries.push({
+      id: `journal-${noteRelPath}-${i + 1}`,
+      kind: 'journal',
+      date,
+      time: timeMatch?.[1],
+      title,
+      noteUri: noteUri.toString(),
+      notePath: noteRelPath,
+      line: i + 1,
+      sorted: sortedHeadingLines.has(i),
+    });
+  }
+  return entries;
+}
+
 export function extractNoteEventsFromMarkdown(
   content: string,
   noteUri: vscode.Uri,
-  notesRootUri?: vscode.Uri
+  notesRootUri?: vscode.Uri,
+  options: NoteEventOptions = {}
 ): CalendarEntry[] {
   const events: CalendarEntry[] = [];
   const fileName = path.basename(noteUri.fsPath);
@@ -222,15 +319,32 @@ export function extractNoteEventsFromMarkdown(
 
   // A daily note's own date in a heading (e.g. `# Donnerstag, 29.10.2026`) is not an appointment
   if (dailyNoteDate) {
-    return events.filter(
+    const appointments = events.filter(
       (e) => !(e.date === dailyNoteDate && e.id.startsWith(`ev-${noteRelPath}-`) && /^#+\s/.test(lines[(e.line ?? 0) - 1] ?? ''))
     );
+    const journal = extractJournalEntries(content, dailyNoteDate, noteUri, noteRelPath, options.dailyTemplateHeadings);
+    if (journal.length === 0) return appointments;
+    // The journal entries represent the note; drop its whole-note and frontmatter-date entries
+    const wholeNoteIds = new Set([`ev-daily-${noteRelPath}`, `ev-fm-${noteRelPath}-${dailyNoteDate}`]);
+    return [...appointments.filter((e) => !wholeNoteIds.has(e.id)), ...journal];
   }
   return events;
 }
 
 export class CalendarService {
   constructor(private readonly folderTasksService: FolderTasksService = new FolderTasksService()) {}
+
+  /** Heading patterns of the `tagesnotiz` template, or none when it does not exist. */
+  async loadDailyTemplateHeadings(notesRootUri: vscode.Uri): Promise<RegExp[]> {
+    try {
+      const template = (await listTemplates(notesRootUri)).find((t) => t.name.toLowerCase() === DAILY_NOTE_TEMPLATE);
+      if (!template) return [];
+      const text = Buffer.from(await vscode.workspace.fs.readFile(template.uri)).toString('utf-8');
+      return templateHeadingPatterns(text);
+    } catch {
+      return [];
+    }
+  }
 
   /**
    * Recursively discovers all Markdown notes inside notesRootUri.
@@ -273,12 +387,13 @@ export class CalendarService {
     const entries: CalendarEntry[] = [];
 
     // 1. Scan all Markdown notes
+    const options: NoteEventOptions = { dailyTemplateHeadings: await this.loadDailyTemplateHeadings(notesRootUri) };
     const noteUris = await this.findMarkdownNotes(notesRootUri);
     for (const noteUri of noteUris) {
       try {
         const rawBytes = await vscode.workspace.fs.readFile(noteUri);
         const content = Buffer.from(rawBytes).toString('utf-8');
-        const noteEvents = extractNoteEventsFromMarkdown(content, noteUri, notesRootUri);
+        const noteEvents = extractNoteEventsFromMarkdown(content, noteUri, notesRootUri, options);
         entries.push(...noteEvents);
       } catch {
         // Skip unreadable files gracefully
@@ -317,10 +432,16 @@ export class CalendarService {
       // Skip if task service fails
     }
 
-    // 3. Sort entries chronologically: date asc, time asc (all-day/no-time first), title asc
+    // 3. Sort entries chronologically: date asc, time asc (all-day/no-time first), title asc.
+    //    Journal entries come after appointments and tasks of their day, in the order of the note.
     entries.sort((a, b) => {
       const dateCmp = a.date.localeCompare(b.date);
       if (dateCmp !== 0) return dateCmp;
+      const journalCmp = Number(a.kind === 'journal') - Number(b.kind === 'journal');
+      if (journalCmp !== 0) return journalCmp;
+      if (a.kind === 'journal' && b.kind === 'journal') {
+        return (a.notePath ?? '').localeCompare(b.notePath ?? '') || (a.line ?? 0) - (b.line ?? 0);
+      }
       if (a.time && b.time) {
         const timeCmp = a.time.localeCompare(b.time);
         if (timeCmp !== 0) return timeCmp;
