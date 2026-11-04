@@ -31,6 +31,7 @@ Klicke auf die folgenden Links, um das automatische Springen zur Zeile und die H
 ## 5. Tagesnotizen
 - Klicke in der Titelleiste der Notizen-Ansicht auf **„Tagesnotiz öffnen"**, um die Notiz für heute in `journal/` zu öffnen oder anzulegen. Neue Tagesnotizen nutzen die Vorlage `.templates/tagesnotiz.md`.
 - Öffne [[journal/2026-10-29]]: Sie hat drei Abschnitte, die noch nicht einsortiert sind. Klicke in der Fußleiste auf **„Tagesnotiz einsortieren"**. Die Abschnitte werden in passende Notizen *kopiert*, und unter jedem erscheint ein Link `-> [[…]]`, wohin er ging.
+- Neue Überschriften bekommen die Uhrzeit: Tipp in der Tagesnotiz von heute eine neue Überschrift wie `## Idee`, und drück am Zeilenende **Enter**. Daraus wird `## Idee (14:32)` – die Zeit, zu der du die Überschrift begonnen hast, als ganz normaler Text. Das gilt für `#` und `##`; `###` und tiefer sowie Überschriften aus der Vorlage wie `## Notizen` bleiben ohne Zeit. Beim Einsortieren wird daraus im Ziel Datum und Uhrzeit, z. B. beim „Call mit Anna (09:40)" in [[journal/2026-10-29]]: `## Call mit Anna: Crash-Reporting (2026-10-29 09:40)`.
 - [[journal/2026-10-28]] zeigt das Ergebnis: Der Abschnitt „Modell-Test im Zug" wurde schon nach [[ollama-models]] einsortiert und wird beim nächsten Durchlauf übersprungen.
 - Im Kalender erscheinen beide Tagesnotizen an ihrem Tag. In den Tagesdetails gibt es den Button **„Tagesnotiz öffnen"** bzw. **„Tagesnotiz anlegen"**.
 
