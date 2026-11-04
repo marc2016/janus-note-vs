@@ -9,6 +9,7 @@ import {
   splitInboxBlocks,
   collectNoteOutlines,
   formatAppendedInboxSection,
+  combineHeadingTime,
   splitDailyNoteBlocks,
 } from '../src/services/aiInboxSorterService';
 import * as fs from 'fs';
@@ -258,6 +259,19 @@ describe('aiInboxSorting', () => {
     });
   });
 
+  describe('combineHeadingTime', () => {
+    it('turns a trailing (HH:mm) of the leading heading into date and time', () => {
+      expect(combineHeadingTime('## Call (14:32)\nText', '2026-10-27')).toBe('## Call (2026-10-27 14:32)\nText');
+      expect(combineHeadingTime('### Tief (07:05)', '2026-10-27')).toBe('### Tief (2026-10-27 07:05)');
+    });
+
+    it('leaves other text unchanged', () => {
+      expect(combineHeadingTime('## Call\nUm (14:32) im Text', '2026-10-27')).toBe('## Call\nUm (14:32) im Text');
+      expect(combineHeadingTime('Absatz (14:32)', '2026-10-27')).toBe('Absatz (14:32)');
+      expect(combineHeadingTime('## Schon (2026-10-20 08:00)', '2026-10-27')).toBe('## Schon (2026-10-20 08:00)');
+    });
+  });
+
   describe('formatAppendedInboxSection', () => {
     it('uses the given suffix in the heading', () => {
       expect(formatAppendedInboxSection('Thema', '## Call mit Anna\nText', '2026-10-27')).toBe(
@@ -317,6 +331,20 @@ describe('aiInboxSorting', () => {
   });
 
   describe('AiInboxSorterService.sortInbox', () => {
+    it('keeps a heading time unchanged when sorting the inbox', async () => {
+      __setConfigStore({ 'janus.ai.inboxSortConfirm': false });
+      fsMap.set('/workspace/inbox.md', '# Inbox\n\n## Termin (14:32)\nText\n');
+      const aiModelService = new AiModelService(mockContext);
+      vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue(
+        JSON.stringify({ items: [{ block: 1, title: 'Termin', action: 'create', targetRelativePath: 'knowledge/termin.md' }] })
+      );
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+
+      await sorter.sortInbox(vscode.Uri.file('/workspace/inbox.md'));
+
+      expect(fsMap.get('/workspace/knowledge/termin.md')).toBe('# termin\n\n## Termin (14:32)\nText\n');
+    });
+
     it('enforces strict append-only on existing notes even if AI proposes action="create"', async () => {
       __setConfigStore({ 'janus.ai.inboxSortConfirm': false });
 
@@ -963,6 +991,36 @@ describe('aiInboxSorting', () => {
         '---\ndate: 2026-10-27\n---\n# Dienstag, 27.10.2026\n\n## Call mit Anna\nBackend auf Postgres umstellen\n\n-> [[projects/App-Launch/architektur]]\n\n## Notiz\nBleibt hier\n'
       );
       expect(fsMap.get('/workspace/inbox.md')).toBe('# Inbox\n\nUnberührt\n');
+    });
+
+    it('combines a heading time with the daily note date when appending', async () => {
+      fsMap.set(dailyPath, '# Dienstag\n\n## Call mit Anna (14:32)\nBackend auf Postgres umstellen\n');
+      fsMap.set('/workspace/projects/App-Launch/architektur.md', '# Architektur\n');
+      const aiModelService = new AiModelService(mockContext);
+      vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue(assign([1, 'projects/App-Launch/architektur.md']));
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+
+      await sorter.sortDailyNote(dailyUri);
+
+      expect(fsMap.get('/workspace/projects/App-Launch/architektur.md')).toBe(
+        '# Architektur\n\n## Call mit Anna (2026-10-27 14:32)\n\nBackend auf Postgres umstellen\n'
+      );
+      expect(fsMap.get(dailyPath)).toBe(
+        '# Dienstag\n\n## Call mit Anna (14:32)\nBackend auf Postgres umstellen\n\n-> [[projects/App-Launch/architektur]]\n'
+      );
+    });
+
+    it('combines a heading time with the daily note date when creating a note', async () => {
+      fsMap.set(dailyPath, '# Dienstag\n\n## Idee: Dunkelmodus (09:15)\nFarbtokens\n');
+      const aiModelService = new AiModelService(mockContext);
+      vi.spyOn(aiModelService, 'completePrompt').mockResolvedValue(assign([1, 'knowledge/dark-mode.md', 'create']));
+      const sorter = new AiInboxSorterService(aiModelService, new CompanionManager());
+
+      await sorter.sortDailyNote(dailyUri);
+
+      expect(fsMap.get('/workspace/knowledge/dark-mode.md')).toBe(
+        '# dark-mode\n\n## Idee: Dunkelmodus (2026-10-27 09:15)\nFarbtokens\n'
+      );
     });
 
     it('creates a new note and links it', async () => {

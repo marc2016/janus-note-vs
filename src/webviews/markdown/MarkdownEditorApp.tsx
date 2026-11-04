@@ -23,6 +23,7 @@ import { styledLists } from './extensions/styledLists';
 import { styledTables } from './extensions/styledTables';
 import { clickableLinks } from './extensions/clickableLinks';
 import { setSortedLinks, sortedLinks, sortedLinksCompartment, sortedLinksField } from './extensions/sortedLinks';
+import { headingTime, headingTimeCompartment } from './extensions/headingTime';
 import { imagePaste, insertSavedImage, rejectPendingImage } from './extensions/imagePaste';
 import { inlineImages, setImageContext } from './extensions/inlineImages';
 import { insertAfterAnchor, selectionActions } from './extensions/selectionActions';
@@ -334,17 +335,21 @@ export const MarkdownEditorApp: React.FC = () => {
     }
   }, [effectiveIsDark, editorView]);
 
-  // Render `-> [[target]]` lines as cards only in daily notes
+  // Daily notes only: `-> [[target]]` lines as cards, and times for newly typed headings
   useEffect(() => {
     if (editorView) {
       editorView.dispatch({
-        effects: sortedLinksCompartment.reconfigure(
-          sortSource === 'daily'
-            ? sortedLinks({
-                onOpen: (target, line) => handleOpenLinkRef.current(target, undefined, line, 'wiki'),
-              })
-            : []
-        ),
+        effects: [
+          sortedLinksCompartment.reconfigure(
+            sortSource === 'daily'
+              ? sortedLinks({
+                  onOpen: (target, line) => handleOpenLinkRef.current(target, undefined, line, 'wiki'),
+                })
+              : []
+          ),
+          // Times for newly typed headings, also daily notes only
+          headingTimeCompartment.reconfigure(sortSource === 'daily' ? headingTime() : []),
+        ],
       });
     }
   }, [sortSource, editorView]);
@@ -384,6 +389,7 @@ export const MarkdownEditorApp: React.FC = () => {
         styledTables(),
         sortedLinksField,
         sortedLinksCompartment.of([]),
+        headingTimeCompartment.of([]),
         imagePaste({ postMessage: (message) => getVsCodeApi()?.postMessage(message) }),
         inlineImages(),
         selectionActions({

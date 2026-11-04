@@ -470,6 +470,15 @@ export function formatAppendedInboxSection(
 }
 
 /**
+ * Daily note headings can end with the time they were written, `(HH:mm)`. When such a block is
+ * sorted, the time is combined with the daily note's date (`(YYYY-MM-DD HH:mm)`), so the target
+ * heading does not get a second suffix. Text without such a leading heading is returned unchanged.
+ */
+export function combineHeadingTime(text: string, date: string): string {
+  return text.replace(/^(\s*#{1,6}\s+[^\n]*?)\s*\((\d{2}:\d{2})\)[ \t]*(?=\r?\n|$)/, `$1 (${date} $2)`);
+}
+
+/**
  * Rewrites relative Markdown link and image paths in a block moved from `fromDir` to `toDir`, so
  * they keep pointing to the same file. Only paths that resolve to an existing file from `fromDir`
  * change; wiki-links, external, absolute and unresolved targets and links in code stay as they are.
@@ -1032,12 +1041,13 @@ export class AiInboxSorterService {
       const segments = item.targetRelativePath.split('/');
       const targetUri = vscode.Uri.joinPath(notesRootUri, ...segments);
       // Relative paths were written against the source note's folder; keep them pointing to the same files
-      const text = await rewriteRelativePaths(
+      const movedText = await rewriteRelativePaths(
         blockText,
         path.dirname(inboxUri.fsPath),
         path.dirname(targetUri.fsPath),
         pathExists
       );
+      const text = source.kind === 'daily' ? combineHeadingTime(movedText, source.date) : movedText;
       if (segments.length > 1) {
         // Remember the folders this run creates, deepest first, so undo can remove them again
         for (let depth = segments.length - 1; depth >= 1; depth--) {
