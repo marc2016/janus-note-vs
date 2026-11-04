@@ -59,6 +59,52 @@ out.textContent = JSON.stringify(results);
 document.body.appendChild(out);
 `;
 
+// Layout stability in auto mode: characters of the cursor line must not move while the cursor
+// moves within the line.
+const LAYOUT_LINE = 'Ein **fetter** Satz mit [[Link]] und `code` hier';
+
+const LAYOUT_ENTRY = `
+import { EditorView, drawSelection } from '@codemirror/view';
+import { EditorState, EditorSelection } from '@codemirror/state';
+import { markdown } from '@codemirror/lang-markdown';
+import { cursorCharLeft, cursorCharRight } from '@codemirror/commands';
+import { livePreview } from ${JSON.stringify(path.join(repoRoot, 'src/webviews/markdown/extensions/livePreview'))};
+
+function makeView(doc) {
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  return new EditorView({
+    parent: host,
+    state: EditorState.create({ doc, extensions: [markdown(), livePreview('auto'), drawSelection(), EditorView.lineWrapping] }),
+  });
+}
+
+const results = { steps: [] };
+
+{
+  const view = makeView('Erste Zeile\\n' + ${JSON.stringify(LAYOUT_LINE)} + '\\nLetzte Zeile');
+  const line = view.state.doc.line(2);
+  const probe = line.to - 1;
+  const x = () => Math.round(view.coordsAtPos(probe, 1).left);
+  view.dispatch({ selection: EditorSelection.cursor(line.to) });
+  const x0 = x();
+  for (const [cmd, name] of [[cursorCharLeft, 'left'], [cursorCharRight, 'right']]) {
+    for (let i = 0; i < line.length; i++) {
+      const before = view.state.selection.main.head;
+      cmd(view);
+      const after = view.state.selection.main.head;
+      results.steps.push({ dir: name, before, after, dx: x() - x0 });
+    }
+  }
+  view.destroy();
+}
+
+const out = document.createElement('pre');
+out.id = 'results';
+out.textContent = JSON.stringify(results);
+document.body.appendChild(out);
+`;
+
 const HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
 body { font-family: -apple-system, sans-serif; font-size: 14px; width: 700px; }
 .cm-editor .cm-scroller, .cm-editor .cm-line { line-height: 1.65; }
@@ -72,7 +118,7 @@ interface MoveResult {
   line: number;
 }
 
-function runBundle(dir: string): MoveResult[] {
+function runBundle<T = MoveResult[]>(dir: string): T {
   const html = execFileSync(
     chromeBin,
     ['--headless=new', '--disable-gpu', '--virtual-time-budget=5000', '--dump-dom', `file://${path.join(dir, 'index.html')}`],
@@ -84,26 +130,46 @@ function runBundle(dir: string): MoveResult[] {
   return JSON.parse(json);
 }
 
+/** Bundles `entry` next to the test page, runs it in headless Chrome and returns its results. */
+async function runInChrome<T>(entry: string): Promise<T> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'janus-cursor-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'entry.ts'), entry);
+    fs.writeFileSync(path.join(dir, 'index.html'), HTML);
+    await build({
+      entryPoints: [path.join(dir, 'entry.ts')],
+      bundle: true,
+      format: 'iife',
+      outfile: path.join(dir, 'bundle.js'),
+      nodePaths: [path.join(repoRoot, 'node_modules')],
+      logLevel: 'silent',
+    });
+    return runBundle<T>(dir);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+interface LayoutResult {
+  steps: { dir: string; before: number; after: number; dx: number }[];
+}
+
 describe.skipIf(!fs.existsSync(chromeBin))('cursor movement over hidden syntax (headless Chrome)', () => {
   it('ArrowUp and ArrowDown reach lines that start with hidden syntax', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'janus-cursor-'));
-    try {
-      fs.writeFileSync(path.join(dir, 'entry.ts'), ENTRY);
-      fs.writeFileSync(path.join(dir, 'index.html'), HTML);
-      await build({
-        entryPoints: [path.join(dir, 'entry.ts')],
-        bundle: true,
-        format: 'iife',
-        outfile: path.join(dir, 'bundle.js'),
-        nodePaths: [path.join(repoRoot, 'node_modules')],
-        logLevel: 'silent',
-      });
-      const results = runBundle(dir);
-      expect(results.length).toBe(2 * LINES.length * 2 * 3);
-      const wrong = results.filter((r) => r.line !== 2).map((r) => `${r.mode} ${r.dir} col ${r.col}: ${r.target}`);
-      expect(wrong).toEqual([]);
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    const results = await runInChrome<MoveResult[]>(ENTRY);
+    expect(results.length).toBe(2 * LINES.length * 2 * 3);
+    const wrong = results.filter((r) => r.line !== 2).map((r) => `${r.mode} ${r.dir} col ${r.col}: ${r.target}`);
+    expect(wrong).toEqual([]);
+  }, 60000);
+
+  it('keeps the layout of the cursor line stable in auto mode', async () => {
+    const { steps } = await runInChrome<LayoutResult>(LAYOUT_ENTRY);
+    expect(steps.length).toBe(2 * LAYOUT_LINE.length);
+    // Every arrow press moves by exactly one character.
+    const jumps = steps.filter((s) => Math.abs(s.after - s.before) !== 1).map((s) => `${s.dir} ${s.before} -> ${s.after}`);
+    expect(jumps).toEqual([]);
+    // No character of the line moves horizontally while the cursor stays on it.
+    const shifts = steps.filter((s) => s.dx !== 0).map((s) => `${s.dir} at ${s.after}: dx ${s.dx}`);
+    expect(shifts).toEqual([]);
   }, 60000);
 });

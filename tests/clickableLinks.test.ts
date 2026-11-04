@@ -54,8 +54,8 @@ function createMockView(doc: string, cursorHead: number, cursorAnchor: number, m
 describe('Clickable Editor Links & Delimiter Concealing', () => {
   describe('Wiki-Links Decoration & Syntax Visibility', () => {
     it('conceals [[ and ]] delimiters in auto mode when cursor is outside the wiki-link', () => {
-      const doc = 'Check this note: [[Meeting-Notes]] for details.';
-      // Cursor is at index 0 (outside link)
+      // Cursor is at index 0, on another line than the link
+      const doc = 'Erste Zeile\nCheck this note: [[Meeting-Notes]] for details.';
       const view = createMockView(doc, 0, 0, 'auto');
       const decos = collectDecorations(buildDecorations(view), doc.length);
 
@@ -103,7 +103,7 @@ describe('Clickable Editor Links & Delimiter Concealing', () => {
     });
 
     it('handles wiki-links with aliases: hides [[Target| and reveals only alias in auto mode', () => {
-      const doc = 'See [[Meeting-Notes|Team Sync]] for details.';
+      const doc = 'Erste Zeile\nSee [[Meeting-Notes|Team Sync]] for details.';
       const view = createMockView(doc, 0, 0, 'auto');
       const decos = collectDecorations(buildDecorations(view), doc.length);
 
@@ -148,9 +148,46 @@ describe('Clickable Editor Links & Delimiter Concealing', () => {
     });
   });
 
+  describe('Line-based reveal in auto mode', () => {
+    it('reveals link delimiters when the cursor is on the link line but outside the link', () => {
+      const doc = 'See [[Meeting-Notes]] here.';
+      const view = createMockView(doc, doc.length, doc.length, 'auto');
+      const decos = collectDecorations(buildDecorations(view), doc.length);
+
+      expect(decos.filter((d) => d.hidden)).toHaveLength(0);
+      const linkText = decos.find((d) => d.className?.includes('cm-link-text'));
+      expect(linkText?.className).toBe('cm-link-text');
+    });
+
+    it('reveals bold and inline code markers anywhere on the cursor line', () => {
+      const doc = 'Ein **fetter** Satz mit `code` hier\nZweite Zeile';
+      const onLine = createMockView(doc, 0, 0, 'auto');
+      expect(collectDecorations(buildDecorations(onLine), doc.length).filter((d) => d.hidden)).toHaveLength(0);
+
+      const otherLine = createMockView(doc, doc.length, doc.length, 'auto');
+      const hidden = collectDecorations(buildDecorations(otherLine), doc.length).filter((d) => d.hidden);
+      expect(hidden.map((d) => doc.slice(d.from, d.to))).toEqual(['**', '**', '`', '`']);
+    });
+
+    it('hides the heading marker in auto mode only outside the cursor line', () => {
+      const doc = '# Neue Notiz\nText';
+      const elsewhere = createMockView(doc, doc.length, doc.length, 'auto');
+      const marker = collectDecorations(buildDecorations(elsewhere), doc.length).find((d) => d.from === 0 && d.to === 2);
+      expect(marker?.hidden).toBe(true);
+
+      const onLine = createMockView(doc, 3, 3, 'auto');
+      const active = collectDecorations(buildDecorations(onLine), doc.length).find((d) => d.from === 0 && d.to === 2);
+      expect(active?.className).toBe('cm-heading-mark cm-heading-mark-active');
+
+      const hiddenMode = createMockView(doc, 3, 3, 'hidden');
+      const concealed = collectDecorations(buildDecorations(hiddenMode), doc.length).find((d) => d.from === 0 && d.to === 2);
+      expect(concealed?.hidden).toBe(true);
+    });
+  });
+
   describe('Markdown Links & Bare URLs Decoration', () => {
     it('conceals [ and ](...) for standard markdown links in auto mode when cursor outside', () => {
-      const doc = 'Go to [Documentation](https://janus.example/docs) now.';
+      const doc = 'Erste Zeile\nGo to [Documentation](https://janus.example/docs) now.';
       const view = createMockView(doc, 0, 0, 'auto');
       const decos = collectDecorations(buildDecorations(view), doc.length);
 

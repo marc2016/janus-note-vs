@@ -145,6 +145,14 @@ export function buildDecorations(view: EditorView): DecorationSet {
   const selection = view.state.selection.main;
   const cursorHead = selection.head;
   const cursorAnchor = selection.anchor;
+  // In auto mode syntax is revealed per line (the lines of the selection's head and anchor), so
+  // moving the cursor within a line never changes that line's layout.
+  const revealedLines = new Set([
+    view.state.doc.lineAt(cursorHead).number,
+    view.state.doc.lineAt(cursorAnchor).number,
+  ]);
+  const isRevealed = (from: number, to: number) =>
+    revealedLines.has(view.state.doc.lineAt(from).number) || revealedLines.has(view.state.doc.lineAt(to).number);
 
   for (const { from, to } of view.visibleRanges) {
     // 1. Line-level decorations (headings, blockquotes, hr)
@@ -208,7 +216,7 @@ export function buildDecorations(view: EditorView): DecorationSet {
         const isCursorInside =
           (cursorHead >= matchStart && cursorHead <= matchEnd) ||
           (cursorAnchor >= matchStart && cursorAnchor <= matchEnd);
-        const shouldHide = mode === 'hidden' || (mode === 'auto' && !isCursorInside);
+        const shouldHide = mode === 'hidden' || (mode === 'auto' && !isRevealed(matchStart, matchEnd));
 
         if (hasAlias) {
           const pipeIndex = wikiMatch[0].indexOf('|');
@@ -288,7 +296,7 @@ export function buildDecorations(view: EditorView): DecorationSet {
         const isCursorInside =
           (cursorHead >= matchStart && cursorHead <= matchEnd) ||
           (cursorAnchor >= matchStart && cursorAnchor <= matchEnd);
-        const shouldHide = mode === 'hidden' || (mode === 'auto' && !isCursorInside);
+        const shouldHide = mode === 'hidden' || (mode === 'auto' && !isRevealed(matchStart, matchEnd));
         const linkType = target.startsWith('http') ? 'external' : 'markdown';
 
         if (shouldHide) {
@@ -351,11 +359,8 @@ export function buildDecorations(view: EditorView): DecorationSet {
       to,
       enter: (node) => {
         if (node.name === 'StrongEmphasis') {
-          const isCursorInside =
-            (cursorHead >= node.from && cursorHead <= node.to) ||
-            (cursorAnchor >= node.from && cursorAnchor <= node.to);
           const shouldHide =
-            mode === 'hidden' || (mode === 'auto' && !isCursorInside);
+            mode === 'hidden' || (mode === 'auto' && !isRevealed(node.from, node.to));
 
           if (shouldHide && node.to - node.from >= 4) {
             builder.push(
@@ -372,11 +377,8 @@ export function buildDecorations(view: EditorView): DecorationSet {
             );
           }
         } else if (node.name === 'Emphasis') {
-          const isCursorInside =
-            (cursorHead >= node.from && cursorHead <= node.to) ||
-            (cursorAnchor >= node.from && cursorAnchor <= node.to);
           const shouldHide =
-            mode === 'hidden' || (mode === 'auto' && !isCursorInside);
+            mode === 'hidden' || (mode === 'auto' && !isRevealed(node.from, node.to));
 
           if (shouldHide && node.to - node.from >= 2) {
             builder.push(
@@ -393,11 +395,8 @@ export function buildDecorations(view: EditorView): DecorationSet {
             );
           }
         } else if (node.name === 'Strikethrough') {
-          const isCursorInside =
-            (cursorHead >= node.from && cursorHead <= node.to) ||
-            (cursorAnchor >= node.from && cursorAnchor <= node.to);
           const shouldHide =
-            mode === 'hidden' || (mode === 'auto' && !isCursorInside);
+            mode === 'hidden' || (mode === 'auto' && !isRevealed(node.from, node.to));
 
           if (shouldHide && node.to - node.from >= 4) {
             builder.push(
@@ -414,11 +413,8 @@ export function buildDecorations(view: EditorView): DecorationSet {
             );
           }
         } else if (node.name === 'InlineCode') {
-          const isCursorInside =
-            (cursorHead >= node.from && cursorHead <= node.to) ||
-            (cursorAnchor >= node.from && cursorAnchor <= node.to);
           const shouldHide =
-            mode === 'hidden' || (mode === 'auto' && !isCursorInside);
+            mode === 'hidden' || (mode === 'auto' && !isRevealed(node.from, node.to));
 
           if (shouldHide && node.to - node.from >= 2) {
             let backticks = 1;

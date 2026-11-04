@@ -14,8 +14,8 @@ The system SHALL provide a Custom Text Editor (`janus.markdownEditor`) for `*.md
 - **THEN** the editor renders the heading in large typography and hides the `# ` syntax while the cursor is outside the line
 
 #### Scenario: Revealing raw syntax on focus
-- **WHEN** user moves the cursor into a decorated heading or inline formatted word
-- **THEN** the editor reveals the raw Markdown markers (`# `, `**`) allowing direct text editing
+- **WHEN** syntax visibility mode is `auto` and the user moves the cursor onto a line containing a heading marker, inline formatting or links
+- **THEN** the editor reveals the raw Markdown markers (`# `, `**`, `*`, `~~`, `` ` ``, link delimiters) of that whole line, allowing direct text editing
 
 ### Requirement: Fixed Formatting Toolbar
 The system SHALL provide a single pinned, fixed formatting toolbar with actions for history, headings, inline marks, lists, blockquotes, tables, code blocks, PDF export, and opening the underlying raw source file at the end of the toolbar, without displaying a separate top application header bar or manual theme toggle button. Inline mark actions SHALL expand to surrounding word boundaries when invoked with a collapsed cursor inside an unformatted word.
@@ -102,7 +102,7 @@ The system SHALL provide a 3-way toggle control in the formatting toolbar allowi
 
 #### Scenario: Auto mode reveals syntax markers only when cursor is inside the line or word
 - **WHEN** syntax visibility mode is set to `auto`
-- **THEN** heading prefixes (`### `) and inline formatting markers (`**`, `*`, `~~`, `` ` ``) are hidden by default and only become visible when the cursor is positioned on that line or within that formatted range
+- **THEN** heading prefixes (`### `), inline formatting markers (`**`, `*`, `~~`, `` ` ``) and link delimiters are hidden on every line except the line(s) holding the cursor or the ends of the selection, where all of them are visible
 
 #### Scenario: Visible mode displays all syntax markers permanently
 - **WHEN** syntax visibility mode is set to `visible`
@@ -234,12 +234,12 @@ The system SHALL render inline wiki-links and markdown links as interactive clic
 - **THEN** system displays a confirmation notification asking whether to create the note, and creates and opens the note upon confirmation
 
 #### Scenario: Syntax concealing in auto mode when cursor is outside
-- **WHEN** syntax visibility mode is set to `auto` and cursor is outside the link
+- **WHEN** syntax visibility mode is set to `auto` and the cursor is on a different line than the link
 - **THEN** link syntax delimiters (`[[` and `]]`, or `[` and `](...)`) are hidden and the link is presented cleanly with clickable styling
 
 #### Scenario: Syntax revelation in auto mode when cursor enters link
-- **WHEN** syntax visibility mode is set to `auto` and user moves the cursor into the link text
-- **THEN** raw syntax delimiters are revealed allowing direct text editing
+- **WHEN** syntax visibility mode is set to `auto` and the cursor is on the line containing the link, inside or outside the link text
+- **THEN** raw syntax delimiters are revealed allowing direct text editing, and the link text keeps its clickable styling
 
 #### Scenario: Clicking a link to a code file with line specification
 - **WHEN** user clicks a link targeting a code or text file with a line number (e.g. `[[src/service.ts:42]]` or `[Logic](src/service.ts#L42)`)
@@ -593,3 +593,14 @@ When the live preview hides Markdown syntax (heading markers, bold, italic, stri
 #### Scenario: Hidden mode
 - **WHEN** syntax visibility mode is `hidden` and the user presses `ArrowUp` below a heading
 - **THEN** the cursor moves into the heading line and the heading marker stays hidden
+
+### Requirement: Stable Layout While Moving the Cursor in Auto Mode
+In `auto` syntax visibility mode, moving the cursor or deleting text within a line SHALL NOT reveal or conceal syntax on that line, so the text of the line keeps its horizontal position and the cursor stays where the user sees it. Syntax SHALL only be revealed or concealed when the cursor moves to a different line. Changes of the line's typography caused by the edit itself (for example typing `# ` to turn the line into a heading) are not covered by this requirement.
+
+#### Scenario: Arrow keys along a line with formatting
+- **WHEN** syntax visibility mode is `auto`, the cursor is on the line `Ein **fetter** Satz mit [[Link]]` and the user presses `ArrowLeft` or `ArrowRight` repeatedly across the whole line
+- **THEN** every press moves the cursor by one character, and no character of the line changes its horizontal position on screen
+
+#### Scenario: Deleting next to formatting
+- **WHEN** syntax visibility mode is `auto`, the cursor is directly after `**fett**` on its line and the user presses `Backspace`
+- **THEN** the visible `*` before the cursor is deleted, and no other character of the line is revealed, hidden or moved except by that deletion
