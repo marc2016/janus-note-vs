@@ -192,6 +192,11 @@ export const workspace = {
   openTextDocument: async (uri: Uri) => ({ uri }),
 };
 
+export enum EndOfLine {
+  LF = 1,
+  CRLF = 2,
+}
+
 export enum TreeItemCollapsibleState {
   None = 0,
   Collapsed = 1,

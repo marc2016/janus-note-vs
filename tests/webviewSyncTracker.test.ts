@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as vscode from 'vscode';
-import { WebviewSyncTracker } from '../src/editors/webviewSyncTracker';
+import { WebviewSyncTracker, toDocumentText, toWebviewText } from '../src/editors/webviewSyncTracker';
 import { MarkdownEditorProvider } from '../src/editors/markdownEditorProvider';
 
 describe('WebviewSyncTracker', () => {
@@ -16,6 +16,13 @@ describe('WebviewSyncTracker', () => {
     const tracker = new WebviewSyncTracker();
     tracker.recordWebviewEdit('abc', 1);
     expect(tracker.shouldForward('abcX')).toBe(true);
+  });
+
+  it('recognizes the echo of a CRLF document as the webview edit', () => {
+    const tracker = new WebviewSyncTracker();
+    tracker.recordWebviewEdit('a\nb', 1);
+    expect(tracker.shouldForward('a\r\nb')).toBe(false);
+    expect(tracker.shouldForward('a\r\nb')).toBe(true);
   });
 
   it('tracks the highest applied seq', () => {
@@ -60,5 +67,94 @@ describe('MarkdownEditorProvider content sync', () => {
 
     expect(applySpy).not.toHaveBeenCalled();
     expect(((provider as any).getSyncTracker(panel) as WebviewSyncTracker).lastAppliedSeq).toBe(7);
+  });
+});
+
+describe('line ending normalization', () => {
+  it('converts document text to webview text and back', () => {
+    expect(toWebviewText('a\r\nb\rc\nd')).toBe('a\nb\nc\nd');
+    expect(toDocumentText('a\nb', vscode.EndOfLine.CRLF)).toBe('a\r\nb');
+    expect(toDocumentText('a\nb', vscode.EndOfLine.LF)).toBe('a\nb');
+    expect(toDocumentText('a\nb', undefined)).toBe('a\nb');
+  });
+});
+
+describe('MarkdownEditorProvider with a CRLF document', () => {
+  function setup(initial: string) {
+    let onChange: ((e: any) => void) | undefined;
+    vi.spyOn(vscode.workspace, 'onDidChangeTextDocument').mockImplementation(((h: any) => {
+      onChange = h;
+      return { dispose: () => {} };
+    }) as any);
+    vi.spyOn(vscode.workspace, 'onDidSaveTextDocument').mockImplementation((() => ({ dispose: () => {} })) as any);
+    const provider = new MarkdownEditorProvider({ extensionUri: vscode.Uri.file('/ext') } as any);
+    let text = initial;
+    const document: any = {
+      uri: vscode.Uri.file('/workspace/plan.md'),
+      eol: vscode.EndOfLine.CRLF,
+      isDirty: false,
+      getText: () => text,
+      positionAt: (n: number) => new vscode.Position(0, n),
+    };
+    const applied: string[] = [];
+    vi.spyOn(vscode.workspace, 'applyEdit').mockImplementation(async (edit: any) => {
+      text = edit.entries[0].newText;
+      applied.push(text);
+      onChange?.({ document });
+      return true;
+    });
+    const panel: any = {
+      webview: {
+        options: {},
+        html: '',
+        asWebviewUri: (u: any) => u,
+        postMessage: vi.fn(),
+        onDidReceiveMessage: vi.fn(),
+      },
+      onDidDispose: vi.fn(),
+      onDidChangeViewState: vi.fn(() => ({ dispose: () => {} })),
+      active: false,
+    };
+    return { provider, document, panel, applied, fire: () => onChange?.({ document }), getText: () => text };
+  }
+
+  it('sends the document to the webview with \\n line breaks', async () => {
+    const { provider, document, panel } = setup('# A\r\n\r\nB');
+    await provider.resolveCustomTextEditor(document, panel, {} as any);
+    expect(panel.webview.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'init', content: '# A\n\nB' })
+    );
+    expect(panel.webview.html).toContain('# A\\n\\nB');
+    expect(panel.webview.html).not.toContain('\\r');
+  });
+
+  it('applies webview edits with the document line endings and does not echo them back', async () => {
+    const { provider, document, panel, applied } = setup('# A\r\n\r\nB\r\nC');
+    await provider.resolveCustomTextEditor(document, panel, {} as any);
+    panel.webview.postMessage.mockClear();
+
+    // The user deleted the line "B" in the webview
+    await provider.handleWebviewMessage({ type: 'updateContent', content: '# A\n\nC', seq: 1 }, document, panel);
+
+    expect(applied).toEqual(['# A\r\n\r\nC']);
+    const updates = panel.webview.postMessage.mock.calls.map((c: any[]) => c[0]).filter((m: any) => m.type === 'update');
+    expect(updates).toEqual([]);
+  });
+
+  it('treats unchanged content as applied regardless of line endings', async () => {
+    const { provider, document, panel, applied } = setup('# A\r\nB');
+    await provider.resolveCustomTextEditor(document, panel, {} as any);
+    await provider.handleWebviewMessage({ type: 'updateContent', content: '# A\nB', seq: 3 }, document, panel);
+    expect(applied).toEqual([]);
+    expect(((provider as any).getSyncTracker(panel) as WebviewSyncTracker).lastAppliedSeq).toBe(3);
+  });
+
+  it('forwards external changes with \\n line breaks', async () => {
+    const { provider, document, panel, fire } = setup('# A\r\nB');
+    await provider.resolveCustomTextEditor(document, panel, {} as any);
+    panel.webview.postMessage.mockClear();
+    document.getText = () => '# A\r\nB\r\nX';
+    fire();
+    expect(panel.webview.postMessage).toHaveBeenCalledWith({ type: 'update', content: '# A\nB\nX', ackSeq: 0 });
   });
 });

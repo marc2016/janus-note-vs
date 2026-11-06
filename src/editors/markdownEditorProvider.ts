@@ -17,7 +17,7 @@ import { AiTaskGeneratorService } from '../services/aiTaskGeneratorService';
 import { AiInboxSorterService, SortInboxResult } from '../services/aiInboxSorterService';
 import { TasksEditorProvider } from './tasksEditorProvider';
 import { ChartEditorProvider } from './chartEditorProvider';
-import { WebviewSyncTracker } from './webviewSyncTracker';
+import { WebviewSyncTracker, toDocumentText, toWebviewText } from './webviewSyncTracker';
 import { isDailyNotePath } from '../services/dailyNotePaths';
 import { resolveSortedLinks } from '../services/sortedLinkService';
 import { saveImageNextToNote, validateImage } from '../services/imageAssetService';
@@ -282,7 +282,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     timeoutMs = 10000
   ): Promise<MermaidReplaceResult> {
     const document = await vscode.workspace.openTextDocument(uri);
-    const block = locateMermaidBlock(document.getText(), { code: baseCode, line });
+    const block = locateMermaidBlock(toWebviewText(document.getText()), { code: baseCode, line });
     if (!block || block.code.trim() !== baseCode.trim()) {
       return 'changed';
     }
@@ -426,7 +426,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
 
     const updateWebview = () => {
       try {
-        const text = document.getText();
+        const text = toWebviewText(document.getText());
         void webviewPanel.webview.postMessage({
           type: 'init',
           content: text,
@@ -493,7 +493,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         if (tracker.shouldForward(text)) {
           void webviewPanel.webview.postMessage({
             type: 'update',
-            content: text,
+            content: toWebviewText(text),
             ackSeq: tracker.lastAppliedSeq,
           });
         }
@@ -737,13 +737,15 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     ) {
       // A block inserted in the webview reaches the document through the sync a moment later
       const findBlock = () =>
-        findFencedBlocks(document.getText()).find((b) => b.info === 'mermaid' && b.from === message.blockFrom);
+        findFencedBlocks(toWebviewText(document.getText())).find(
+          (b) => b.info === 'mermaid' && b.from === message.blockFrom
+        );
       let block = findBlock();
       for (let attempt = 0; !block && attempt < 20; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 50));
         block = findBlock();
       }
-      const text = document.getText();
+      const text = toWebviewText(document.getText());
       if (block) {
         await vscode.commands.executeCommand('janus.editDiagramWithAi', {
           noteUri: document.uri.toString(),
@@ -1052,19 +1054,22 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
           return;
         }
         const tracker = this.getSyncTracker(webviewPanel);
-        if (newText === document.getText()) {
+        const currentText = document.getText();
+        if (newText === toWebviewText(currentText)) {
           // Nothing to apply, but acknowledge the seq so later updates are not treated as stale.
           tracker.acknowledgeSeq(message.seq);
           return;
         }
-        tracker.recordWebviewEdit(newText, message.seq);
+        // The webview works with `\n`; the document keeps its own line endings.
+        const documentText = toDocumentText(newText, document.eol);
+        tracker.recordWebviewEdit(documentText, message.seq);
         const fullRange = new vscode.Range(
           document.positionAt(0),
-          document.positionAt(document.getText().length)
+          document.positionAt(currentText.length)
         );
 
         const edit = new vscode.WorkspaceEdit();
-        edit.replace(document.uri, fullRange, newText);
+        edit.replace(document.uri, fullRange, documentText);
         await vscode.workspace.applyEdit(edit);
 
         if (sendLinksUpdate) {
@@ -1085,7 +1090,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     );
     const nonce = getNonce();
 
-    const initialContent = document.getText() || '';
+    const initialContent = toWebviewText(document.getText() || '');
     const mermaidScriptUri = webview
       .asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webviews', 'mermaid.min.js'))
       .toString();
