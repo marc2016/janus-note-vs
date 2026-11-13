@@ -4,12 +4,14 @@ import { CalendarService, CalendarEntry } from '../services/calendarService';
 import { FolderTasksService } from '../services/folderTasksService';
 import { MarkdownEditorProvider } from './markdownEditorProvider';
 import { dailyNoteExists, openOrCreateDailyNote, parseDailyNoteDate } from '../services/dailyNoteService';
+import { todayIso } from '../services/calendarToday';
 
 export class CalendarDayDetailsViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'janus.calendarDayDetailsView';
   private view?: vscode.WebviewView;
   private currentNotesRootUri?: vscode.Uri;
   private selectedDate?: string;
+  private onDidBecomeVisible?: () => void;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -17,10 +19,16 @@ export class CalendarDayDetailsViewProvider implements vscode.WebviewViewProvide
     private readonly folderTasksService: FolderTasksService = new FolderTasksService(),
     private readonly onDidMutate?: () => void
   ) {
-    const today = new Date();
-    this.selectedDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(
-      today.getDate()
-    ).padStart(2, '0')}`;
+    this.selectedDate = todayIso(new Date());
+  }
+
+  getSelectedDate(): string | undefined {
+    return this.selectedDate;
+  }
+
+  /** Called whenever the view becomes visible, so the calendar can check for a day change. */
+  setOnDidBecomeVisible(callback: () => void): void {
+    this.onDidBecomeVisible = callback;
   }
 
   setNotesRootUri(uri?: vscode.Uri): void {
@@ -58,9 +66,17 @@ export class CalendarDayDetailsViewProvider implements vscode.WebviewViewProvide
       await this.handleMessage(message);
     });
 
+    webviewView.onDidChangeVisibility?.(() => {
+      if (webviewView.visible) {
+        this.onDidBecomeVisible?.();
+      }
+    });
+
     webviewView.onDidDispose(() => {
       this.view = undefined;
     });
+
+    this.onDidBecomeVisible?.();
   }
 
   async refresh(): Promise<void> {

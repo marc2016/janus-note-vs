@@ -4,6 +4,7 @@ import { CalendarService, CalendarEntry } from '../services/calendarService';
 import { FolderTasksService } from '../services/folderTasksService';
 import { CalendarDayDetailsViewProvider } from './calendarDayDetailsViewProvider';
 import { MarkdownEditorProvider } from './markdownEditorProvider';
+import { followDayChange, todayIso } from '../services/calendarToday';
 
 export class CalendarViewProvider {
   public static readonly monthViewType = 'janus.calendarView';
@@ -13,6 +14,8 @@ export class CalendarViewProvider {
   private dayDetailsPanel: vscode.WebviewPanel | undefined;
   private currentNotesRootUri: vscode.Uri | undefined;
   private selectedDate: string | undefined;
+  /** The day the calendar currently treats as today; re-determined by `checkDayChange`. */
+  private currentToday: string = todayIso(new Date());
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -29,6 +32,8 @@ export class CalendarViewProvider {
   async open(notesRootUri: vscode.Uri): Promise<void> {
     this.currentNotesRootUri = notesRootUri;
     this.dayDetailsViewProvider?.setNotesRootUri(notesRootUri);
+
+    await this.checkDayChange();
 
     if (this.monthPanel) {
       this.monthPanel.reveal(vscode.ViewColumn.One);
@@ -50,16 +55,14 @@ export class CalendarViewProvider {
 
     const events = await this.calendarService.loadAllCalendarEntries(notesRootUri);
     const today = new Date();
-    const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(
-      today.getDate()
-    ).padStart(2, '0')}`;
-    this.selectedDate = this.selectedDate || todayIso;
+    this.selectedDate = this.selectedDate || this.currentToday;
 
     this.monthPanel.webview.html = this.getHtmlForWebview(this.monthPanel.webview, {
       mode: 'month',
       year: today.getFullYear(),
       month: today.getMonth() + 1,
       selectedDate: this.selectedDate,
+      today: this.currentToday,
       events,
     });
 
@@ -70,6 +73,9 @@ export class CalendarViewProvider {
     this.monthPanel.onDidChangeViewState?.((e) => {
       if (e.webviewPanel.active) {
         this.onActiveChange?.();
+      }
+      if (e.webviewPanel.visible) {
+        void this.checkDayChange();
       }
     });
 
@@ -130,9 +136,36 @@ export class CalendarViewProvider {
   }
 
   /**
-   * Re-scans calendar events and broadcasts live updates to open panels.
+   * Re-determines today. When the day changed, a selection that was the previous today follows to
+   * the new day (any other selection stays) and the open calendar views are updated.
    */
-  async refresh(): Promise<void> {
+  async checkDayChange(now: Date = new Date()): Promise<void> {
+    const today = todayIso(now);
+    if (today === this.currentToday) {
+      return;
+    }
+    const previousToday = this.currentToday;
+    this.currentToday = today;
+
+    const selected = this.dayDetailsViewProvider?.getSelectedDate() ?? this.selectedDate;
+    const nextSelected = followDayChange(selected, previousToday, today);
+    const selectionFollowed = nextSelected !== selected;
+    if (this.selectedDate || selectionFollowed) {
+      this.selectedDate = nextSelected;
+    }
+    if (selectionFollowed) {
+      await this.dayDetailsViewProvider?.setSelectedDate(nextSelected, false);
+    }
+
+    // The shown month only follows together with the selection
+    await this.refresh(selectionFollowed ? previousToday : undefined);
+  }
+
+  /**
+   * Re-scans calendar events and broadcasts live updates to open panels.
+   * `previousToday` is set right after a day change in which the selection followed to the new day.
+   */
+  async refresh(previousToday?: string): Promise<void> {
     if (!this.currentNotesRootUri) {
       return;
     }
@@ -144,6 +177,8 @@ export class CalendarViewProvider {
         type: 'updateEvents',
         events,
         selectedDate: this.selectedDate,
+        today: this.currentToday,
+        previousToday,
       });
     }
 
@@ -174,6 +209,8 @@ export class CalendarViewProvider {
     }
 
     if (message.type === 'selectDay' && typeof message.date === 'string') {
+      // Remember the selection so refreshes and day changes work with the day the user picked
+      this.selectedDate = message.date;
       if (this.dayDetailsViewProvider) {
         await this.dayDetailsViewProvider.setSelectedDate(message.date, true);
       }
@@ -241,6 +278,7 @@ export class CalendarViewProvider {
       year?: number;
       month?: number;
       selectedDate?: string;
+      today?: string;
       events: CalendarEntry[];
     }
   ): string {

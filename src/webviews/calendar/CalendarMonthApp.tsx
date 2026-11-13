@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { followMonth, todayIso as localTodayIso } from '../../services/calendarToday';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -56,6 +57,8 @@ export interface CalendarInitialData {
   year?: number;
   month?: number;
   selectedDate?: string;
+  /** The current day as determined by the extension host (`YYYY-MM-DD`). */
+  today?: string;
   events?: CalendarEntryData[];
 }
 
@@ -85,14 +88,17 @@ function formatIso(year: number, month: number, day: number): string {
 export const CalendarMonthApp: React.FC<{ initialData?: CalendarInitialData }> = ({
   initialData = {},
 }) => {
-  const today = useMemo(() => new Date(), []);
-  const todayIso = useMemo(
-    () => formatIso(today.getFullYear(), today.getMonth() + 1, today.getDate()),
-    [today]
-  );
+  // Today comes from the extension host and changes while the panel stays open
+  const [todayIso, setTodayIso] = useState<string>(() => initialData.today || localTodayIso(new Date()));
+  const [todayYear, todayMonth] = useMemo(() => {
+    const [y, m] = todayIso.split('-').map(Number);
+    return [y, m];
+  }, [todayIso]);
 
-  const [year, setYear] = useState<number>(() => initialData.year || today.getFullYear());
-  const [month, setMonth] = useState<number>(() => initialData.month || today.getMonth() + 1);
+  const [year, setYear] = useState<number>(() => initialData.year || todayYear);
+  const [month, setMonth] = useState<number>(() => initialData.month || todayMonth);
+  const shownMonthRef = useRef({ year, month });
+  shownMonthRef.current = { year, month };
   const [selectedDate, setSelectedDate] = useState<string>(
     () => initialData.selectedDate || todayIso
   );
@@ -111,6 +117,15 @@ export const CalendarMonthApp: React.FC<{ initialData?: CalendarInitialData }> =
         if (typeof msg.year === 'number') setYear(msg.year);
         if (typeof msg.month === 'number') setMonth(msg.month);
         if (typeof msg.selectedDate === 'string') setSelectedDate(msg.selectedDate);
+        if (typeof msg.today === 'string') {
+          setTodayIso(msg.today);
+          // Sent only when the selection followed a day change: the shown month follows too
+          if (typeof msg.previousToday === 'string') {
+            const next = followMonth(shownMonthRef.current, msg.previousToday, msg.today);
+            setYear(next.year);
+            setMonth(next.month);
+          }
+        }
       }
     };
 
@@ -137,8 +152,8 @@ export const CalendarMonthApp: React.FC<{ initialData?: CalendarInitialData }> =
   };
 
   const handleToday = () => {
-    setYear(today.getFullYear());
-    setMonth(today.getMonth() + 1);
+    setYear(todayYear);
+    setMonth(todayMonth);
     setSelectedDate(todayIso);
     getVsCodeApi()?.postMessage({
       type: 'selectDay',

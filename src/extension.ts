@@ -11,6 +11,7 @@ import { MarkdownEditorProvider, runUndoInboxSort, showInboxSortResult } from '.
 import { GlobalTasksViewProvider } from './editors/globalTasksViewProvider';
 import { CalendarViewProvider } from './editors/calendarViewProvider';
 import { CalendarDayDetailsViewProvider } from './editors/calendarDayDetailsViewProvider';
+import { msUntilNextDay } from './services/calendarToday';
 import { SettingsViewProvider } from './editors/settingsViewProvider';
 import { FolderOverviewViewProvider } from './editors/folderOverviewViewProvider';
 import { NoteGraphViewProvider } from './editors/noteGraphViewProvider';
@@ -132,6 +133,16 @@ export function activate(context: vscode.ExtensionContext) {
     calendarDayDetailsViewProvider,
     () => scheduleSyncSidebarSelection(vscode.Uri.parse('janus-calendar:///all'))
   );
+  // The calendar follows the current day: checked at midnight, on window focus and when its views show up
+  calendarDayDetailsViewProvider.setOnDidBecomeVisible(() => void calendarViewProvider.checkDayChange());
+  let dayChangeTimer: NodeJS.Timeout | undefined;
+  const armDayChangeTimer = () => {
+    dayChangeTimer = setTimeout(() => {
+      void calendarViewProvider.checkDayChange();
+      armDayChangeTimer();
+    }, msUntilNextDay(new Date()) + 1000);
+  };
+  armDayChangeTimer();
   const settingsViewProvider = new SettingsViewProvider(context, aiModelService);
   const aiFolderSummaryService = new AiFolderSummaryService(aiModelService, folderTasksService);
   const folderOverviewViewProvider = new FolderOverviewViewProvider(
@@ -213,6 +224,18 @@ export function activate(context: vscode.ExtensionContext) {
       CalendarDayDetailsViewProvider.viewType,
       calendarDayDetailsViewProvider
     ),
+    vscode.window.onDidChangeWindowState((state) => {
+      if (state.focused) {
+        void calendarViewProvider.checkDayChange();
+      }
+    }),
+    {
+      dispose: () => {
+        if (dayChangeTimer) {
+          clearTimeout(dayChangeTimer);
+        }
+      },
+    },
     vscode.window.registerWebviewViewProvider(
       ChatViewProvider.viewType,
       chatViewProvider,

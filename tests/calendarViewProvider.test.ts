@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as vscode from 'vscode';
 import { CalendarViewProvider } from '../src/editors/calendarViewProvider';
+import { CalendarDayDetailsViewProvider } from '../src/editors/calendarDayDetailsViewProvider';
 import { CalendarService } from '../src/services/calendarService';
 import { FolderTasksService } from '../src/services/folderTasksService';
 
@@ -131,6 +132,79 @@ describe('CalendarViewProvider', () => {
       })
     );
     expect(mutatedCount).toBe(1);
+  });
+
+  describe('day change', () => {
+    const setup = async () => {
+      vi.spyOn(calendarService, 'loadAllCalendarEntries').mockResolvedValue([]);
+      const dayDetails = new CalendarDayDetailsViewProvider(mockContext, calendarService, folderTasksService);
+      const withDetails = new CalendarViewProvider(
+        mockContext,
+        calendarService,
+        folderTasksService,
+        undefined,
+        dayDetails
+      );
+      const panelSpy = vi.spyOn(vscode.window, 'createWebviewPanel');
+      await withDetails.open(notesRootUri);
+      const panel = panelSpy.mock.results[panelSpy.mock.results.length - 1].value as vscode.WebviewPanel;
+      const postSpy = vi.spyOn(panel.webview, 'postMessage');
+      return { dayDetails, withDetails, postSpy };
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date(2026, 10, 12, 9, 0));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('moves a selection that was today to the new day', async () => {
+      const { dayDetails, withDetails, postSpy } = await setup();
+      expect(dayDetails.getSelectedDate()).toBe('2026-11-12');
+
+      vi.setSystemTime(new Date(2026, 10, 13, 8, 0));
+      await withDetails.checkDayChange();
+
+      expect(dayDetails.getSelectedDate()).toBe('2026-11-13');
+      expect(postSpy).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          type: 'updateEvents',
+          today: '2026-11-13',
+          previousToday: '2026-11-12',
+          selectedDate: '2026-11-13',
+        })
+      );
+    });
+
+    it('keeps a deliberately selected day and only moves today', async () => {
+      const { dayDetails, withDetails, postSpy } = await setup();
+      await withDetails.handleMessage({ type: 'selectDay', date: '2026-11-20' });
+
+      vi.setSystemTime(new Date(2026, 10, 13, 8, 0));
+      await withDetails.checkDayChange();
+
+      expect(dayDetails.getSelectedDate()).toBe('2026-11-20');
+      const last = postSpy.mock.calls[postSpy.mock.calls.length - 1][0];
+      expect(last).toMatchObject({ today: '2026-11-13', selectedDate: '2026-11-20' });
+      expect(last.previousToday).toBeUndefined();
+    });
+
+    it('does nothing while the day is unchanged', async () => {
+      const { withDetails, postSpy } = await setup();
+      vi.setSystemTime(new Date(2026, 10, 12, 23, 59));
+      await withDetails.checkDayChange();
+      expect(postSpy).not.toHaveBeenCalled();
+    });
+
+    it('keeps the selected day across refreshes', async () => {
+      const { withDetails, postSpy } = await setup();
+      await withDetails.handleMessage({ type: 'selectDay', date: '2026-11-20' });
+      await withDetails.refresh();
+      expect(postSpy).toHaveBeenLastCalledWith(expect.objectContaining({ selectedDate: '2026-11-20' }));
+    });
   });
 });
 
