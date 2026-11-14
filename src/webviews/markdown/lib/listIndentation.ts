@@ -305,5 +305,177 @@ export const exitEmptyListItem: StateCommand = ({ state, dispatch }) => {
   return true;
 };
 
+/**
+ * Shift-Enter in a list item: splits the line at the cursor and continues the same item on a new
+ * line without a marker, indented to the item's content column (keeping a blockquote prefix).
+ * Returns false outside list items so the default Shift-Enter applies.
+ */
+export const insertListLineBreak: StateCommand = ({ state, dispatch }) => {
+  if (state.readOnly || state.selection.ranges.length !== 1) return false;
+  const range = state.selection.main;
+
+  const tree = getListTree(state);
+  if (!tree || isInsideNode(tree, range.from, 'Table')) return false;
+
+  const line = state.doc.lineAt(range.from);
+  const node = findListItemAtLine(state, tree, line);
+  const info = node ? toListItemInfo(state, node) : null;
+  if (!node || !info) return false;
+
+  // Text may only be split after the marker; on continuation lines after the indentation
+  const contentStart =
+    info.startLine === line.number
+      ? info.markTo + (line.text.slice(info.markTo - line.from).match(/^ */)![0].length)
+      : line.from + line.text.match(/^(?:[ \t]*>)*[ \t]*/)![0].length;
+  if (range.from < (info.startLine === line.number ? info.markTo : line.from)) return false;
+
+  // Drop spaces around the break so no trailing or leading spaces remain
+  let from = range.from;
+  while (from > contentStart && line.text[from - 1 - line.from] === ' ') from--;
+  let to = range.to;
+  const toLine = state.doc.lineAt(to);
+  while (to < toLine.to && state.doc.sliceString(to, to + 1) === ' ') to++;
+
+  let prefix = '';
+  if (hasAncestor(node, 'Blockquote')) {
+    const quoteLen = quotePrefixLength(line.text);
+    prefix = line.text.slice(0, quoteLen) + (line.text[quoteLen] === ' ' ? ' ' : '');
+  }
+  const pad = Math.max(0, info.contentCol - countColumn(prefix, state.tabSize));
+  const insert = '\n' + prefix + ' '.repeat(pad);
+
+  dispatch(
+    state.update({
+      changes: { from, to, insert },
+      selection: { anchor: from + insert.length },
+      scrollIntoView: true,
+      userEvent: 'input',
+    })
+  );
+  return true;
+};
+
+/** Whether the text of `line` is a paragraph line of `item` itself (not code, a table or a nested block). */
+function isParagraphLineOf(tree: Tree, line: Line, item: SyntaxNode): boolean {
+  const contentStart = line.text.match(/^(?:[ \t]*>)*[ \t]*/)![0].length;
+  for (let node: SyntaxNode | null = tree.resolveInner(line.from + contentStart, 1); node; node = node.parent) {
+    if (node.name === 'Paragraph') return node.parent?.from === item.from && node.parent.name === 'ListItem';
+    if (node.name === 'ListItem' || node.name === 'Document') return false;
+  }
+  return false;
+}
+
+/** Renumbers the ordered list containing the item whose marker starts at `markPos`, consecutively from its first number. */
+function renumberListAt(state: EditorState, markPos: number): ChangeSet | null {
+  const tree = getListTree(state);
+  if (!tree) return null;
+  let node: SyntaxNode | null = tree.resolveInner(markPos, 1);
+  while (node && node.name !== 'ListItem') node = node.parent;
+  const list = node?.parent;
+  if (!list || list.name !== 'OrderedList') return null;
+
+  const changes: ChangeSpec[] = [];
+  let number: number | null = null;
+  for (let child = list.firstChild; child; child = child.nextSibling) {
+    const info = toListItemInfo(state, child);
+    if (!info) continue;
+    const current = info.markText.match(/^(\d+)/);
+    if (!current) continue;
+    if (number === null) number = parseInt(current[1], 10);
+    else if (parseInt(current[1], 10) !== number) {
+      changes.push({ from: info.markFrom, to: info.markFrom + current[1].length, insert: String(number) });
+    }
+    number++;
+  }
+  return changes.length ? state.changes(changes) : null;
+}
+
+/**
+ * Enter on a continuation line of a list item (e.g. after Shift+Enter) starts a new item of the
+ * same list below it. On the indented empty line right after Shift+Enter, that line becomes the item.
+ * Returns false otherwise so the default Markdown Enter applies.
+ */
+export const insertItemFromContinuation: StateCommand = ({ state, dispatch }) => {
+  if (state.readOnly || state.selection.ranges.length !== 1) return false;
+  const range = state.selection.main;
+  const tree = getListTree(state);
+  if (!tree || isInsideNode(tree, range.from, 'Table')) return false;
+
+  const line = state.doc.lineAt(range.from);
+  if (state.doc.lineAt(range.to).number !== line.number) return false;
+
+  const lineContentStart = line.text.match(/^(?:[ \t]*>)*[ \t]*/)![0].length;
+  const blank = lineContentStart >= line.text.length;
+  let node: SyntaxNode | null;
+  if (blank) {
+    // Indented empty line directly below an item's text
+    if (line.text.length === 0 || line.number === 1) return false;
+    node = findListItemAtLine(state, tree, state.doc.line(line.number - 1));
+  } else {
+    node = findListItemAtLine(state, tree, line);
+  }
+  const info = node ? toListItemInfo(state, node) : null;
+  if (!node || !info) return false;
+
+  if (blank) {
+    if (countColumn(line.text, state.tabSize) < info.contentCol) return false;
+  } else if (info.startLine === line.number || !isParagraphLineOf(tree, line, node)) {
+    return false;
+  }
+
+  let prefix = '';
+  if (hasAncestor(node, 'Blockquote')) {
+    const quoteLen = quotePrefixLength(line.text);
+    prefix = line.text.slice(0, quoteLen) + (line.text[quoteLen] === ' ' ? ' ' : '');
+  }
+  const markLine = state.doc.lineAt(info.markFrom);
+  const isTask = /^\s+\[[ xX]\]/.test(markLine.text.slice(info.markTo - markLine.from));
+  const numbered = info.markText.match(/^(\d+)(.*)$/);
+  const marker = numbered ? `${parseInt(numbered[1], 10) + 1}${numbered[2]}` : info.markText;
+  const indent = ' '.repeat(Math.max(0, info.indentCol - countColumn(prefix, state.tabSize)));
+  const itemStart = prefix + indent + marker + ' ' + (isTask ? '[ ] ' : '');
+
+  let changes: ChangeSet;
+  let markPos: number;
+  let cursor: number;
+  if (blank) {
+    changes = state.changes({ from: line.from, to: line.to, insert: itemStart });
+    markPos = line.from + prefix.length + indent.length;
+    cursor = line.from + itemStart.length;
+  } else {
+    let from = range.from;
+    const minFrom = line.from + lineContentStart;
+    while (from > minFrom && line.text[from - 1 - line.from] === ' ') from--;
+    let to = range.to;
+    while (to < line.to && line.text[to - line.from] === ' ') to++;
+    changes = state.changes({ from, to, insert: '\n' + itemStart });
+    markPos = from + 1 + prefix.length + indent.length;
+    cursor = from + 1 + itemStart.length;
+  }
+
+  if (numbered) {
+    const renumber = renumberListAt(state.update({ changes }).state, markPos);
+    if (renumber) {
+      cursor = renumber.mapPos(cursor, 1);
+      changes = changes.compose(renumber);
+    }
+  }
+
+  dispatch(
+    state.update({
+      changes,
+      selection: { anchor: cursor },
+      scrollIntoView: true,
+      userEvent: 'input',
+    })
+  );
+  return true;
+};
+
+/** Enter on list lines: leave empty items, or start a new item after a continuation line. */
+const listEnter: StateCommand = (target) => exitEmptyListItem(target) || insertItemFromContinuation(target);
+
 /** Enter bindings that must run before the Markdown keymap's list continuation. */
-export const listEnterKeymap: readonly KeyBinding[] = [{ key: 'Enter', run: exitEmptyListItem }];
+export const listEnterKeymap: readonly KeyBinding[] = [
+  { key: 'Enter', run: listEnter, shift: insertListLineBreak },
+];

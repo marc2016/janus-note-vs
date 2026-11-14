@@ -114,7 +114,8 @@ export function listItemDepth(node: SyntaxNode): number {
 export function getListDepthAt(state: EditorState, tree: Tree, markerPos: number): number | null {
   let node: SyntaxNode | null = tree.resolveInner(markerPos, 1);
   while (node && node.name !== 'ListItem') node = node.parent;
-  if (!node || node.from !== markerPos) return null;
+  // A ListItem may start before its marker when it is indented further than needed (`- A` / `    - B`)
+  if (!node || node.getChild('ListMark')?.from !== markerPos) return null;
   return listItemDepth(node);
 }
 

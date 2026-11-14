@@ -6,10 +6,16 @@ import {
   ViewUpdate,
   WidgetType,
 } from '@codemirror/view';
-import { Range, Extension, EditorState } from '@codemirror/state';
+import { Range, Extension, EditorState, Line } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
-import type { Tree } from '@lezer/common';
-import { getAvailableTree, getListDepthAt } from '../lib/listStructure';
+import type { SyntaxNode, Tree } from '@lezer/common';
+import {
+  getAvailableTree,
+  getListDepthAt,
+  hasAncestor,
+  listItemDepth,
+  toListItemInfo,
+} from '../lib/listStructure';
 
 class BulletWidget extends WidgetType {
   constructor(
@@ -38,27 +44,30 @@ class BulletWidget extends WidgetType {
   }
 }
 
+/** Left padding of a list line before its marker: base plus one marker slot per nesting level. */
+const LEVEL_BASE_REM = 0.5;
+const LEVEL_STEP_REM = 1.25;
+
+/** Rendered widths of the list prefixes (marker plus gap), used for the hanging indent. */
+const BULLET_WIDTH = '1.25rem';
+const TASK_WIDTH = 'calc(1.25rem + 20px)';
+const orderedWidth = (markLength: number) => `calc(${markLength}ch + 0.5em)`;
+
+const hiddenSpaces = Decoration.replace({});
+
 export const styledListsTheme = EditorView.baseTheme({
+  // Text of marker lines, wrapped lines and continuation lines starts after the marker slot;
+  // the marker itself is pulled back into the padding by the negative text-indent.
   '.cm-line.cm-list-item': {
-    paddingLeft: '0.5rem',
+    paddingLeft: 'calc(var(--cm-list-pad, 0.5rem) + var(--cm-list-marker, 1.25rem))',
+    textIndent: 'calc(-1 * var(--cm-list-marker, 1.25rem))',
   },
-  '.cm-line.cm-list-item.cm-list-level-1': {
-    paddingLeft: '1.75rem',
+  '.cm-line.cm-list-continuation': {
+    paddingLeft: 'calc(var(--cm-list-pad, 0.5rem) + var(--cm-list-marker, 1.25rem))',
   },
-  '.cm-line.cm-list-item.cm-list-level-2': {
-    paddingLeft: '3rem',
-  },
-  '.cm-line.cm-list-item.cm-list-level-3': {
-    paddingLeft: '4.25rem',
-  },
-  '.cm-line.cm-list-item.cm-list-level-4': {
-    paddingLeft: '5.5rem',
-  },
-  '.cm-line.cm-list-item.cm-list-level-5': {
-    paddingLeft: '6.75rem',
-  },
-  '.cm-line.cm-list-item.cm-list-level-6': {
-    paddingLeft: '8rem',
+  // text-indent is inherited by inline blocks (bullets, checkboxes, images) and must not apply there
+  '.cm-line.cm-list-item *': {
+    textIndent: '0',
   },
   '.cm-bullet-marker': {
     display: 'inline-block',
@@ -79,7 +88,15 @@ export const styledListsTheme = EditorView.baseTheme({
     fontSize: '0.85em',
     opacity: '0.75',
   },
+  '.cm-task-list-dash': {
+    display: 'inline-block',
+    width: '1.25rem',
+    textAlign: 'center',
+    whiteSpace: 'pre',
+  },
   '.cm-ordered-list-mark': {
+    display: 'inline-block',
+    minWidth: 'var(--cm-list-marker)',
     color: 'var(--vscode-descriptionForeground, rgba(156, 163, 175, 0.9))',
     fontVariantNumeric: 'tabular-nums',
     fontWeight: '600',
@@ -95,6 +112,47 @@ function listLevel(state: EditorState, tree: Tree, markerPos: number, indent: nu
   return Math.min(depth ?? Math.floor(indent / 2), 6);
 }
 
+interface ListLineStyle {
+  level: number;
+  marker: string;
+}
+
+function lineAttributes({ level, marker }: ListLineStyle): Record<string, string> {
+  return { style: `--cm-list-pad: ${LEVEL_BASE_REM + level * LEVEL_STEP_REM}rem; --cm-list-marker: ${marker}` };
+}
+
+/** Marker width of a list item, derived from its marker line. */
+function markerWidthOf(state: EditorState, item: SyntaxNode): string | null {
+  const info = toListItemInfo(state, item);
+  if (!info) return null;
+  if (info.ordered) return orderedWidth(info.markText.length);
+  const line = state.doc.lineAt(info.markFrom);
+  const rest = line.text.slice(info.markTo - line.from);
+  return /^\s+\[[ xX]\]/.test(rest) ? TASK_WIDTH : BULLET_WIDTH;
+}
+
+/**
+ * List item whose paragraph continues on `line` (a line without its own marker), or null.
+ * Lines in code blocks, tables, headings or blockquotes are not continuation lines.
+ */
+function continuationItem(state: EditorState, tree: Tree, line: Line): SyntaxNode | null {
+  const contentStart = line.text.match(/^[ \t]*/)![0].length;
+  if (contentStart >= line.text.length) return null;
+  for (let node: SyntaxNode | null = tree.resolveInner(line.from + contentStart, 1); node; node = node.parent) {
+    if (node.name === 'Paragraph') {
+      const item = node.parent;
+      if (!item || item.name !== 'ListItem' || hasAncestor(item, 'Blockquote')) return null;
+      return state.doc.lineAt(item.from).number < line.number ? item : null;
+    }
+    if (node.name === 'ListItem' || node.name === 'Document') return null;
+  }
+  return null;
+}
+
+function hideIndentation(builder: Range<Decoration>[], line: Line, length: number) {
+  if (length > 0) builder.push(hiddenSpaces.range(line.from, line.from + length));
+}
+
 export function buildListDecorations(
   state: EditorState,
   ranges: readonly { from: number; to: number }[]
@@ -103,67 +161,96 @@ export function buildListDecorations(
   const tree = getAvailableTree(state, ranges.length ? ranges[ranges.length - 1].to : 0);
 
   for (const { from, to } of ranges) {
+    // Style of the list item on the previous line, for whitespace-only lines inside it
+    let lastItem: ListLineStyle | null = null;
     let pos = from;
     while (pos <= to) {
       const line = state.doc.lineAt(pos);
+      let current: ListLineStyle | null = null;
 
       // Check for task list items first: optional whitespace + bullet + space + [ ] or [x]
-      const isTaskList = /^(\s*[-*+]\s+)\[([ xX])\]/.test(line.text);
-      if (isTaskList) {
-        const indentMatch = line.text.match(/^(\s*)/);
-        const indent = indentMatch ? indentMatch[1].length : 0;
-        const level = listLevel(state, tree, line.from + indent, indent);
+      const taskMatch = line.text.match(/^(\s*)([-*+]\s+)\[([ xX])\](\s*)/);
+      const bulletMatch = taskMatch ? null : line.text.match(/^(\s*)([-*+])(\s+)/);
+      const orderedMatch = taskMatch || bulletMatch ? null : line.text.match(/^(\s*)(\d+[.)])(\s+)/);
+
+      if (taskMatch) {
+        const indent = taskMatch[1].length;
+        const markerPos = line.from + indent;
+        current = { level: listLevel(state, tree, markerPos, indent), marker: TASK_WIDTH };
         builder.push(
           Decoration.line({
-            class: `cm-list-item cm-task-list-item cm-list-level-${level}`,
+            class: `cm-list-item cm-task-list-item cm-list-level-${current.level}`,
+            attributes: lineAttributes(current),
           }).range(line.from)
         );
-      } else {
-        // Match unordered list items: optional whitespace + bullet (- or * or +) + at least one space
-        const bulletMatch = line.text.match(/^(\s*)([-*+])(\s+)/);
-        if (bulletMatch) {
-          const indent = bulletMatch[1].length;
-          const markerChar = bulletMatch[2];
-          const markerPos = line.from + indent;
-          const level = listLevel(state, tree, markerPos, indent);
+        hideIndentation(builder, line, indent);
+        // Fixed-width slot for `- `; the checkbox widget replaces `[ ]` and brings its own gap
+        builder.push(
+          Decoration.mark({ class: 'cm-task-list-dash' }).range(markerPos, markerPos + taskMatch[2].length)
+        );
+        const afterBox = markerPos + taskMatch[2].length + 3;
+        if (taskMatch[4].length > 0) builder.push(hiddenSpaces.range(afterBox, afterBox + taskMatch[4].length));
+      } else if (bulletMatch) {
+        const indent = bulletMatch[1].length;
+        const markerChar = bulletMatch[2];
+        const markerPos = line.from + indent;
+        current = { level: listLevel(state, tree, markerPos, indent), marker: BULLET_WIDTH };
 
-          // Line decoration for hierarchical indentation
+        // Line decoration for hierarchical indentation and the hanging indent
+        builder.push(
+          Decoration.line({
+            class: `cm-list-item cm-bullet-list-item cm-list-level-${current.level}`,
+            attributes: lineAttributes(current),
+          }).range(line.from)
+        );
+        hideIndentation(builder, line, indent);
+
+        // Replace the marker character and the following spaces with the BulletWidget
+        builder.push(
+          Decoration.replace({
+            widget: new BulletWidget(markerChar, current.level),
+          }).range(markerPos, markerPos + 1 + bulletMatch[3].length)
+        );
+      } else if (orderedMatch) {
+        const indent = orderedMatch[1].length;
+        const markerPos = line.from + indent;
+        const markerLen = orderedMatch[2].length;
+        current = { level: listLevel(state, tree, markerPos, indent), marker: orderedWidth(markerLen) };
+
+        builder.push(
+          Decoration.line({
+            class: `cm-list-item cm-ordered-list-item cm-list-level-${current.level}`,
+            attributes: lineAttributes(current),
+          }).range(line.from)
+        );
+        hideIndentation(builder, line, indent);
+
+        // The mark has the width of the marker slot; the spaces after it are not drawn
+        builder.push(Decoration.mark({ class: 'cm-ordered-list-mark' }).range(markerPos, markerPos + markerLen));
+        builder.push(
+          hiddenSpaces.range(markerPos + markerLen, markerPos + markerLen + orderedMatch[3].length)
+        );
+      } else {
+        const item = continuationItem(state, tree, line);
+        const marker = item ? markerWidthOf(state, item) : null;
+        if (item && marker) {
+          current = { level: Math.min(listItemDepth(item), 6), marker };
+        } else if (lastItem && line.text.length > 0 && line.text.trim() === '') {
+          // Indented empty line inside an item (e.g. right after Shift+Enter)
+          current = lastItem;
+        }
+        if (current) {
           builder.push(
             Decoration.line({
-              class: `cm-list-item cm-bullet-list-item cm-list-level-${level}`,
+              class: `cm-list-continuation cm-list-level-${current.level}`,
+              attributes: lineAttributes(current),
             }).range(line.from)
           );
-
-          // Replace the marker character + 1 space (2 characters) with the BulletWidget
-          builder.push(
-            Decoration.replace({
-              widget: new BulletWidget(markerChar, level),
-            }).range(markerPos, markerPos + 2)
-          );
-        } else {
-          // Match ordered list items: optional whitespace + numbers + . or ) + at least one space
-          const orderedMatch = line.text.match(/^(\s*)(\d+[.)])(\s+)/);
-          if (orderedMatch) {
-            const indent = orderedMatch[1].length;
-            const markerPos = line.from + indent;
-            const level = listLevel(state, tree, markerPos, indent);
-            const markerLen = orderedMatch[2].length;
-
-            builder.push(
-              Decoration.line({
-                class: `cm-list-item cm-ordered-list-item cm-list-level-${level}`,
-              }).range(line.from)
-            );
-
-            builder.push(
-              Decoration.mark({
-                class: 'cm-ordered-list-mark',
-              }).range(markerPos, markerPos + markerLen)
-            );
-          }
+          hideIndentation(builder, line, line.text.match(/^[ \t]*/)![0].length);
         }
       }
 
+      lastItem = current;
       if (line.to >= state.doc.length) break;
       pos = line.to + 1;
     }
