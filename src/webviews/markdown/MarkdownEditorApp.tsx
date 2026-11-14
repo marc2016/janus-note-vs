@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { EditorState, Compartment, Transaction } from '@codemirror/state';
-import { EditorView, keymap, drawSelection, dropCursor } from '@codemirror/view';
+import { EditorView, drawSelection, dropCursor } from '@codemirror/view';
 import { history } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { Table } from '@lezer/markdown';
@@ -39,7 +39,7 @@ import {
   NotesLinksFooter,
   NoteLinksData,
 } from './components/NotesLinksFooter';
-import { markdownEditorKeymap } from './lib/editorKeymap';
+import { markdownEditorKeymapExtensions } from './lib/editorKeymap';
 import { singleUndoHistory } from './lib/undoRedo';
 import { saveShortcut } from './lib/saveShortcut';
 import { DocumentSync } from './lib/documentSync';
@@ -378,7 +378,8 @@ export const MarkdownEditorApp: React.FC = () => {
         dropCursor(),
         singleUndoHistory(),
         saveShortcut(() => requestSaveRef.current()),
-        keymap.of(markdownEditorKeymap),
+        // Before markdown(): empty list items handle Enter ahead of the Markdown list continuation
+        markdownEditorKeymapExtensions(),
         markdown({ extensions: [Table] }),
         livePreview(syntaxMode),
         clickableLinks({

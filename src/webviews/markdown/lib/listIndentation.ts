@@ -258,3 +258,52 @@ export const outdentListOrLines: StateCommand = changeIndentation(-1);
 export const listIndentationKeymap: readonly KeyBinding[] = [
   { key: 'Tab', run: indentListOrLines, shift: outdentListOrLines },
 ];
+
+/** Text after the marker of an empty list item: only spaces, optionally with a task checkbox. */
+const EMPTY_ITEM_REST = /^ *(?:\[[ xX]\] *)?$/;
+
+/**
+ * Enter on an empty list item leaves it instead of continuing the list: a nested item moves one
+ * level up (like Shift-Tab), a top-level item loses its marker and the list ends.
+ * Returns false for every other case so the default Markdown Enter handles it.
+ */
+export const exitEmptyListItem: StateCommand = ({ state, dispatch }) => {
+  if (state.readOnly) return false;
+  const { ranges, main } = state.selection;
+  if (ranges.length !== 1 || !main.empty) return false;
+
+  const tree = getListTree(state);
+  if (!tree) return false;
+
+  const line = state.doc.lineAt(main.head);
+  const node = findListItemAtLine(state, tree, line);
+  const info = node ? toListItemInfo(state, node) : null;
+  // Single-line items only: an item spanning more lines has children or continuation text
+  if (!node || !info || info.startLine !== line.number || info.endLine !== line.number) return false;
+  if (main.head < info.markTo) return false;
+  if (!EMPTY_ITEM_REST.test(state.doc.sliceString(info.markTo, line.to))) return false;
+
+  if (parentItem(node)) {
+    return outdentListOrLines({ state, dispatch });
+  }
+
+  // Top level: clear the line, keeping a blockquote prefix (`> `)
+  let keep = 0;
+  if (hasAncestor(node, 'Blockquote')) {
+    keep = quotePrefixLength(line.text);
+    if (line.text[keep] === ' ') keep++;
+  }
+  const from = line.from + keep;
+  dispatch(
+    state.update({
+      changes: { from, to: line.to },
+      selection: { anchor: from },
+      scrollIntoView: true,
+      userEvent: 'delete',
+    })
+  );
+  return true;
+};
+
+/** Enter bindings that must run before the Markdown keymap's list continuation. */
+export const listEnterKeymap: readonly KeyBinding[] = [{ key: 'Enter', run: exitEmptyListItem }];
