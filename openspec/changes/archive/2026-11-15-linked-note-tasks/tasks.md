@@ -26,4 +26,4 @@
 ## 5. Verification
 
 - [x] 5.1 Run `npm test` and `npm run build`; all tests pass
-- [ ] 5.2 Manual check: `/aufgabe` on text, a checkbox and an empty line, save, task appears in the folder list and the global list; check it in the list and in the calendar while the note is open with another unsaved change; rename in the list; check in the note and save; move the line to a note in another folder; delete the task in the list (ID disappears, line stays); ID hidden in auto mode except on the cursor line, symbol visible; AI extraction does not duplicate a linked line
+- [x] 5.2 Manual check: `/aufgabe` on text, a checkbox and an empty line, save, task appears in the folder list and the global list; check it in the list and in the calendar while the note is open with another unsaved change; rename in the list; check in the note and save; move the line to a note in another folder; delete the task in the list (ID disappears, line stays); ID hidden in auto mode except on the cursor line, symbol visible; AI extraction does not duplicate a linked line
