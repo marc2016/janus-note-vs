@@ -131,6 +131,9 @@ export const TaskListApp: React.FC = () => {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // Task to highlight briefly (from a click on a linked task line); waits until the task is loaded
+  const [highlightRequest, setHighlightRequest] = useState<{ id: string; until: number } | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   useEffect(() => {
     getVsCodeApi()?.setState(viewState);
@@ -166,6 +169,8 @@ export const TaskListApp: React.FC = () => {
           }
           return incomingGroups[0]?.uri || '';
         });
+      } else if (message.type === 'highlightTask' && typeof message.taskId === 'string') {
+        setHighlightRequest({ id: message.taskId, until: Date.now() + 3000 });
       } else if (message.type === 'error') {
         setError(message.message);
       }
@@ -174,6 +179,28 @@ export const TaskListApp: React.FC = () => {
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, []);
+
+  useEffect(() => {
+    if (!highlightRequest) return;
+    if (Date.now() > highlightRequest.until) {
+      setHighlightRequest(null);
+      return;
+    }
+    const task = tasks.find((t) => t.id === highlightRequest.id);
+    // A task created by the save that opened this list may arrive with the next update
+    if (!task) return;
+    setHighlightRequest(null);
+    setSearchQuery('');
+    if (task.completed) {
+      setViewState((prev) => ({ ...prev, collapsed: { ...prev.collapsed, 'done:folder': false } }));
+    }
+    setHighlightedId(task.id);
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-task-id="${CSS.escape(task.id)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+    const timer = setTimeout(() => setHighlightedId(null), 1800);
+    return () => clearTimeout(timer);
+  }, [highlightRequest, tasks]);
 
   const notifyFolderUpdate = (updatedTasks: TaskItem[]) => {
     const api = getVsCodeApi();
@@ -371,14 +398,23 @@ export const TaskListApp: React.FC = () => {
     // A search reveals matching completed tasks without touching the remembered state
     const doneCollapsed = isSearching ? false : isCollapsed(viewState.collapsed, doneKey);
     const renderRow = (task: TaskItem) => (
-      <TaskChecklistRow
+      <div
         key={task.id}
-        task={task}
-        onToggle={() => handleToggleTask(task, folderUri)}
-        onUpdate={(changes) => handleUpdateTaskField(task, changes, folderUri)}
-        onDelete={() => handleDeleteTask(task.id, folderUri)}
-        onOpenNote={(note) => handleOpenNote(note, folderUri ?? task.folderUri)}
-      />
+        data-task-id={task.id}
+        className={`transition-colors duration-700 ${
+          highlightedId === task.id
+            ? 'bg-[var(--vscode-editor-findMatchHighlightBackground,rgba(234,92,0,0.33))]'
+            : ''
+        }`}
+      >
+        <TaskChecklistRow
+          task={task}
+          onToggle={() => handleToggleTask(task, folderUri)}
+          onUpdate={(changes) => handleUpdateTaskField(task, changes, folderUri)}
+          onDelete={() => handleDeleteTask(task.id, folderUri)}
+          onOpenNote={(note) => handleOpenNote(note, folderUri ?? task.folderUri)}
+        />
+      </div>
     );
 
     return (

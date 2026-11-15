@@ -5,6 +5,21 @@ import { MarkdownEditorProvider } from './markdownEditorProvider';
 
 export class TasksEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'janus.tasksEditor';
+  /** Open task list panels by document URI, and whether their webview has reported `ready`. */
+  private static readonly panels = new Map<string, { panel: vscode.WebviewPanel; ready: boolean }>();
+  /** Highlight requests for task lists whose webview is not ready yet. */
+  private static readonly pendingHighlights = new Map<string, string>();
+
+  /** Briefly highlights a task in the task list of `tasksUri`, now or as soon as that list is ready. */
+  static highlightTask(tasksUri: vscode.Uri, taskId: string): void {
+    const key = tasksUri.toString();
+    const entry = TasksEditorProvider.panels.get(key);
+    if (entry?.ready) {
+      void entry.panel.webview.postMessage({ type: 'highlightTask', taskId });
+    } else {
+      TasksEditorProvider.pendingHighlights.set(key, taskId);
+    }
+  }
   private readonly _onDidChangeActiveCustomEditor = new vscode.EventEmitter<vscode.Uri>();
   public readonly onDidChangeActiveCustomEditor = this._onDidChangeActiveCustomEditor.event;
 
@@ -48,6 +63,8 @@ export class TasksEditorProvider implements vscode.CustomTextEditorProvider {
     };
 
     webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview, document);
+    const panelKey = document.uri.toString();
+    TasksEditorProvider.panels.set(panelKey, { panel: webviewPanel, ready: false });
 
     const updateWebview = () => {
       try {
@@ -72,6 +89,13 @@ export class TasksEditorProvider implements vscode.CustomTextEditorProvider {
     webviewPanel.webview.onDidReceiveMessage(async (message) => {
       if (message.type === 'ready') {
         updateWebview();
+        const entry = TasksEditorProvider.panels.get(panelKey);
+        if (entry) entry.ready = true;
+        const pending = TasksEditorProvider.pendingHighlights.get(panelKey);
+        if (pending) {
+          TasksEditorProvider.pendingHighlights.delete(panelKey);
+          void webviewPanel.webview.postMessage({ type: 'highlightTask', taskId: pending });
+        }
         return;
       }
 
@@ -142,6 +166,9 @@ export class TasksEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     webviewPanel.onDidDispose(() => {
+      if (TasksEditorProvider.panels.get(panelKey)?.panel === webviewPanel) {
+        TasksEditorProvider.panels.delete(panelKey);
+      }
       viewStateSubscription.dispose();
       changeDocumentSubscription.dispose();
     });

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AiModelService } from './aiModelService';
 import { FolderTasksService } from './folderTasksService';
 import { TaskItem, TaskItemSchema, TaskPrioritySchema } from '../models/tasks';
+import { withoutLinkedTaskLines } from './linkedTaskLines';
 
 const ExtractedTaskSchema = z.object({
   title: z.string().min(1),
@@ -200,10 +201,12 @@ export class AiTaskGeneratorService {
     noteContent?: string,
     token?: vscode.CancellationToken
   ): Promise<GenerateTasksResult> {
-    const text =
+    // Linked task lines are already in the task list and must not be extracted again
+    const text = withoutLinkedTaskLines(
       noteContent !== undefined
         ? noteContent
-        : Buffer.from(await vscode.workspace.fs.readFile(noteUri)).toString('utf-8');
+        : Buffer.from(await vscode.workspace.fs.readFile(noteUri)).toString('utf-8')
+    );
 
     const folderDir = path.dirname(noteUri.fsPath);
     const tasksUri = vscode.Uri.file(path.join(folderDir, 'tasks.json'));

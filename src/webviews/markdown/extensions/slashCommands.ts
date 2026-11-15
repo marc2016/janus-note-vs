@@ -9,6 +9,7 @@ import { Extension } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { formatIsoDate } from '../lib/datePickerUtils';
 import { MERMAID_PLACEHOLDER } from '../../../services/markdownScan';
+import { newLinkedTaskId, parseLinkedTaskLine } from '../../../services/linkedTaskLines';
 
 export interface SlashCommandsOptions {
   onOpenDatePicker?: (pos: number, coords: { top: number; left: number } | null) => void;
@@ -18,6 +19,34 @@ export interface SlashCommandsOptions {
   onAiDiagram?: (blockFrom: number) => void;
 }
 
+/**
+ * Turns the line containing the command into a linked task line (`- [ ] Title ^t-xxxxxx`), keeping
+ * indentation and blockquote prefix. The task itself is created by the host when the note is saved.
+ */
+export function applyLinkedTask(view: EditorView, from: number, to: number): void {
+  const { state } = view;
+  const line = state.doc.lineAt(from);
+  const text = (line.text.slice(0, from - line.from) + line.text.slice(to - line.from)).replace(/\s+$/, '');
+
+  if (parseLinkedTaskLine(text)) {
+    view.dispatch({ changes: { from: line.from, to: line.to, insert: text }, selection: { anchor: line.from + text.length } });
+    return;
+  }
+
+  const prefix = text.match(/^\s*(?:>\s*)*/)![0];
+  const rest = text.slice(prefix.length).trim();
+  const task = rest.match(/^([-*+])\s+\[([ xX])\]\s*(.*)$/);
+  const item = task ? null : rest.match(/^([-*+])\s+(.*)$/);
+  const head = task ? `${task[1]} [${task[2]}] ` : item ? `${item[1]} [ ] ` : '- [ ] ';
+  const title = (task ? task[3] : item ? item[2] : rest).trim();
+  const id = newLinkedTaskId(state.doc.toString());
+  const insert = `${prefix}${head}${title} ^${id}`;
+  view.dispatch({
+    changes: { from: line.from, to: line.to, insert },
+    selection: { anchor: line.from + prefix.length + head.length + title.length },
+  });
+}
+
 export function getSlashCommands(options?: SlashCommandsOptions): Completion[] {
   return [
     {
@@ -25,6 +54,18 @@ export function getSlashCommands(options?: SlashCommandsOptions): Completion[] {
       detail: 'Task list item (- [ ])',
       type: 'keyword',
       apply: '- [ ] ',
+    },
+    {
+      label: '/aufgabe',
+      detail: 'Aufgabe für die Aufgabenliste',
+      type: 'keyword',
+      apply: (view: EditorView, _completion: Completion, from: number, to: number) => applyLinkedTask(view, from, to),
+    },
+    {
+      label: '/task',
+      detail: 'Aufgabe für die Aufgabenliste',
+      type: 'keyword',
+      apply: (view: EditorView, _completion: Completion, from: number, to: number) => applyLinkedTask(view, from, to),
     },
     {
       label: '/today',

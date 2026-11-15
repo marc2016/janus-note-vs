@@ -221,6 +221,26 @@ describe('aiTaskGeneration', () => {
       expect(result.totalTasks).toBe(2);
       expect(writeSpy).toHaveBeenCalledTimes(1);
     });
+
+    it('does not send linked task lines to the model', async () => {
+      const aiModelService = new AiModelService(mockContext);
+      const folderTasksService = new FolderTasksService();
+      const generator = new AiTaskGeneratorService(aiModelService, folderTasksService);
+      vi.spyOn(folderTasksService, 'readFolderCompanion').mockResolvedValue({ version: 1, title: 'A', tasks: [] });
+      vi.spyOn(folderTasksService, 'writeFolderCompanion').mockResolvedValue(undefined);
+      const completeSpy = vi
+        .spyOn(aiModelService, 'completePrompt')
+        .mockResolvedValue(JSON.stringify({ tasks: [{ title: 'Folien bauen', priority: 'medium' }] }));
+
+      await generator.generateTasksForNote(
+        vscode.Uri.file('/workspace/notes/projekt-alpha/meeting.md'),
+        '# Meeting\n- [ ] Angebot schicken ^t-7f3a9k\nWir müssen noch die Folien bauen.'
+      );
+
+      const userPrompt = completeSpy.mock.calls[0][1];
+      expect(userPrompt).not.toContain('Angebot schicken');
+      expect(userPrompt).toContain('Folien bauen');
+    });
   });
 
   describe('AiTaskGeneratorService.extractTasksFromBlocks', () => {

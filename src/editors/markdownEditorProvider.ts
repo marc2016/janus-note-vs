@@ -815,6 +815,11 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       return;
     }
 
+    if (message.type === 'openLinkedTask') {
+      await this.openLinkedTaskList(document, typeof message.taskId === 'string' ? message.taskId : undefined);
+      return;
+    }
+
     if (message.type === 'openSource') {
       await vscode.window.showTextDocument(document, {
         viewColumn: vscode.ViewColumn.Beside,
@@ -1078,6 +1083,37 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       } catch (error: any) {
         vscode.window.showErrorMessage('Failed to update markdown file: ' + error.message);
       }
+    }
+  }
+
+  /**
+   * Opens the task list of the note's folder, where its linked tasks live. Unsaved notes are saved first,
+   * because linked tasks are created and moved into that folder when the note is saved.
+   */
+  private async openLinkedTaskList(document: vscode.TextDocument, taskId?: string): Promise<void> {
+    const tasksUri = vscode.Uri.file(path.join(path.dirname(document.uri.fsPath), 'tasks.json'));
+    const exists = async () => {
+      try {
+        await vscode.workspace.fs.stat(tasksUri);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    if (document.isDirty) {
+      await document.save();
+    }
+    // The sync writes the task file right after the save
+    for (let i = 0; i < 20 && !(await exists()); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (!(await exists())) {
+      void vscode.window.showInformationMessage('Die Aufgabe erscheint in der Liste, sobald sie einen Titel hat.');
+      return;
+    }
+    await vscode.commands.executeCommand('vscode.openWith', tasksUri, TasksEditorProvider.viewType);
+    if (taskId) {
+      TasksEditorProvider.highlightTask(tasksUri, taskId);
     }
   }
 

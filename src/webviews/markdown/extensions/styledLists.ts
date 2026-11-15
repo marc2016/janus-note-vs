@@ -149,15 +149,17 @@ function continuationItem(state: EditorState, tree: Tree, line: Line): SyntaxNod
   return null;
 }
 
-function hideIndentation(builder: Range<Decoration>[], line: Line, length: number) {
-  if (length > 0) builder.push(hiddenSpaces.range(line.from, line.from + length));
-}
-
 export function buildListDecorations(
   state: EditorState,
   ranges: readonly { from: number; to: number }[]
 ): DecorationSet {
   const builder: Range<Decoration>[] = [];
+  // Text typed inside a hidden range would land elsewhere, so a range holding a cursor stays visible
+  const heads = state.selection.ranges.map((r) => r.head);
+  const hide = (from: number, to: number) => {
+    if (to > from && !heads.some((h) => h > from && h < to)) builder.push(hiddenSpaces.range(from, to));
+  };
+  const hideIndentation = (line: Line, length: number) => hide(line.from, line.from + length);
   const tree = getAvailableTree(state, ranges.length ? ranges[ranges.length - 1].to : 0);
 
   for (const { from, to } of ranges) {
@@ -183,13 +185,15 @@ export function buildListDecorations(
             attributes: lineAttributes(current),
           }).range(line.from)
         );
-        hideIndentation(builder, line, indent);
+        hideIndentation(line, indent);
         // Fixed-width slot for `- `; the checkbox widget replaces `[ ]` and brings its own gap
         builder.push(
           Decoration.mark({ class: 'cm-task-list-dash' }).range(markerPos, markerPos + taskMatch[2].length)
         );
+        // Only the first space after the checkbox is hidden: further spaces (e.g. before a task ID on an
+        // empty linked line) stay visible so the cursor never sits inside the hidden range
         const afterBox = markerPos + taskMatch[2].length + 3;
-        if (taskMatch[4].length > 0) builder.push(hiddenSpaces.range(afterBox, afterBox + taskMatch[4].length));
+        if (taskMatch[4].length > 0) hide(afterBox, afterBox + 1);
       } else if (bulletMatch) {
         const indent = bulletMatch[1].length;
         const markerChar = bulletMatch[2];
@@ -203,7 +207,7 @@ export function buildListDecorations(
             attributes: lineAttributes(current),
           }).range(line.from)
         );
-        hideIndentation(builder, line, indent);
+        hideIndentation(line, indent);
 
         // Replace the marker character and the following spaces with the BulletWidget
         builder.push(
@@ -223,13 +227,11 @@ export function buildListDecorations(
             attributes: lineAttributes(current),
           }).range(line.from)
         );
-        hideIndentation(builder, line, indent);
+        hideIndentation(line, indent);
 
         // The mark has the width of the marker slot; the spaces after it are not drawn
         builder.push(Decoration.mark({ class: 'cm-ordered-list-mark' }).range(markerPos, markerPos + markerLen));
-        builder.push(
-          hiddenSpaces.range(markerPos + markerLen, markerPos + markerLen + orderedMatch[3].length)
-        );
+        hide(markerPos + markerLen, markerPos + markerLen + orderedMatch[3].length);
       } else {
         const item = continuationItem(state, tree, line);
         const marker = item ? markerWidthOf(state, item) : null;
@@ -246,7 +248,7 @@ export function buildListDecorations(
               attributes: lineAttributes(current),
             }).range(line.from)
           );
-          hideIndentation(builder, line, line.text.match(/^[ \t]*/)![0].length);
+          hideIndentation(line, line.text.match(/^[ \t]*/)![0].length);
         }
       }
 
@@ -270,6 +272,7 @@ export const styledListsPlugin = ViewPlugin.fromClass(
     update(update: ViewUpdate) {
       if (
         update.docChanged ||
+        update.selectionSet ||
         update.viewportChanged ||
         syntaxTree(update.startState) !== syntaxTree(update.state)
       ) {

@@ -16,8 +16,8 @@ interface LineInfo {
   marks: string[];
 }
 
-function decorate(doc: string): Map<number, LineInfo> {
-  const state = EditorState.create({ doc, extensions: [markdown({ extensions: [Table] })] });
+function decorate(doc: string, cursor = 0): Map<number, LineInfo> {
+  const state = EditorState.create({ doc, selection: { anchor: cursor }, extensions: [markdown({ extensions: [Table] })] });
   const lines = new Map<number, LineInfo>();
   const get = (pos: number) => {
     const n = state.doc.lineAt(pos).number;
@@ -104,5 +104,16 @@ describe('list decorations for aligned text', () => {
     for (const n of [3, 4, 5, 7, 8, 10, 11]) {
       expect(lines.get(n)).toBeUndefined();
     }
+  });
+
+  it('never hides the position of the cursor (typing there would land elsewhere)', () => {
+    // Empty linked task line right after /aufgabe: cursor between the two spaces before the ID
+    const doc = '- [ ]  ^t-abcdef';
+    const line = decorate(doc, '- [ ] '.length).get(1)!;
+    expect(line.hidden).toEqual([' ']);
+
+    // Cursor inside the leading indentation of a nested item
+    const nested = decorate('- A\n    - B', '- A\n  '.length).get(2)!;
+    expect(nested.hidden).toEqual([]);
   });
 });

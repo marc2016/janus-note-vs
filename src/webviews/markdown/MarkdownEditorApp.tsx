@@ -13,6 +13,7 @@ import {
   syntaxVisibilityFacet,
 } from './extensions/livePreview';
 import { taskCheckboxes } from './extensions/taskCheckboxes';
+import { linkedTasks } from './extensions/linkedTasks';
 import { slashCommands } from './extensions/slashCommands';
 import {
   createLinkAutocompleteSource,
@@ -387,6 +388,9 @@ export const MarkdownEditorApp: React.FC = () => {
         }),
         styledLists(),
         taskCheckboxes(),
+        linkedTasks({
+          onOpenTask: (taskId) => getVsCodeApi()?.postMessage({ type: 'openLinkedTask', taskId }),
+        }),
         styledTables(),
         sortedLinksField,
         sortedLinksCompartment.of([]),

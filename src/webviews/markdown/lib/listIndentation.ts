@@ -1,6 +1,8 @@
-import { ChangeSet, ChangeSpec, EditorState, Line, StateCommand, countColumn } from '@codemirror/state';
+import { ChangeSet, ChangeSpec, EditorState, Line, StateCommand, Transaction, countColumn } from '@codemirror/state';
 import { KeyBinding } from '@codemirror/view';
 import { indentLess, indentMore } from '@codemirror/commands';
+import { insertNewlineContinueMarkup } from '@codemirror/lang-markdown';
+import { linkedTaskIdRange } from '../../../services/linkedTaskLines';
 import type { SyntaxNode, Tree } from '@lezer/common';
 import {
   ListItemInfo,
@@ -310,9 +312,34 @@ export const exitEmptyListItem: StateCommand = ({ state, dispatch }) => {
  * line without a marker, indented to the item's content column (keeping a blockquote prefix).
  * Returns false outside list items so the default Shift-Enter applies.
  */
+/**
+ * The line end to use instead of the cursor when an empty cursor sits in front of the (hidden) task ID of a
+ * linked task line, so line breaks keep the ID on its line; null otherwise.
+ */
+function lineEndBehindTaskId(state: EditorState): number | null {
+  const range = state.selection.main;
+  if (state.selection.ranges.length !== 1 || !range.empty) return null;
+  const line = state.doc.lineAt(range.head);
+  const idRange = linkedTaskIdRange(line.text);
+  return idRange && range.head >= line.from + idRange.from ? line.to : null;
+}
+
+/** Enter in front of the hidden task ID of a linked task line continues the list after the ID. */
+export const enterBehindTaskId: StateCommand = ({ state, dispatch }) => {
+  const lineEnd = lineEndBehindTaskId(state);
+  if (lineEnd === null || state.readOnly) return false;
+  const atLineEnd = state.update({ selection: { anchor: lineEnd }, filter: false }).state;
+  let result: Transaction | null = null;
+  if (!insertNewlineContinueMarkup({ state: atLineEnd, dispatch: (tr) => (result = tr) }) || !result) return false;
+  const tr: Transaction = result;
+  dispatch(state.update({ changes: tr.changes, selection: tr.selection, scrollIntoView: true, userEvent: 'input' }));
+  return true;
+};
+
 export const insertListLineBreak: StateCommand = ({ state, dispatch }) => {
   if (state.readOnly || state.selection.ranges.length !== 1) return false;
-  const range = state.selection.main;
+  const lineEnd = lineEndBehindTaskId(state);
+  const range = lineEnd === null ? state.selection.main : { from: lineEnd, to: lineEnd };
 
   const tree = getListTree(state);
   if (!tree || isInsideNode(tree, range.from, 'Table')) return false;
@@ -473,7 +500,8 @@ export const insertItemFromContinuation: StateCommand = ({ state, dispatch }) =>
 };
 
 /** Enter on list lines: leave empty items, or start a new item after a continuation line. */
-const listEnter: StateCommand = (target) => exitEmptyListItem(target) || insertItemFromContinuation(target);
+const listEnter: StateCommand = (target) =>
+  exitEmptyListItem(target) || insertItemFromContinuation(target) || enterBehindTaskId(target);
 
 /** Enter bindings that must run before the Markdown keymap's list continuation. */
 export const listEnterKeymap: readonly KeyBinding[] = [

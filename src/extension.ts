@@ -11,6 +11,7 @@ import { MarkdownEditorProvider, runUndoInboxSort, showInboxSortResult } from '.
 import { GlobalTasksViewProvider } from './editors/globalTasksViewProvider';
 import { CalendarViewProvider } from './editors/calendarViewProvider';
 import { CalendarDayDetailsViewProvider } from './editors/calendarDayDetailsViewProvider';
+import { LinkedTaskSync } from './services/linkedTaskSync';
 import { msUntilNextDay } from './services/calendarToday';
 import { SettingsViewProvider } from './editors/settingsViewProvider';
 import { FolderOverviewViewProvider } from './editors/folderOverviewViewProvider';
@@ -125,6 +126,8 @@ export function activate(context: vscode.ExtensionContext) {
     folderTasksService,
     () => notesTreeDataProvider.refresh()
   );
+  // Linked task lines in notes (`- [ ] Title ^t-xxxxxx`) stay in sync with their tasks in tasks.json
+  context.subscriptions.push(new LinkedTaskSync(() => companionManager.getNotesRootUri(), folderTasksService));
   const calendarViewProvider = new CalendarViewProvider(
     context,
     calendarService,
