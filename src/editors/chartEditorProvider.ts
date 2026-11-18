@@ -98,6 +98,10 @@ export class ChartEditorProvider implements vscode.CustomTextEditorProvider {
           const edit = new vscode.WorkspaceEdit();
           edit.replace(document.uri, fullRange, updatedJson);
           await vscode.workspace.applyEdit(edit);
+          // Persist immediately, like the task list editor (no manual save for diagram edits).
+          if (!(await document.save())) {
+            throw new Error('the file could not be saved');
+          }
         } catch (error: any) {
           vscode.window.showErrorMessage('Failed to update chart: ' + error.message);
         }

@@ -41,7 +41,7 @@ Alternative considered: a host timer that asks the webview to flush and then sav
 - `onFocusLost()`: in `afterDelay` and `onFocusChange` mode it cancels the timer and calls `save` immediately; in `off` mode does nothing.
 - `dispose()`
 
-`save` is the app's `requestSave` wrapped with a check that the note is dirty (`hostDirty || hasPendingEdits`), so a blur on a clean note does not save again. The delay is clamped to at least 250 ms in the module as well, as protection against hand-edited settings. Timers are injected so tests can use fake timers without a DOM.
+`save` is the app's `requestSave` wrapped with a check that the note has unsaved changes: the host dirty flag, or a local edit since the last save request (`editedSinceSaveRef`). The local flag is needed because after the 250 ms flush there are no pending edits, but the host may not have reported the document as dirty yet; checking only `hostDirty || hasPendingEdits` could skip a save on a quick focus change. A blur on a clean note does not save again. The delay is clamped to at least 250 ms in the module as well, as protection against hand-edited settings. Timers are injected so tests can use fake timers without a DOM.
 
 ### 3. Wiring in `MarkdownEditorApp.tsx`
 
@@ -50,7 +50,7 @@ Alternative considered: a host timer that asks the webview to flush and then sav
 - On unmount the app does not save. The webview may already be gone at that point, and VS Code asks about the unsaved document when the tab is closed. The `pagehide` and hidden handlers cover the normal tab switch and close cases before unmount.
 - `init` and a new `autoSaveConfig` message carry `{ mode, delay }` and call `scheduler.configure`.
 
-The dirty check uses refs (`hostDirtyRef`, `hasPendingEditsRef`), because the event handlers are registered once.
+The dirty check uses refs (`hostDirtyRef`, `editedSinceSaveRef`), because the event handlers are registered once.
 
 ### 4. Host side: read and push the setting
 

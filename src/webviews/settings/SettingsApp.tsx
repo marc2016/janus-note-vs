@@ -12,7 +12,18 @@ import {
   mdiDeleteOutline,
   mdiContentSaveOutline,
   mdiInboxArrowDown,
+  mdiPencilOutline,
 } from '@mdi/js';
+
+export type AutoSaveMode = 'off' | 'afterDelay' | 'onFocusChange';
+
+const AUTO_SAVE_OPTIONS: Array<{ value: AutoSaveMode; label: string }> = [
+  { value: 'off', label: 'Aus' },
+  { value: 'afterDelay', label: 'Nach Verzögerung' },
+  { value: 'onFocusChange', label: 'Bei Fokuswechsel' },
+];
+
+const MIN_AUTO_SAVE_DELAY = 250;
 
 export type AiProviderType =
   | 'vscode-lm'
@@ -37,6 +48,8 @@ export interface JanusSettingsState {
   inboxSortConfirm: boolean;
   inboxSortExtractTasks: boolean;
   notesRoot: string;
+  autoSave: AutoSaveMode;
+  autoSaveDelay: number;
   apiKeyStatus: Record<'openai' | 'anthropic' | 'gemini' | 'custom', boolean>;
   discoveredModels: {
     vscodeLm: AiModelOption[];
@@ -84,6 +97,8 @@ function getInitialState(): JanusSettingsState {
     inboxSortConfirm: true,
     inboxSortExtractTasks: false,
     notesRoot: '',
+    autoSave: 'afterDelay',
+    autoSaveDelay: 1000,
     apiKeyStatus: {
       openai: false,
       anthropic: false,
@@ -143,6 +158,7 @@ export const SettingsApp: React.FC = () => {
   const [ollamaUrlDraft, setOllamaUrlDraft] = useState<string>(state.ollamaBaseUrl);
   const [customUrlDraft, setCustomUrlDraft] = useState<string>(state.customBaseUrl);
   const [customModelDraft, setCustomModelDraft] = useState<string>(state.modelId);
+  const [autoSaveDelayDraft, setAutoSaveDelayDraft] = useState<string>(String(state.autoSaveDelay));
 
   useEffect(() => {
     const api = getVsCodeApi();
@@ -156,6 +172,7 @@ export const SettingsApp: React.FC = () => {
         setOllamaUrlDraft(nextState.ollamaBaseUrl);
         setCustomUrlDraft(nextState.customBaseUrl);
         setCustomModelDraft(nextState.modelId);
+        setAutoSaveDelayDraft(String(nextState.autoSaveDelay));
       }
     };
 
@@ -165,6 +182,20 @@ export const SettingsApp: React.FC = () => {
 
   const post = (payload: Record<string, unknown>) => {
     getVsCodeApi()?.postMessage(payload);
+  };
+
+  // Commits the delay input (on blur or Enter); values below the minimum are stored as the minimum.
+  const commitAutoSaveDelay = () => {
+    const parsed = Number(autoSaveDelayDraft);
+    if (!autoSaveDelayDraft.trim() || !Number.isFinite(parsed)) {
+      setAutoSaveDelayDraft(String(state.autoSaveDelay));
+      return;
+    }
+    const delay = Math.max(MIN_AUTO_SAVE_DELAY, Math.round(parsed));
+    setAutoSaveDelayDraft(String(delay));
+    if (delay !== state.autoSaveDelay) {
+      post({ type: 'updateEditorConfig', autoSaveDelay: delay });
+    }
   };
 
   const handleProviderChange = (nextProvider: AiProviderType) => {
@@ -609,6 +640,58 @@ export const SettingsApp: React.FC = () => {
               )}
             </div>
           </div>
+        </section>
+
+        {/* Section 4: Editor */}
+        <section className="rounded-lg border border-[var(--vscode-editorWidget-border,rgba(128,128,128,0.25))] bg-[var(--vscode-editorWidget-background,rgba(255,255,255,0.03))] p-5 flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <MdiIcon path={mdiPencilOutline} size={18} className="text-primary" />
+            <h2 className="text-sm font-semibold m-0">4. Editor</h2>
+          </div>
+
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="janus-autosave-select" className="text-xs font-medium">
+                Automatisch speichern
+              </label>
+              <select
+                id="janus-autosave-select"
+                value={state.autoSave}
+                onChange={(e) => post({ type: 'updateEditorConfig', autoSave: e.target.value as AutoSaveMode })}
+                className="min-w-[180px] rounded-md border border-[var(--vscode-input-border,rgba(128,128,128,0.35))] bg-[var(--vscode-input-background,#3c3c3c)] text-[var(--vscode-input-foreground,#cccccc)] px-3 py-1.5 text-xs focus:outline-none focus:border-[var(--vscode-focusBorder,#007acc)]"
+              >
+                {AUTO_SAVE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="janus-autosave-delay" className="text-xs font-medium">
+                Verzögerung (ms)
+              </label>
+              <input
+                id="janus-autosave-delay"
+                type="number"
+                min={MIN_AUTO_SAVE_DELAY}
+                step={250}
+                value={autoSaveDelayDraft}
+                disabled={state.autoSave !== 'afterDelay'}
+                onChange={(e) => setAutoSaveDelayDraft(e.target.value)}
+                onBlur={commitAutoSaveDelay}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitAutoSaveDelay();
+                }}
+                className="w-[120px] disabled:opacity-50 rounded-md border border-[var(--vscode-input-border,rgba(128,128,128,0.35))] bg-[var(--vscode-input-background,#3c3c3c)] text-[var(--vscode-input-foreground,#cccccc)] px-3 py-1.5 text-xs focus:outline-none focus:border-[var(--vscode-focusBorder,#007acc)]"
+              />
+            </div>
+          </div>
+
+          <span className="text-[11px] opacity-75">
+            Speichert Notizen im Janus-Editor nach einer Tipp-Pause und beim Verlassen des Editors (`janus.autoSave`, `janus.autoSaveDelay`). „Bei Fokuswechsel“ speichert nur beim Verlassen, „Aus“ nur manuell. Unabhängig von VS Codes `files.autoSave`.
+          </span>
         </section>
       </div>
     </div>

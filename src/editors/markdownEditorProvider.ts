@@ -25,6 +25,7 @@ import { findFencedBlocks, locateMermaidBlock } from '../services/markdownScan';
 import { repairLinkInNote } from '../commands/brokenLinksCommand';
 import { getTagIndex } from '../services/noteTagService';
 import { rememberSortRun, undoLastSortRun, UndoReport } from '../services/inboxSortUndo';
+import { AutoSaveConfig, normalizeAutoSaveConfig } from '../webviews/markdown/lib/autoSave';
 
 /**
  * Reports the outcome of an inbox sorting run, shared by the `janus.sortInbox` command and the
@@ -430,6 +431,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         void webviewPanel.webview.postMessage({
           type: 'init',
           content: text,
+          autoSave: getAutoSaveConfig(document.uri),
           ...this.getImageContext(webviewPanel.webview, document.uri),
         });
       } catch (err: any) {
@@ -509,6 +511,12 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     const configChangeSubscription = vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('janus.ai')) {
         void sendLinksUpdate();
+      }
+      if (
+        e.affectsConfiguration('janus.autoSave', document.uri) ||
+        e.affectsConfiguration('janus.autoSaveDelay', document.uri)
+      ) {
+        void webviewPanel.webview.postMessage({ type: 'autoSaveConfig', autoSave: getAutoSaveConfig(document.uri) });
       }
     });
 
@@ -1156,4 +1164,10 @@ function getNonce(): string {
     text += possible.charAt(Math.floor(Math.random() * possible.length));
   }
   return text;
+}
+
+/** Reads `janus.autoSave` and `janus.autoSaveDelay` for a note (resource scope). */
+export function getAutoSaveConfig(uri: vscode.Uri): AutoSaveConfig {
+  const cfg = vscode.workspace.getConfiguration('janus', uri);
+  return normalizeAutoSaveConfig(cfg.get('autoSave'), cfg.get('autoSaveDelay'));
 }

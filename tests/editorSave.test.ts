@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as vscode from 'vscode';
-import { MarkdownEditorProvider } from '../src/editors/markdownEditorProvider';
+import { MarkdownEditorProvider, getAutoSaveConfig } from '../src/editors/markdownEditorProvider';
+import { __setConfigStore } from './__mocks__/vscode';
 
 function setup() {
   const provider = new MarkdownEditorProvider({ extensionUri: vscode.Uri.file('/ext') } as any);
@@ -82,5 +83,73 @@ describe('dirty state events', () => {
 
     onSave!({ uri, isDirty: false });
     expect(panel.webview.postMessage).toHaveBeenLastCalledWith({ type: 'dirtyState', dirty: false });
+  });
+});
+
+describe('auto-save settings', () => {
+  function openEditor() {
+    let onConfig: ((e: any) => void) | undefined;
+    vi.spyOn(vscode.workspace, 'onDidChangeConfiguration').mockImplementation(((h: any) => {
+      onConfig = h;
+      return { dispose: () => {} };
+    }) as any);
+    const provider = new MarkdownEditorProvider({ extensionUri: vscode.Uri.file('/ext') } as any);
+    const uri = vscode.Uri.file('/workspace/plan.md');
+    const document = { uri, isDirty: false, getText: () => 'x' } as any;
+    const panel = {
+      webview: {
+        options: {},
+        html: '',
+        asWebviewUri: (u: any) => u,
+        postMessage: vi.fn(),
+        onDidReceiveMessage: vi.fn(),
+      },
+      onDidDispose: vi.fn(),
+      onDidChangeViewState: vi.fn(() => ({ dispose: () => {} })),
+      active: false,
+    } as any;
+    return { provider, uri, document, panel, fireConfig: (e: any) => onConfig!(e) };
+  }
+
+  it('defaults to afterDelay with 1000 ms', () => {
+    __setConfigStore({});
+    expect(getAutoSaveConfig(vscode.Uri.file('/workspace/plan.md'))).toEqual({ mode: 'afterDelay', delay: 1000 });
+  });
+
+  it('falls back to afterDelay for unknown values and clamps the delay', () => {
+    __setConfigStore({ 'janus.autoSave': 'sometimes', 'janus.autoSaveDelay': 50 });
+    expect(getAutoSaveConfig(vscode.Uri.file('/workspace/plan.md'))).toEqual({ mode: 'afterDelay', delay: 250 });
+  });
+
+  it('sends the auto-save settings with init', async () => {
+    __setConfigStore({ 'janus.autoSave': 'onFocusChange', 'janus.autoSaveDelay': 2000 });
+    const { provider, document, panel } = openEditor();
+    await provider.resolveCustomTextEditor(document, panel, {} as any);
+    expect(panel.webview.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'init', autoSave: { mode: 'onFocusChange', delay: 2000 } })
+    );
+  });
+
+  it('pushes changed auto-save settings to the open editor', async () => {
+    __setConfigStore({});
+    const { provider, document, panel, fireConfig } = openEditor();
+    await provider.resolveCustomTextEditor(document, panel, {} as any);
+
+    __setConfigStore({ 'janus.autoSave': 'off' });
+    fireConfig({ affectsConfiguration: (section: string) => section === 'janus.autoSave' });
+    expect(panel.webview.postMessage).toHaveBeenLastCalledWith({
+      type: 'autoSaveConfig',
+      autoSave: { mode: 'off', delay: 1000 },
+    });
+  });
+
+  it('does not push auto-save settings for unrelated configuration changes', async () => {
+    __setConfigStore({});
+    const { provider, document, panel, fireConfig } = openEditor();
+    await provider.resolveCustomTextEditor(document, panel, {} as any);
+    panel.webview.postMessage.mockClear();
+
+    fireConfig({ affectsConfiguration: (section: string) => section === 'editor.fontSize' });
+    expect(panel.webview.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'autoSaveConfig' }));
   });
 });

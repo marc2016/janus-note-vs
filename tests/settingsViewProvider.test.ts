@@ -118,6 +118,31 @@ describe('SettingsViewProvider', () => {
     expect((await provider.getSettingsState()).inboxSortExtractTasks).toBe(false);
   });
 
+  it('shows the auto-save defaults', async () => {
+    const state = await provider.getSettingsState();
+    expect(state.autoSave).toBe('afterDelay');
+    expect(state.autoSaveDelay).toBe(1000);
+  });
+
+  it('stores the auto-save mode and delay', async () => {
+    await provider.handleMessage({ type: 'updateEditorConfig', autoSave: 'off' });
+    expect(configStore.get('janus.autoSave')).toBe('off');
+
+    await provider.handleMessage({ type: 'updateEditorConfig', autoSaveDelay: 3000 });
+    expect(configStore.get('janus.autoSaveDelay')).toBe(3000);
+
+    const state = await provider.getSettingsState();
+    expect(state.autoSave).toBe('off');
+    expect(state.autoSaveDelay).toBe(3000);
+  });
+
+  it('clamps an auto-save delay below 250 ms and ignores unknown modes', async () => {
+    await provider.handleMessage({ type: 'updateEditorConfig', autoSaveDelay: 100, autoSave: 'sometimes' });
+    expect(configStore.get('janus.autoSaveDelay')).toBe(250);
+    expect(configStore.has('janus.autoSave')).toBe(false);
+    expect((await provider.getSettingsState()).autoSaveDelay).toBe(250);
+  });
+
   it('saves and clears API keys via SecretStorage', async () => {
     await provider.handleMessage({
       type: 'saveApiKey',

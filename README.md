@@ -42,6 +42,7 @@ Alle Daten liegen als offene, transparente Dateien in Ihrem lokalen Git-Reposito
 - **Date-Picker Popover:** Fügen Sie Datumsangaben (`@2026-10-24`) mit einem Klick über einen interaktiven Kalender ein.
 - **Wikilinks & Inline-Linking:** Schnelle Verknüpfung via `[[notiz]]` mit Autovervollständigung, Klick-Navigation und Zeilen-Highlighting.
 - **Verknüpfungs- & Companion-Footer:** Zeigt am Fuß jeder Notiz verknüpfte Companion-Dateien (Tasks, Diagramme) und Backlinks an.
+- **Automatisches Speichern:** Notizen werden standardmäßig eine Sekunde nach der letzten Eingabe und beim Verlassen des Editors (Tab-Wechsel, Fokuswechsel) gespeichert (`janus.autoSave`: `afterDelay`). Mit `onFocusChange` wird nur beim Verlassen gespeichert, mit `off` wie früher nur manuell (`Cmd+S` / `Ctrl+S` oder Speichern-Button). Die Einstellung ist unabhängig von VS Codes `files.autoSave`. Aufgabenlisten und Diagramme speichern jede Änderung sofort.
 
 ---
 
@@ -172,6 +173,8 @@ Passen Sie Janus in den VS Code Einstellungen (`Cmd+,` / `Ctrl+,` → Suche nach
 |---|---|---|---|
 | `janus.notesRoot` | `string` | `""` | Relativer Pfad zum primären Notizenverzeichnis (z. B. `notes`). Wenn leer, wird der Workspace-Root genutzt. |
 | `janus.includeFolders` | `string[]` | `[]` | Zusätzliche Ordnerpfade, die in der Notizen-Sidebar angezeigt werden. |
+| `janus.autoSave` | `string` | `"afterDelay"` | Automatisches Speichern im Janus-Markdown-Editor: `off`, `afterDelay` (nach Tipp-Pause und beim Verlassen) oder `onFocusChange` (nur beim Verlassen). |
+| `janus.autoSaveDelay` | `number` | `1000` | Tipp-Pause in Millisekunden vor dem automatischen Speichern bei `afterDelay` (mindestens `250`). |
 | `janus.ai.provider` | `string` | `"vscode-lm"` | Aktiver KI-Provider: `vscode-lm`, `ollama`, `gemini`, `openai`, `anthropic` oder `custom`. |
 | `janus.ai.ollama.model` | `string` | `"llama3.3"` | Modellname für lokale Ollama-Inferenz (z. B. `llama3.3`, `qwen2.5`, `mistral`). |
 | `janus.ai.ollama.endpoint` | `string` | `"http://localhost:11434"` | URL des lokalen Ollama-Servers. |

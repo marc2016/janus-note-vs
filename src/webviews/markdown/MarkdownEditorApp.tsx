@@ -43,6 +43,7 @@ import {
 import { markdownEditorKeymapExtensions } from './lib/editorKeymap';
 import { singleUndoHistory } from './lib/undoRedo';
 import { saveShortcut } from './lib/saveShortcut';
+import { AutoSaveScheduler, createAutoSaveScheduler, normalizeAutoSaveConfig } from './lib/autoSave';
 import { DocumentSync } from './lib/documentSync';
 
 declare function acquireVsCodeApi(): {
@@ -270,11 +271,27 @@ export const MarkdownEditorApp: React.FC = () => {
 
   // Sends pending edits first; the host saves only after applying them (ordered messages).
   const requestSave = () => {
+    editedSinceSaveRef.current = false;
     flushPendingEdits();
     getVsCodeApi()?.postMessage({ type: 'save' });
   };
   const requestSaveRef = useRef(requestSave);
   requestSaveRef.current = requestSave;
+  // Auto-save: saves only when the note has unsaved changes (host dirty flag or local edits
+  // made since the last save request, which may not have reached the host yet).
+  const hostDirtyRef = useRef(false);
+  hostDirtyRef.current = hostDirty;
+  const editedSinceSaveRef = useRef(false);
+  const autoSaveRef = useRef<AutoSaveScheduler | null>(null);
+  if (!autoSaveRef.current) {
+    autoSaveRef.current = createAutoSaveScheduler({
+      save: () => {
+        if (!editedSinceSaveRef.current && !hostDirtyRef.current) return;
+        requestSaveRef.current();
+      },
+    });
+  }
+  const autoSave = autoSaveRef.current;
   const flushPendingEditsRef = useRef(flushPendingEdits);
   flushPendingEditsRef.current = flushPendingEdits;
   const linkCandidatesRef = useRef<LinkCandidate[]>([]);
@@ -417,6 +434,7 @@ export const MarkdownEditorApp: React.FC = () => {
         EditorView.domEventHandlers({
           blur: () => {
             flushPendingEditsRef.current();
+            autoSave.onFocusLost();
             return false;
           },
         }),
@@ -429,6 +447,8 @@ export const MarkdownEditorApp: React.FC = () => {
           // Only user edits are sent back; remote (host) changes are already in the document.
           if (syncRef.current.recordLocalTransactions(update.transactions)) {
             setHasPendingEdits(true);
+            editedSinceSaveRef.current = true;
+            autoSave.onLocalEdit();
             if (debounceTimerRef.current) {
               clearTimeout(debounceTimerRef.current);
             }
@@ -461,18 +481,25 @@ export const MarkdownEditorApp: React.FC = () => {
     };
   }, []);
 
-  // Save pending edits when the webview is hidden (e.g. switching editor tabs) or unloaded
+  // Send pending edits when the webview is hidden (e.g. switching editor tabs) or unloaded,
+  // and auto-save then according to janus.autoSave. Unmount only flushes (no save).
   useEffect(() => {
     const handleVisibility = () => {
-      if (document.hidden) flushPendingEditsRef.current();
+      if (!document.hidden) return;
+      flushPendingEditsRef.current();
+      autoSave.onFocusLost();
     };
-    const handlePageHide = () => flushPendingEditsRef.current();
+    const handlePageHide = () => {
+      flushPendingEditsRef.current();
+      autoSave.onFocusLost();
+    };
     document.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('pagehide', handlePageHide);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('pagehide', handlePageHide);
       flushPendingEditsRef.current();
+      autoSave.dispose();
     };
   }, []);
 
@@ -480,6 +507,9 @@ export const MarkdownEditorApp: React.FC = () => {
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       const message = event.data;
+      if ((message.type === 'init' || message.type === 'autoSaveConfig') && message.autoSave) {
+        autoSave.configure(normalizeAutoSaveConfig(message.autoSave.mode, message.autoSave.delay));
+      }
       if (message.type === 'init' || message.type === 'update') {
         const newContent = typeof message.content === 'string' ? message.content : '';
         const view = editorViewRef.current;

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { AiModelInfo, AiModelService, AiProviderType } from '../services/aiModelService';
+import { AutoSaveMode, MIN_AUTO_SAVE_DELAY, normalizeAutoSaveConfig } from '../webviews/markdown/lib/autoSave';
 
 export interface JanusSettingsState {
   provider: AiProviderType;
@@ -10,6 +11,8 @@ export interface JanusSettingsState {
   inboxSortConfirm: boolean;
   inboxSortExtractTasks: boolean;
   notesRoot: string;
+  autoSave: AutoSaveMode;
+  autoSaveDelay: number;
   apiKeyStatus: Record<'openai' | 'anthropic' | 'gemini' | 'custom', boolean>;
   discoveredModels: {
     vscodeLm: AiModelInfo[];
@@ -88,6 +91,7 @@ export class SettingsViewProvider {
 
     const janusCfg = vscode.workspace.getConfiguration('janus');
     const notesRoot = janusCfg.get<string>('notesRoot', '') || '';
+    const autoSave = normalizeAutoSaveConfig(janusCfg.get('autoSave'), janusCfg.get('autoSaveDelay'));
 
     const [activeModel, vscodeLm, ollama, openaiKey, anthropicKey, geminiKey, customKey] =
       await Promise.all([
@@ -109,6 +113,8 @@ export class SettingsViewProvider {
       inboxSortConfirm,
       inboxSortExtractTasks,
       notesRoot,
+      autoSave: autoSave.mode,
+      autoSaveDelay: autoSave.delay,
       apiKeyStatus: {
         openai: Boolean(openaiKey && openaiKey.trim()),
         anthropic: Boolean(anthropicKey && anthropicKey.trim()),
@@ -173,6 +179,23 @@ export class SettingsViewProvider {
 
       if (typeof message.provider === 'string' || typeof message.modelId === 'string') {
         await this.aiModelService.setActiveModel(nextProvider, nextModelId);
+      }
+
+      await this.refresh();
+      return;
+    }
+
+    if (message.type === 'updateEditorConfig') {
+      const target = vscode.workspace.workspaceFolders?.length
+        ? vscode.ConfigurationTarget.Workspace
+        : vscode.ConfigurationTarget.Global;
+      const janusCfg = vscode.workspace.getConfiguration('janus');
+
+      if (message.autoSave === 'off' || message.autoSave === 'afterDelay' || message.autoSave === 'onFocusChange') {
+        await janusCfg.update('autoSave', message.autoSave, target);
+      }
+      if (typeof message.autoSaveDelay === 'number' && Number.isFinite(message.autoSaveDelay)) {
+        await janusCfg.update('autoSaveDelay', Math.max(MIN_AUTO_SAVE_DELAY, Math.round(message.autoSaveDelay)), target);
       }
 
       await this.refresh();

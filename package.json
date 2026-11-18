@@ -48,6 +48,29 @@
           "scope": "resource",
           "description": "Additional workspace folders to display as pure Markdown notes directories in the Janus Notes sidebar."
         },
+        "janus.autoSave": {
+          "type": "string",
+          "enum": [
+            "off",
+            "afterDelay",
+            "onFocusChange"
+          ],
+          "enumDescriptions": [
+            "Aus: Notizen werden nur manuell gespeichert.",
+            "Nach Verzögerung: Notizen werden nach einer Tipp-Pause (janus.autoSaveDelay) und beim Verlassen des Editors gespeichert.",
+            "Bei Fokuswechsel: Notizen werden beim Verlassen des Editors oder Tab-Wechsel gespeichert."
+          ],
+          "default": "afterDelay",
+          "scope": "resource",
+          "description": "Automatic saving of notes in the Janus Markdown Editor. Independent of VS Code's files.autoSave."
+        },
+        "janus.autoSaveDelay": {
+          "type": "number",
+          "default": 1000,
+          "minimum": 250,
+          "scope": "resource",
+          "description": "Delay in milliseconds after the last edit before a note is saved automatically (only when janus.autoSave is afterDelay)."
+        },
         "janus.ai.provider": {
           "type": "string",
           "enum": [
